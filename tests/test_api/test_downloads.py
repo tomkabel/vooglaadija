@@ -1,7 +1,7 @@
 """Downloads API endpoint tests."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
@@ -479,6 +479,50 @@ async def test_get_download_file_not_on_disk(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_get_download_file_success_returns_binary_response(
+    db_session: AsyncSession, tmp_path
+):
+    """Test that a completed job with a valid file streams the stored binary content."""
+    downloads_dir = tmp_path / "downloads"
+    downloads_dir.mkdir()
+    media_file = downloads_dir / "clip.mp3"
+    media_file.write_bytes(b"fake audio bytes")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client)
+        create_response = await client.post(
+            "/api/v1/downloads",
+            json={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        job_id = uuid.UUID(create_response.json()["id"])
+
+        await db_session.execute(
+            update(DownloadJob)
+            .where(DownloadJob.id == job_id)
+            .values(
+                status="completed",
+                file_path=str(media_file),
+                file_name="clip.mp3",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            ),
+        )
+        await db_session.commit()
+
+        with patch("app.services.download_service.settings") as mock_settings:
+            mock_settings.storage_path = str(tmp_path)
+            response = await client.get(
+                f"/api/v1/downloads/{job_id}/file",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert response.status_code == 200
+    assert response.content == b"fake audio bytes"
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert "clip.mp3" in response.headers.get("content-disposition", "")
+
+
+@pytest.mark.asyncio
 async def test_list_downloads_page_2(db_session: AsyncSession):
     """Test that page 2 returns the second set of results."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -927,6 +971,52 @@ async def test_delete_download_path_traversal_returns_403(db_session: AsyncSessi
 
     assert response.status_code == 403
     assert "Access denied" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_delete_download_file_cleanup_os_error_returns_500_and_keeps_job(
+    db_session: AsyncSession, tmp_path
+):
+    """Test that REST delete fails closed when disk file deletion raises OSError."""
+    downloads_dir = tmp_path / "downloads"
+    downloads_dir.mkdir()
+    media_file = downloads_dir / "blocked.mp3"
+    media_file.write_text("blocked")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client)
+        create_response = await client.post(
+            "/api/v1/downloads",
+            json={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        job_id = uuid.UUID(create_response.json()["id"])
+
+        await db_session.execute(
+            update(DownloadJob)
+            .where(DownloadJob.id == job_id)
+            .values(status="completed", file_path=str(media_file)),
+        )
+        await db_session.commit()
+
+        with (
+            patch("app.services.download_service.settings") as mock_settings,
+            patch(
+                "app.services.download_service.os.remove",
+                side_effect=OSError("Permission denied"),
+            ),
+        ):
+            mock_settings.storage_path = str(tmp_path)
+            response = await client.delete(
+                f"/api/v1/downloads/{job_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert response.status_code == 500
+    assert "Failed to delete file from disk" in response.json()["error"]["message"]
+    result = await db_session.execute(select(DownloadJob).where(DownloadJob.id == job_id))
+    assert result.scalar_one_or_none() is not None
+    assert media_file.exists()
 
 
 @pytest.mark.asyncio

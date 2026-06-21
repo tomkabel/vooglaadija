@@ -22,7 +22,7 @@ async def test_download_api_persists_jobs_with_core_models(db_session: AsyncSess
     video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
     with patch(
-        "app.api.routes.downloads.resolve_video_title",
+        "app.services.download_service.resolve_video_title",
         new_callable=AsyncMock,
     ) as mock_resolve_title:
         mock_resolve_title.return_value = "Core Model Video"

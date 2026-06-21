@@ -279,13 +279,13 @@ async def test_move_to_dlq_writes_required_failed_job_fields_and_depth(db_sessio
 @pytest.mark.unit
 def test_replay_all_retains_batch_original_job_lookup() -> None:
     """Replay-all keeps a single batch original-job lookup instead of per-failed-job selects."""
-    source = Path("app/api/routes/downloads.py").read_text()
+    source = Path("app/services/download_service.py").read_text()
 
     assert "DownloadJob.id.in_(original_ids)" in source
     assert "originals_by_id" in source
     assert "for failed_job in failed_jobs:" in source
-    replay_all_source = source[source.index("async def replay_all_failed_jobs") :]
-    assert "await replay_failed_job(" not in replay_all_source
+    replay_all_source = source[source.index("async def replay_all_failed") :]
+    assert "await self.replay_failed(" not in replay_all_source
 
 
 @pytest.mark.unit

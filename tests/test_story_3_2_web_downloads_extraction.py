@@ -18,6 +18,7 @@ from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 
 DOWNLOAD_ROUTE_MODULE = "app.api.routes.web.web_downloads"
+DOWNLOAD_SERVICE_MODULE = "app.services.download_service"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -133,8 +134,10 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
         )
 
         with (
-            patch(f"{DOWNLOAD_ROUTE_MODULE}.resolve_video_title", new_callable=AsyncMock) as title,
-            patch(f"{DOWNLOAD_ROUTE_MODULE}.enqueue_job", new_callable=AsyncMock) as enqueue,
+            patch(
+                f"{DOWNLOAD_SERVICE_MODULE}.resolve_video_title", new_callable=AsyncMock
+            ) as title,
+            patch(f"{DOWNLOAD_SERVICE_MODULE}.enqueue_job", new_callable=AsyncMock) as enqueue,
         ):
             title.return_value = "Story 3.2 smoke video"
             enqueue.return_value = None

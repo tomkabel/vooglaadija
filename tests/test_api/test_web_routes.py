@@ -943,10 +943,10 @@ class TestCreateDownloadForm:
 
             with (
                 patch(
-                    "app.api.routes.web.web_downloads.resolve_video_title", new_callable=AsyncMock
+                    "app.services.download_service.resolve_video_title", new_callable=AsyncMock
                 ) as mock_title,
                 patch(
-                    "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                    "app.services.download_service.enqueue_job", new_callable=AsyncMock
                 ) as mock_enqueue,
             ):
                 mock_title.return_value = "HTMX create video"
@@ -994,10 +994,10 @@ class TestCreateDownloadForm:
 
             with (
                 patch(
-                    "app.api.routes.web.web_downloads.resolve_video_title", new_callable=AsyncMock
+                    "app.services.download_service.resolve_video_title", new_callable=AsyncMock
                 ) as mock_title,
                 patch(
-                    "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                    "app.services.download_service.enqueue_job", new_callable=AsyncMock
                 ) as mock_enqueue,
             ):
                 mock_title.return_value = "Story 1.4 queued video"
@@ -1117,10 +1117,10 @@ class TestCreateDownloadForm:
 
             with (
                 patch(
-                    "app.api.routes.web.web_downloads.resolve_video_title", new_callable=AsyncMock
+                    "app.services.download_service.resolve_video_title", new_callable=AsyncMock
                 ) as mock_title,
                 patch(
-                    "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                    "app.services.download_service.enqueue_job", new_callable=AsyncMock
                 ) as mock_enqueue,
             ):
                 mock_title.return_value = "Canonical HTMX row"
@@ -1247,7 +1247,7 @@ class TestCreateDownloadForm:
                 headers["X-CSRF-Token"] = csrf_token
 
             with patch(
-                "app.api.routes.web.web_downloads.write_job_to_outbox", new_callable=AsyncMock
+                "app.services.download_service.write_job_to_outbox", new_callable=AsyncMock
             ) as mock_outbox:
                 mock_outbox.side_effect = Exception("Database error")
 
@@ -1292,7 +1292,7 @@ class TestCreateDownloadFullPage:
             )
 
             with patch(
-                "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                "app.services.download_service.enqueue_job", new_callable=AsyncMock
             ) as mock_enqueue:
                 mock_enqueue.return_value = None
 
@@ -1333,7 +1333,7 @@ class TestCreateDownloadFullPage:
             )
 
             with patch(
-                "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                "app.services.download_service.enqueue_job", new_callable=AsyncMock
             ) as mock_enqueue:
                 mock_enqueue.side_effect = RuntimeError("redis unavailable")
 
@@ -2576,7 +2576,7 @@ class TestCreateDownloadFullPageErrors:
             csrf_token = get_csrf_from_response(csrf_response)
 
             with patch(
-                "app.api.routes.web.web_downloads.write_job_to_outbox", new_callable=AsyncMock
+                "app.services.download_service.write_job_to_outbox", new_callable=AsyncMock
             ) as mock_outbox:
                 mock_outbox.side_effect = Exception("Database error")
 
@@ -2969,7 +2969,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
+            with patch("app.services.download_service.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 delete_response = await client.delete(
@@ -3034,10 +3034,10 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
+            with patch("app.services.download_service.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
                 with patch(
-                    "app.api.routes.web.web_downloads.os.remove",
+                    "app.services.download_service.os.remove",
                     side_effect=OSError("Permission denied"),
                 ):
                     delete_response = await client.delete(
@@ -3270,7 +3270,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
+            with patch("app.services.download_service.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
@@ -3319,7 +3319,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
+            with patch("app.services.download_service.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
@@ -3381,7 +3381,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
+            with patch("app.services.download_service.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
