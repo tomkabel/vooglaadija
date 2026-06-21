@@ -49,7 +49,10 @@ class TestDBFailoverTrigger:
         db_session.add(job)
         await db_session.commit()
 
-        with patch("worker.processor.redis_client", mock_redis_client):
+        with (
+            patch("worker.job_claimer.redis_client", mock_redis_client),
+            patch("worker.job_executor.redis_client", mock_redis_client),
+        ):
             mock_redis_client.rpop = AsyncMock(return_value=str(job_id))
             mock_redis_client.exists = AsyncMock(return_value=1)
 
@@ -74,12 +77,15 @@ class TestDBFailoverTrigger:
         db_session.add(job)
         await db_session.commit()
 
-        with patch("worker.processor.redis_client", mock_redis_client):
+        with (
+            patch("worker.job_claimer.redis_client", mock_redis_client),
+            patch("worker.job_executor.redis_client", mock_redis_client),
+        ):
             mock_redis_client.rpop = AsyncMock(return_value=str(job_id))
             mock_redis_client.exists = AsyncMock(return_value=0)
 
             with patch(
-                "worker.processor.extract_media_with_circuit_breaker",
+                "worker.job_executor.extract_media_with_circuit_breaker",
                 side_effect=Exception("Simulated extraction failure"),
             ):
                 await process_next_job()
@@ -138,7 +144,10 @@ class TestZombieSweepTrigger:
 
         mock_redis.exists = AsyncMock(side_effect=exists_fn)
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with (
+            patch("worker.job_claimer.redis_client", mock_redis),
+            patch("worker.job_executor.redis_client", mock_redis),
+        ):
             result = await process_next_job()
 
         assert result is False
@@ -163,14 +172,15 @@ class TestZombieSweepTrigger:
         await db_session.commit()
 
         with (
-            patch("worker.processor.redis_client", mock_redis_client),
+            patch("worker.job_claimer.redis_client", mock_redis_client),
+            patch("worker.job_executor.redis_client", mock_redis_client),
             patch("worker.main.shutdown_event.is_set", return_value=False),
         ):
             mock_redis_client.rpop = AsyncMock(return_value=str(job_id))
             mock_redis_client.exists = AsyncMock(return_value=0)
 
             with patch(
-                "worker.processor.extract_media_with_circuit_breaker",
+                "worker.job_executor.extract_media_with_circuit_breaker",
                 side_effect=Exception("Simulated extraction failure"),
             ):
                 await process_next_job()

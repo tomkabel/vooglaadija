@@ -35,7 +35,7 @@ class TestProcessNextJob:
         """Test that processing an empty queue returns early."""
         from worker.processor import process_next_job
 
-        with patch("worker.processor.redis_client", mock_redis_client):
+        with patch("worker.job_claimer.redis_client", mock_redis_client):
             mock_redis_client.rpop = AsyncMock(return_value=None)
 
             # Should return without error
@@ -49,7 +49,7 @@ class TestProcessNextJob:
         """Test processing a job that doesn't exist in database."""
         from worker.processor import process_next_job
 
-        with patch("worker.processor.redis_client", mock_redis_client):
+        with patch("worker.job_claimer.redis_client", mock_redis_client):
             mock_redis_client.rpop = AsyncMock(return_value="550e8400-e29b-41d4-a716-446655440099")
 
             # Should log warning and return
@@ -79,13 +79,14 @@ class TestProcessNextJob:
         mock_shutdown_event = asyncio.Event()
 
         with (
-            patch("worker.processor.redis_client", mock_redis_client),
+            patch("worker.job_claimer.redis_client", mock_redis_client),
+            patch("worker.job_executor.redis_client", mock_redis_client),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker",
+                "worker.job_executor.extract_media_with_circuit_breaker",
                 new_callable=AsyncMock,
             ) as mock_extract,
-            patch("worker.processor._publish_job_status", new_callable=AsyncMock),
-            patch("worker.processor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
+            patch("worker.job_executor.publish_job_status", new_callable=AsyncMock),
+            patch("worker.job_executor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
             patch("worker.main.shutdown_event", mock_shutdown_event),
             patch("worker.state.shutdown_event", mock_shutdown_event),
         ):
@@ -142,14 +143,14 @@ class TestProcessNextJob:
         mock_shutdown_event = asyncio.Event()
 
         with (
-            patch("worker.processor.redis_client", mock_redis_client),
+            patch("worker.job_executor.redis_client", mock_redis_client),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker",
+                "worker.job_executor.extract_media_with_circuit_breaker",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("HTTP Error 429 Too Many Requests Retry-After: 90"),
             ),
-            patch("worker.processor._publish_job_status", new_callable=AsyncMock),
-            patch("worker.processor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
+            patch("worker.job_executor.publish_job_status", new_callable=AsyncMock),
+            patch("worker.job_executor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
             patch("worker.processor.calculate_delay", return_value=sentinel_delay) as delay_mock,
             patch(
                 "worker.processor.push_to_retry_queue",

@@ -57,7 +57,7 @@ class TestAtomicClaims:
         with (
             patch("core.queue.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
@@ -313,7 +313,7 @@ class TestAtomicClaimsIntegration:
         with (
             patch("core.queue.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):

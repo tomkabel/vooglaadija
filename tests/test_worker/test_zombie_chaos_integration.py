@@ -55,7 +55,10 @@ class TestZombieSweepChaosFlow:
 
         recovery_before = RECOVERIES.labels(reason="zombie_sweep_recovery")._value.get()
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with (
+            patch("worker.job_claimer.redis_client", mock_redis),
+            patch("worker.job_executor.redis_client", mock_redis),
+        ):
             mock_redis.rpop = AsyncMock(return_value=str(job_id))
             mock_redis.exists = AsyncMock(
                 side_effect=lambda k: 1 if k == "chaos:zombie_job_trigger" else 0
@@ -98,7 +101,10 @@ class TestZombieSweepChaosFlow:
         db_session.add(job)
         await db_session.commit()
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with (
+            patch("worker.job_claimer.redis_client", mock_redis),
+            patch("worker.job_executor.redis_client", mock_redis),
+        ):
             mock_redis.rpop = AsyncMock(return_value=str(job_id))
             mock_redis.exists = AsyncMock(
                 side_effect=lambda k: 1 if k == "chaos:zombie_job_trigger" else 0
