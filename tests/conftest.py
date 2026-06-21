@@ -1,4 +1,5 @@
 import os
+import sys
 
 # CRITICAL: Set environment variables BEFORE any other imports
 os.environ["TESTING"] = "1"
@@ -76,9 +77,9 @@ async def setup_database() -> AsyncGenerator[None, None]:
 
 @pytest.fixture(autouse=True)
 def _reset_shutdown_event():
-    """Reset the global worker shutdown_event before each test.
+    """Reset global worker shutdown state before each test.
 
-    Some tests set shutdown_event to trigger shutdown behavior,
+    Some tests set shutdown_event or shutdown_requested_at to trigger shutdown behavior,
     which persists across tests in the same xdist worker process.
     """
     try:
@@ -87,6 +88,10 @@ def _reset_shutdown_event():
         shutdown_event.clear()
     except Exception:
         pass
+
+    worker_main = sys.modules.get("worker.main")
+    if worker_main is not None:
+        worker_main.shutdown_requested_at = None
 
 
 @pytest.fixture

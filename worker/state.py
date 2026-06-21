@@ -29,3 +29,26 @@ def get_shutdown_event() -> asyncio.Event:
     if _shutdown_event is None:
         _shutdown_event = asyncio.Event()
     return _shutdown_event
+
+
+class _ShutdownEventProxy:
+    """Lazy proxy for the shared shutdown event.
+
+    Exporting this keeps the long-standing `shutdown_event` import contract while
+    preserving lazy event creation for pytest's per-test event loops.
+    """
+
+    def set(self) -> None:
+        get_shutdown_event().set()
+
+    def clear(self) -> None:
+        get_shutdown_event().clear()
+
+    def is_set(self) -> bool:
+        return get_shutdown_event().is_set()
+
+    async def wait(self) -> bool:
+        return await get_shutdown_event().wait()
+
+
+shutdown_event = _ShutdownEventProxy()

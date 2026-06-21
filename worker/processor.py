@@ -12,6 +12,7 @@ Circuit breaker open → defer (not fail) → auto-retry when circuit closes.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import random
@@ -240,8 +241,6 @@ async def _periodic_heartbeat(
     The zombie sweeper threshold is 15 minutes, so 30s is
     more than sufficient to prevent false zombie detection.
     """
-    import contextlib
-
     try:
         async with db_factory() as hb_db:
             while not stop_event.is_set():
@@ -382,6 +381,9 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
 
         update_worker_state(status="running", current_job_started_at=datetime.now(UTC).isoformat())
 
+        stop_hb: asyncio.Event | None = None
+        hb_task: asyncio.Task[None] | None = None
+
         try:
             result = await db.execute(select(DownloadJob).where(DownloadJob.id == job_id))
             job = result.scalar_one_or_none()
@@ -482,9 +484,9 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
             # Spawn a background heartbeat task that updates updated_at every
             # 30s during extraction, preventing the zombie sweeper (15min
             # threshold) from racing with long-running extractions.
-            _stop_hb = asyncio.Event()
-            _hb_task = asyncio.create_task(
-                _periodic_heartbeat(get_async_session_factory(), job_id, _stop_hb)
+            stop_hb = asyncio.Event()
+            hb_task = asyncio.create_task(
+                _periodic_heartbeat(get_async_session_factory(), job_id, stop_hb)
             )
 
             loop = asyncio.get_running_loop()
@@ -562,7 +564,7 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
             JOBS_COMPLETED.labels(status="success").inc()
             logger.info("job_completed_successfully", job_id=str(job_id))
 
-            _stop_hb.set()
+            stop_hb.set()
             return True
 
         except asyncio.CancelledError:
@@ -809,9 +811,13 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
         finally:
             # Stop the periodic heartbeat if it was started
             try:
-                _stop_hb.set()
-            except NameError:
-                pass
+                if stop_hb is not None:
+                    stop_hb.set()
+                if hb_task is not None:
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await hb_task
+            except Exception:
+                logger.warning("heartbeat_task_cleanup_failed", job_id=str(job_id), exc_info=True)
             JOB_DURATION_SECONDS.observe(time.time() - start_time)
 
     return False
