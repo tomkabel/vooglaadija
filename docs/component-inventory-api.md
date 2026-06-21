@@ -11,6 +11,7 @@
 | Auth Routes | `app/api/routes/auth.py` | register, login, refresh, me, logout | REST API (JSON) |
 | Download Routes | `app/api/routes/downloads.py` | CRUD + retry + DLQ management | REST API (JSON) |
 | Web Routes | `app/api/routes/web.py` | login page, register, dashboard, settings, chaos lab | HTMX (HTML) |
+| Web Helpers | `app/api/routes/web_helpers.py` | status badge, success, error, and HTMX rate-limit fragments | HTML helpers |
 | SSE Routes | `app/api/routes/sse.py` | download status stream | SSE (text/event-stream) |
 | Health Routes | `app/api/routes/health.py` | health check, readiness probe | REST API (JSON) |
 | Metrics Routes | `app/api/routes/metrics.py` | Prometheus metrics | REST API (text) |
@@ -26,7 +27,6 @@
 | Job Factory | `app/services/job_factory.py` | Demo job creation |
 | Outbox Service | `app/services/outbox_service.py` | Transactional outbox writer |
 | Pub/Sub Service | `app/services/pubsub_service.py` | Redis Pub/Sub for real-time updates |
-| Retry Service | `app/services/retry_service.py` | Retry delay calculation with jitter |
 | Throttle Predictor | `app/services/throttle_predictor.py` | Rate-limit risk tracking |
 | yt-dlp Service | `app/services/yt_dlp_service.py` | YouTube media extraction |
 
@@ -56,6 +56,7 @@
 | Logging | `core/logging_config.py` | Structlog configuration |
 | Redis Client | `core/redis_client.py` | Shared Redis connection + chaos keys |
 | Queue | `core/queue.py` | Redis queue helpers used by API and worker |
+| Path Validation | `core/utils/security.py` | Canonical filesystem containment and writability checks |
 | Dependencies | `app/api/dependencies/` | FastDI: DbSession, CurrentUser, CurrentUserFromCookie |
 | Middleware | `app/api/middleware.py` | Prometheus request metrics |
 | Rate Limit | `app/api/rate_limit_config.py` | SlowAPI rate limiter configuration |

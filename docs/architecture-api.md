@@ -25,14 +25,16 @@ The API Server is a FastAPI-based REST service that handles user authentication,
 ## Architecture Pattern
 
 Layered architecture with clear separation:
+
 - **Routes** (`app/api/routes/`) — HTTP concerns only (parameter parsing, response formatting)
 - **Services** (`app/services/`) — Business logic
-- **Models** (`app/models/`) — SQLAlchemy ORM entities
+- **Core infrastructure** (`core/`) — shared config, database, models, metrics, Redis, queue, logging, and utilities
+- **Models** (`core/models/`) — SQLAlchemy ORM entities shared by API and worker
 - **Schemas** (`app/schemas/`) — Pydantic V2 request/response models
 
 ## Data Architecture
 
-4 SQLAlchemy models: `User`, `DownloadJob`, `FailedJob` (DLQ), `Outbox` (transactional outbox).
+4 SQLAlchemy models in `core/models/`: `User`, `DownloadJob`, `FailedJob` (DLQ), `Outbox` (transactional outbox).
 4 Alembic migrations (001-004). Async sessions with connection pooling (pool_size=10, max_overflow=5).
 
 ## API Design
@@ -49,14 +51,14 @@ Layered architecture with clear separation:
 |---------|---------------|
 | `auth_service.py` | Password hashing/verification via bcrypt |
 | `circuit_breaker.py` | YouTube API circuit breaker (CLOSED → OPEN → HALF_OPEN) |
-| `error_classifier.py` | Error pattern matching → category + retry policy |
+| `error_classifier.py` | Error classification, retry policy, and jitter delay calculation |
 | `job_factory.py` | Demo job creation for testing |
 | `outbox_service.py` | Atomic outbox insertion (crash-safe queue writes) |
 | `pubsub_service.py` | Redis Pub/Sub for real-time SSE events |
-| `redis_client.py` | Shared Redis client + chaos key management |
-| `retry_service.py` | Retry delay calculation with decorrelated/full jitter |
 | `throttle_predictor.py` | Rate-limit risk tracking via Redis sorted sets |
 | `yt_dlp_service.py` | YouTube media extraction via yt-dlp subprocess |
+
+Shared infrastructure such as Redis connectivity, queue helpers, config, database sessions, logging, metrics, ORM models, and canonical path validation lives in `core/`.
 
 ## Security
 

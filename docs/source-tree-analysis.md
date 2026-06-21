@@ -7,20 +7,17 @@
 
 ## Repository Structure
 
-```
+```text
 vooglaadija/
 ├── app/                          # Part: API Server (backend)
 │   ├── main.py                   # Entry point — FastAPI application
-│   ├── config.py                 # Pydantic Settings (env-based configuration)
-│   ├── database.py               # Async SQLAlchemy engine + session factory
 │   ├── auth.py                   # JWT token creation/verification
-│   ├── metrics.py                # Prometheus metric definitions
-│   ├── logging_config.py         # Structlog configuration
 │   ├── api/
 │   │   ├── routes/               # HTTP route handlers
 │   │   │   ├── auth.py           # Auth endpoints (register, login, refresh, me, logout)
 │   │   │   ├── downloads.py      # Download job CRUD (REST API)
 │   │   │   ├── web.py            # HTMX/browser routes (HTML responses)
+│   │   │   ├── web_helpers.py    # Shared web HTML fragments and status badge helpers
 │   │   │   ├── sse.py            # Server-Sent Events for real-time updates
 │   │   │   ├── health.py         # Health check endpoints
 │   │   │   ├── metrics.py        # Prometheus metrics endpoint
@@ -29,22 +26,15 @@ vooglaadija/
 │   │   │   └── __init__.py       # DbSession, CurrentUser, get_current_user, etc.
 │   │   ├── middleware.py         # Prometheus middleware
 │   │   └── rate_limit_config.py  # SlowAPI rate limiter configuration
-│   ├── models/                   # SQLAlchemy ORM models
-│   │   ├── user.py               # User model
-│   │   ├── download_job.py       # DownloadJob model
-│   │   ├── failed_job.py         # FailedJob (DLQ) model
-│   │   └── outbox.py             # Outbox (transactional outbox) model
 │   ├── schemas/                  # Pydantic V2 request/response schemas
 │   │   └── error.py              # Standardized error response format
 │   ├── services/                 # Business logic layer
 │   │   ├── auth_service.py           # Password hashing/verification
 │   │   ├── circuit_breaker.py        # Circuit breaker (YouTube protection)
-│   │   ├── error_classifier.py       # Error classification engine
+│   │   ├── error_classifier.py       # Error classification + retry delay policy
 │   │   ├── job_factory.py            # Demo job creation
 │   │   ├── outbox_service.py         # Transactional outbox writer
 │   │   ├── pubsub_service.py         # Redis Pub/Sub for real-time events
-│   │   ├── redis_client.py           # Shared Redis client + chaos keys
-│   │   ├── retry_service.py          # Retry delay calculation with jitter
 │   │   ├── throttle_predictor.py     # Rate-limit tracking via Redis
 │   │   └── yt_dlp_service.py         # YouTube media extraction (yt-dlp subprocess)
 │   ├── static/                  # Static assets (CSS, JS, images)
@@ -53,10 +43,24 @@ vooglaadija/
 │   ├── templates/               # Jinja2 server-rendered templates
 │   └── utils/                   # Utility modules
 │
+├── core/                        # Shared infrastructure for API and worker
+│   ├── config.py                # Pydantic Settings (env-based configuration)
+│   ├── database.py              # Async SQLAlchemy engine + session factory
+│   ├── logging_config.py        # Structlog configuration
+│   ├── metrics.py               # Prometheus metric definitions
+│   ├── queue.py                 # Redis queue helpers with deduplication
+│   ├── redis_client.py          # Shared Redis client + chaos keys
+│   ├── models/                  # SQLAlchemy ORM models
+│   │   ├── user.py              # User model
+│   │   ├── download_job.py      # DownloadJob model
+│   │   ├── failed_job.py        # FailedJob (DLQ) model
+│   │   └── outbox.py            # Outbox (transactional outbox) model
+│   └── utils/
+│       └── security.py          # Canonical path validation
+│
 ├── worker/                      # Part: Worker (backend — background processor)
 │   ├── main.py                  # Entry point — event loop, signal handling, orchestration
 │   ├── processor.py             # Job execution, retry, circuit deferral
-│   ├── queue.py                 # Redis queue wrappers with deduplication
 │   ├── health.py                # Internal health HTTP server + Redis heartbeat
 │   ├── state.py                 # Shared shutdown_event (lazy asyncio.Event)
 │   └── zombie_sweeper.py        # Reclaims stuck "processing" jobs
@@ -105,7 +109,7 @@ vooglaadija/
 
 ## Architecture Patterns
 
-- **Backend (API + Worker):** Layered architecture — Routes → Services → Models/DB
+- **Backend (API + Worker):** Layered architecture — Routes → Services → `core` Models/DB
 - **Worker:** Event-driven async loop — BRPOP from Redis → Process → Classify → Retry/DLQ
 - **Frontend:** Server-rendered HTML with HTMX for dynamic updates, SSE for real-time
 - **Real-time:** Redis Pub/Sub — Worker publishes → API subscribes → SSE streams to browser

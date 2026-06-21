@@ -1,6 +1,6 @@
 # Data Models — API Server
 
-**Part:** API Server & Worker (`app/models/`)
+**Part:** API Server & Worker (`core/models/`)
 **Engine:** SQLAlchemy 2.0 Async with PostgreSQL
 **Migration:** Alembic (4 migrations)
 

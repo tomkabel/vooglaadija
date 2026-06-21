@@ -18,7 +18,7 @@
 
 ### API Server → Worker (Redis Queue)
 
-```
+```text
 API Server                 Worker
     │                         │
     ├── POST /api/v1/downloads
@@ -36,7 +36,7 @@ The `DownloadJob` and `Outbox` entry are written atomically in the same DB trans
 
 ### Worker → API Server (Redis Pub/Sub)
 
-```
+```text
 Worker                              API Server
     │                                    │
     ├── Job completed/failed        ──→ Redis Pub/Sub
@@ -52,7 +52,9 @@ Two channels per user: `job_status:{user_id}` (status transitions) and `job_prog
 
 ### Shared Database (PostgreSQL)
 
-Both API Server and Worker use the same PostgreSQL database with the same pool config (`pool_size=10`, `max_overflow=5`). They share all 4 models (`User`, `DownloadJob`, `FailedJob`, `Outbox`). The Worker imports from `app.*` — no code duplication between `app/` and `worker/`.
+Both API Server and Worker use the same PostgreSQL database through `core.database`. They share all
+4 models (`User`, `DownloadJob`, `FailedJob`, `Outbox`) from `core.models`. Shared infrastructure
+flows through `core/` so `app/` and `worker/` do not depend on each other for database ownership.
 
 ### Shared Redis
 
@@ -70,7 +72,7 @@ Both API Server and Worker use the same PostgreSQL database with the same pool c
 
 ### Worker → YouTube (Subprocess)
 
-```
+```text
 Worker
     │
     ├── extract_media_with_circuit_breaker(url)
@@ -84,7 +86,7 @@ SSRF protection via DNS validation. Format fallback chain (5 formats). Semaphore
 
 ### API → Database (Async SQLAlchemy)
 
-```
+```text
 API FastAPI route → Depends(DbSession) → service → model
                                               │
                                          AsyncSession
@@ -96,26 +98,28 @@ Each route gets a session via the `get_db()` dependency. Sessions are yielded, c
 
 ### API → Redis (aioredis)
 
-```
-API route → redis_client.get_redis_client()
+```text
+API route → core.redis_client.get_redis_client()
     ├── Token blacklist (token_blacklist.py)
     ├── Pub/Sub (pubsub_service.py)
     └── Chaos flags (redis_client.py)
 ```
 
-Connection pooling with `max_connections=20` for Pub/Sub, separate pool for general Redis client.
+Redis connectivity is centralized in `core.redis_client`. Pub/Sub creates subscriptions from the
+shared Redis client instead of maintaining a separate application pool.
 
 ## Shared Dependencies
 
 - **Python packages:** All dependencies managed via `pyproject.toml` and Hatch. The Worker and API share the same package set.
-- **Models:** `app/models/*.py` — imported by both API and Worker
-- **Services:** `app/services/*.py` — used by both API and Worker (circuit_breaker, error_classifier, pubsub_service, redis_client, outbox_service, throttle_predictor)
-- **Config:** `app/config.py` — `Settings` class shared by both processes
-- **Database:** `app/database.py` — Engine and session factory
+- **Core infrastructure:** `core/` — shared config, database, models, metrics, Redis client, queue, logging, and utilities.
+- **Models:** `core/models/*.py` — imported by both API and Worker.
+- **Services:** `app/services/*.py` — API-owned services that may also be used by the Worker when they are API-independent (`circuit_breaker`, `error_classifier`, `outbox_service`, `pubsub_service`, `throttle_predictor`, `yt_dlp_service`).
+- **Config:** `core/config.py` — `Settings` class shared by both processes.
+- **Database:** `core/database.py` — Engine and session factory.
 
 ## Deployment Architecture
 
-```
+```text
                            ┌──────────────┐
                            │    Nginx      │ (443/80)
                            │  SSL term     │

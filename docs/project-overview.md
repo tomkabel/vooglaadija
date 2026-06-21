@@ -28,9 +28,9 @@ Multi-part monorepo: API Server (backend) + Worker (backend) + Frontend (web) + 
 ## Repository Structure
 
 - **4 parts** in a single repository
-- **3 database tables** (users, download_jobs, failed_jobs, outbox)
-- **7 route modules** with 30+ HTTP endpoints
-- **10+ business services** with layered architecture
+- **4 database tables** (users, download_jobs, failed_jobs, outbox)
+- **7 route modules** plus shared web helpers with 30+ HTTP endpoints
+- **8 business service modules** plus shared `core/` infrastructure
 - **3 queue data structures** in Redis for job lifecycle management
 
 ## Detailed Documentation
