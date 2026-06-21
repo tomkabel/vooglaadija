@@ -1,6 +1,5 @@
 """Rate limiting configuration using slowapi."""
 
-import html
 import os
 import re
 
@@ -10,6 +9,7 @@ from slowapi.util import get_remote_address
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
+from app.api.routes.web_helpers import _rate_limit_error_html
 from app.schemas.error import ErrorCode, error_response_dict
 
 # Disable rate limiting in test mode
@@ -82,16 +82,9 @@ async def rate_limit_exceeded_handler(
     # HTMX requests get an HTML fragment so the error renders correctly
     # even if the JS error handler swaps the response into the DOM target.
     if request.headers.get("HX-Request") == "true":
-        error_html = f"""<div class="error-box" role="alert" aria-live="assertive">
-  <svg class="h-5 w-5 flex-shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-  </svg>
-  <div>
-    <strong>Rate limit exceeded</strong>
-    <p class="text-sm mt-1 opacity-80">{html.escape(detail)}. Please wait before submitting another link.</p>
-  </div>
-</div>"""
-        return HTMLResponse(status_code=429, content=error_html, headers=headers)
+        return HTMLResponse(
+            status_code=429, content=_rate_limit_error_html(detail), headers=headers
+        )
 
     return JSONResponse(
         status_code=429,

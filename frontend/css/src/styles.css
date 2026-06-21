@@ -211,6 +211,18 @@
     @apply bg-coral-500/15 text-coral-300;
   }
 
+  .status-deferred {
+    @apply bg-blue-500/15 text-blue-400;
+  }
+
+  .status-cancelled {
+    @apply bg-gray-600/20 text-gray-400;
+  }
+
+  .status-unknown {
+    @apply bg-surface-700/50 text-gray-400;
+  }
+
   .error-box {
     @apply bg-coral-500/10 border-l-4 border-coral-500/50 text-coral-400 px-5 py-4 rounded-xl;
   }

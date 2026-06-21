@@ -65,8 +65,8 @@
 
     function updatePasswordStrength() {
       const strength = evaluatePasswordStrength(newPasswordInput.value);
-      strengthFill.className = 'password-strength-fill ' + strength.levelClass;
-      strengthText.className = 'password-strength-text ' + strength.levelClass;
+      strengthFill.className = `password-strength-fill ${strength.levelClass}`;
+      strengthText.className = `password-strength-text ${strength.levelClass}`;
       strengthText.textContent = strength.label;
     }
 

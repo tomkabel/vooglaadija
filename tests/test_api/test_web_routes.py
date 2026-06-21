@@ -1,6 +1,11 @@
 """Web routes tests."""
 
+import re
 import uuid
+from datetime import UTC, datetime, timedelta
+from html.parser import HTMLParser
+from types import SimpleNamespace
+from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -56,6 +61,69 @@ async def do_login(client: AsyncClient, email: str, password: str) -> str:
     return (
         login_response.cookies.get("csrf_token") or client.cookies.get("csrf_token") or csrf_token
     )
+
+
+class _FirstDownloadRowParser(HTMLParser):
+    """Extract the first rendered download row from a larger HTML fragment."""
+
+    void_tags: ClassVar[set[str]] = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.depth = 0
+        self.done = False
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = dict(attrs)
+        classes = (attr_map.get("class") or "").split()
+        if (
+            not self.parts
+            and tag == "div"
+            and "download-row" in classes
+            and "data-job-id" in attr_map
+        ):
+            self.depth = 1
+            self.parts.append(self.get_starttag_text() or "")
+            return
+        if self.parts and not self.done:
+            self.parts.append(self.get_starttag_text() or "")
+            if tag not in self.void_tags:
+                self.depth += 1
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.parts and not self.done:
+            self.parts.append(self.get_starttag_text() or "")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.parts and not self.done:
+            self.parts.append(f"</{tag}>")
+            if tag not in self.void_tags:
+                self.depth -= 1
+            if self.depth == 0:
+                self.done = True
+
+    def handle_data(self, data: str) -> None:
+        if self.parts and not self.done:
+            self.parts.append(data)
+
+
+def _first_download_row(html: str) -> str:
+    """Return the first non-skeleton download row as normalized HTML."""
+    parser = _FirstDownloadRowParser()
+    parser.feed(html)
+    return re.sub(r"\s+", " ", "".join(parser.parts)).strip()
 
 
 class TestValidateRedirectUrl:
@@ -746,6 +814,100 @@ class TestDashboardPage:
         assert 'sse-connect="/web/downloads/stream"' in dashboard_response.text
         assert '<script src="/static/js/dashboard.js" defer></script>' in dashboard_response.text
 
+    @pytest.mark.asyncio
+    async def test_dashboard_renders_representative_status_badges_and_row_controls(self):
+        """Test dashboard rows render safe status badges and preserve row actions."""
+        from core.models.user import User
+
+        email = f"dashstatuses_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+        statuses = [
+            ("pending", None),
+            ("processing", None),
+            ("completed", "completed.mp4"),
+            ("completed", None),
+            ("failed", None),
+            ("deferred", None),
+            ("cancelled", None),
+            ("unknown", None),
+        ]
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            access_token = login_resp.cookies.get("access_token", "")
+
+            async with TestingSessionLocal() as session:
+                user_result = await session.execute(select(User).where(User.email == email))
+                user = user_result.scalar_one()
+                now = datetime.now(UTC)
+                for index, (job_status, file_name) in enumerate(statuses):
+                    job = DownloadJob(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        url=f"https://www.youtube.com/watch?v={index:011d}",
+                        status=job_status,
+                        title=f"{job_status.title()} video",
+                        file_name=file_name,
+                        file_path=f"/tmp/{file_name}" if file_name else None,
+                        created_at=now - timedelta(minutes=index),
+                    )
+                    session.add(job)
+                await session.commit()
+
+            dashboard_response = await client.get(
+                "/web/downloads",
+                cookies={"access_token": access_token},
+            )
+
+        assert dashboard_response.status_code == 200
+        assert dashboard_response.text.count('class="status-badge ') == len(statuses)
+        for expected_status in (
+            "pending",
+            "processing",
+            "completed",
+            "failed",
+            "deferred",
+            "cancelled",
+            "unknown",
+        ):
+            assert f"status-{expected_status}" in dashboard_response.text
+            assert f">{expected_status.title()}<" in dashboard_response.text
+        assert dashboard_response.text.count('class="download-btn text-xs"') == 1
+        assert 'hx-delete="/web/downloads/' in dashboard_response.text
+        assert 'hx-target="closest .download-row"' in dashboard_response.text
+        assert 'hx-swap="outerHTML"' in dashboard_response.text
+        assert 'hx-confirm="Delete this download?"' in dashboard_response.text
+        assert 'aria-label="Delete download"' in dashboard_response.text
+        assert 'class="btn-danger"' in dashboard_response.text
+
+    def test_download_list_and_item_render_equivalent_canonical_row(self):
+        """Test list-rendered rows match the canonical download item partial structure."""
+        from app.api.routes.web import templates
+
+        created_at = datetime(2026, 6, 21, 12, 30, tzinfo=UTC)
+        job = SimpleNamespace(
+            id=uuid.uuid4(),
+            url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            title="Canonical row video",
+            status="completed",
+            file_name="video.mp4",
+            created_at=created_at,
+        )
+
+        item_html = templates.env.get_template("partials/_download_item.html").render(job=job)
+        list_html = templates.env.get_template("partials/_download_list.html").render(jobs=[job])
+
+        assert _first_download_row(list_html) == _first_download_row(item_html)
+
 
 class TestCreateDownloadForm:
     """Tests for POST /web/downloads (HTMX endpoint)."""
@@ -913,6 +1075,100 @@ class TestCreateDownloadForm:
             )
 
         assert create_response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_download_htmx_returns_canonical_row_and_rotates_csrf(self, sample_url):
+        """Test HTMX create returns the canonical row partial and a rotated CSRF cookie."""
+        email = f"downloadrow_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
+
+            headers = {"HX-Request": "true"}
+            if csrf_token:
+                headers["X-CSRF-Token"] = csrf_token
+
+            with (
+                patch(
+                    "app.api.routes.web.resolve_video_title", new_callable=AsyncMock
+                ) as mock_title,
+                patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue,
+            ):
+                mock_title.return_value = "Canonical HTMX row"
+                mock_enqueue.return_value = None
+
+                create_response = await client.post(
+                    "/web/downloads",
+                    data={"url": sample_url},
+                    headers=headers,
+                    cookies={"access_token": access_token},
+                )
+
+        assert create_response.status_code == 200
+        assert '<div class="download-row" data-job-id="' in create_response.text
+        assert 'class="status-badge status-pending"' in create_response.text
+        assert "Canonical HTMX row" in create_response.text
+        assert create_response.cookies.get("csrf_token") is not None
+        assert create_response.cookies.get("csrf_token") != csrf_token
+
+    @pytest.mark.asyncio
+    async def test_create_download_htmx_validation_error_returns_inline_error_fragment(self):
+        """Test HTMX validation errors return centralized error-box HTML without row targets."""
+        email = f"downloaderr_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
+
+            headers = {"HX-Request": "true"}
+            if csrf_token:
+                headers["X-CSRF-Token"] = csrf_token
+
+            create_response = await client.post(
+                "/web/downloads",
+                data={"url": "https://not-youtube.com/video"},
+                headers=headers,
+                cookies={"access_token": access_token},
+            )
+
+        assert create_response.status_code == 422
+        assert "error-box" in create_response.text
+        assert 'role="alert"' in create_response.text or "role='alert'" in create_response.text
+        assert "Invalid supported URL" in create_response.text
+        assert "download-rows" not in create_response.text
 
 
 class TestCreateDownloadFullPage:

@@ -18,15 +18,7 @@
   </div>
 
   <div class="flex items-center gap-3">
-    {% if job.status == 'pending' %}
-    <span class="status-badge status-pending">Pending</span>
-    {% elif job.status == 'processing' %}
-    <span class="status-badge status-processing">Processing</span>
-    {% elif job.status == 'completed' %}
-    <span class="status-badge status-completed">Completed</span>
-    {% elif job.status == 'failed' %}
-    <span class="status-badge status-failed">Failed</span>
-    {% endif %} {% if job.status == 'completed' and job.file_name %}
+    {{ status_badge_html(job.status) }} {% if job.status == 'completed' and job.file_name %}
     <a
       href="/web/downloads/{{ job.id }}/file"
       download

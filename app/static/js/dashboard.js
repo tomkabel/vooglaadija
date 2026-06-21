@@ -1,15 +1,15 @@
 (() => {
   // ─── Custom Confirm Modal with Focus Trap ──────────────────────────
-  var modal = document.getElementById('confirm-modal');
-  var modalTitle = document.getElementById('modal-title');
-  var modalDesc = document.getElementById('modal-desc');
-  var modalCancel = document.querySelector('[data-modal-cancel]');
-  var modalConfirm = document.querySelector('[data-modal-confirm]');
-  var pendingConfirm = null;
-  var lastFocusedEl = null;
+  const modal = document.getElementById('confirm-modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalDesc = document.getElementById('modal-desc');
+  const modalCancel = document.querySelector('[data-modal-cancel]');
+  const modalConfirm = document.querySelector('[data-modal-confirm]');
+  let pendingConfirm = null;
+  let lastFocusedEl = null;
 
   // Focusable elements within modal
-  var modalFocusable = null;
+  const _modalFocusable = null;
   function getModalFocusable() {
     if (!modal) return [];
     return modal.querySelectorAll(
@@ -18,10 +18,10 @@
   }
 
   function trapFocus(e) {
-    var focusable = getModalFocusable();
+    const focusable = getModalFocusable();
     if (focusable.length === 0) return;
-    var first = focusable[0];
-    var last = focusable[focusable.length - 1];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
 
     if (e.key === 'Tab') {
       if (e.shiftKey) {
@@ -37,8 +37,8 @@
   }
 
   document.body.addEventListener('htmx:confirm', (evt) => {
-    if (!evt.detail || !evt.detail.question) return;
-    var elt = evt.detail.elt;
+    if (!evt.detail?.question) return;
+    const elt = evt.detail.elt;
     if (!elt.getAttribute('hx-confirm')) return;
     evt.preventDefault();
     lastFocusedEl = document.activeElement;
@@ -48,7 +48,7 @@
     pendingConfirm = evt.detail;
     // Focus the cancel button
     setTimeout(() => {
-      var focusable = getModalFocusable();
+      const focusable = getModalFocusable();
       if (focusable.length > 0) focusable[0].focus();
     }, 50);
     document.addEventListener('keydown', trapFocus);
@@ -83,20 +83,20 @@
   });
 
   // ─── Skeleton Loader ─────────────────────────────────────────────────
-  var skelTimer = setTimeout(() => {
-    var list = document.getElementById('download-list');
+  const skelTimer = setTimeout(() => {
+    const list = document.getElementById('download-list');
     if (!list) return;
     list.classList.remove('download-list-loading');
-    var skel = document.getElementById('download-skeleton');
+    const skel = document.getElementById('download-skeleton');
     if (skel) skel.remove();
   }, 5000);
 
   function clearSkel() {
     clearTimeout(skelTimer);
-    var list = document.getElementById('download-list');
+    const list = document.getElementById('download-list');
     if (!list) return;
     list.classList.remove('download-list-loading');
-    var skel = document.getElementById('download-skeleton');
+    const skel = document.getElementById('download-skeleton');
     if (skel) skel.remove();
   }
 
@@ -115,20 +115,20 @@
 
   // ─── Stats ───────────────────────────────────────────────────────────
   function updateStats() {
-    var rows = document.querySelectorAll('.download-row');
-    var completed = 0,
-      inProgress = 0,
-      total = rows.length;
-    rows.forEach((row) => {
-      var badge = row.querySelector('.status-badge');
-      if (!badge) return;
-      var s = badge.textContent.trim().toLowerCase();
+    const rows = document.querySelectorAll('.download-row');
+    let completed = 0;
+    let inProgress = 0;
+    const total = rows.length;
+    for (const row of rows) {
+      const badge = row.querySelector('.status-badge');
+      if (!badge) continue;
+      const s = badge.textContent.trim().toLowerCase();
       if (s === 'completed') completed++;
       else if (s === 'processing' || s === 'pending') inProgress++;
-    });
-    var ce = document.getElementById('stat-completed');
-    var ie = document.getElementById('stat-in-progress');
-    var te = document.getElementById('stat-total');
+    }
+    const ce = document.getElementById('stat-completed');
+    const ie = document.getElementById('stat-in-progress');
+    const te = document.getElementById('stat-total');
     if (ce) ce.textContent = completed;
     if (ie) ie.textContent = inProgress;
     if (te) te.textContent = total;
@@ -137,18 +137,18 @@
   // ─── Relative Time ───────────────────────────────────────────────────
   function formatRelativeTime(dateString) {
     if (!dateString) return 'Just now';
-    var date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Just now';
-    var diff = Date.now() - date.getTime();
-    var sec = Math.floor(diff / 1000);
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return 'Just now';
+    const diff = Date.now() - date.getTime();
+    const sec = Math.floor(diff / 1000);
     if (sec < 10) return 'Just now';
-    if (sec < 60) return sec + 's ago';
-    var min = Math.floor(sec / 60);
-    if (min < 60) return min + 'm ago';
-    var hr = Math.floor(min / 60);
-    if (hr < 24) return hr + 'h ago';
-    var day = Math.floor(hr / 24);
-    if (day < 7) return day + 'd ago';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}d ago`;
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -158,32 +158,36 @@
   }
 
   // ─── SSE ─────────────────────────────────────────────────────────────
-  var sseSource = null;
-  var htmxPending = new Set();
+  let sseSource = null;
+  const htmxPending = new Set();
+  let lastMsg = Date.now();
+  let reconnectShown = false;
+  let sseFailed = false;
+  const SSE_TIMEOUT = 35000;
 
   document.body.addEventListener('htmx:afterOnLoad', (evt) => {
-    var elt = evt.detail.elt;
-    var row = elt && elt.closest ? elt.closest('[data-job-id]') : null;
-    if (row && row.dataset.jobId) {
+    const elt = evt.detail.elt;
+    const row = elt?.closest ? elt.closest('[data-job-id]') : null;
+    if (row?.dataset.jobId) {
       htmxPending.add(row.dataset.jobId);
       setTimeout(() => {
         htmxPending.delete(row.dataset.jobId);
       }, 3000);
     }
     if (document.getElementById('download-rows')) {
-      var container = document.getElementById('download-rows');
-      var ids = {};
-      var rows = container.querySelectorAll('.download-row[data-job-id]');
-      for (var i = 0; i < rows.length; i++) {
-        var id = rows[i].dataset.jobId;
+      const container = document.getElementById('download-rows');
+      const ids = {};
+      const rows = container.querySelectorAll('.download-row[data-job-id]');
+      for (let i = 0; i < rows.length; i++) {
+        const id = rows[i].dataset.jobId;
         if (id && ids[id]) {
           rows[i].remove();
         } else if (id) {
           ids[id] = true;
         }
       }
-      var optRows = container.querySelectorAll('[data-optimistic="true"]');
-      for (var j = 0; j < optRows.length; j++) {
+      const optRows = container.querySelectorAll('[data-optimistic="true"]');
+      for (let j = 0; j < optRows.length; j++) {
         optRows[j].remove();
       }
     }
@@ -191,19 +195,26 @@
 
   function handleJobUpdate(event) {
     clearSkel();
-    var data;
+    lastMsg = Date.now();
+    sseFailed = false;
+    const banner = document.getElementById('sse-reconnect-banner');
+    if (banner) {
+      banner.remove();
+      reconnectShown = false;
+    }
+    let data;
     try {
       data = JSON.parse(event.data);
     } catch (_) {
       return;
     }
-    if (!data || !data.id) return;
-    var row = document.querySelector('[data-job-id="' + CSS.escape(data.id) + '"]');
+    if (!data?.id) return;
+    let row = document.querySelector(`[data-job-id="${CSS.escape(data.id)}"]`);
     if (row) {
       updateDownloadRow(row, data);
     } else {
       if (htmxPending.has(data.id)) return;
-      var optRow = document.querySelector('[data-optimistic="true"]');
+      const optRow = document.querySelector('[data-optimistic="true"]');
       if (optRow && optRow.querySelector('.url-text').textContent === data.url) return;
       row = createDownloadRow(data);
       insertRowSorted(row, data);
@@ -214,16 +225,16 @@
 
   function handleProgressUpdate(event) {
     clearSkel();
-    var data;
+    let data;
     try {
       data = JSON.parse(event.data);
     } catch (_) {
       return;
     }
-    if (!data || !data.id) return;
-    var row = document.querySelector('[data-job-id="' + CSS.escape(data.id) + '"]');
+    if (!data?.id) return;
+    let row = document.querySelector(`[data-job-id="${CSS.escape(data.id)}"]`);
     if (!row) {
-      var optRow = document.querySelector('[data-optimistic="true"]');
+      const optRow = document.querySelector('[data-optimistic="true"]');
       if (optRow && data.url && optRow.querySelector('.url-text').textContent === data.url) return;
       row = createDownloadRow({
         id: data.id,
@@ -257,19 +268,19 @@
   });
 
   function insertRowSorted(row, data) {
-    var container =
+    const container =
       document.getElementById('download-rows') || document.getElementById('download-list');
     if (!container) return;
-    var sk =
+    const sk =
       data._sort_key != null
         ? data._sort_key
         : data.created_at
           ? new Date(data.created_at).getTime() / 1000
           : Date.now() / 1000;
-    var existing = container.querySelectorAll('.download-row');
-    var before = null;
-    for (var i = 0; i < existing.length; i++) {
-      var ek = Number.parseFloat(existing[i].dataset.sortKey || '0');
+    const existing = container.querySelectorAll('.download-row');
+    let before = null;
+    for (let i = 0; i < existing.length; i++) {
+      const ek = Number.parseFloat(existing[i].dataset.sortKey || '0');
       if (sk > ek) {
         before = existing[i];
         break;
@@ -284,19 +295,19 @@
   document
     .querySelector('form[hx-post="/web/downloads"]')
     ?.addEventListener('htmx:beforeRequest', () => {
-      var input = document.getElementById('new-download-url');
-      var url = input ? input.value.trim() : '';
+      const input = document.getElementById('new-download-url');
+      const url = input ? input.value.trim() : '';
       if (!url) return;
 
-      var existing = document.querySelector('[data-optimistic="true"]');
+      const existing = document.querySelector('[data-optimistic="true"]');
       if (existing) {
         if (existing.querySelector('.url-text').textContent === url) return;
         existing.remove();
       }
 
-      var optId = 'opt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-      var now = new Date();
-      var optData = {
+      const optId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const now = new Date();
+      const optData = {
         id: optId,
         url: url,
         title: null,
@@ -307,21 +318,21 @@
         updated_at: now.toISOString(),
         _sort_key: now.getTime() / 1000,
       };
-      var row = createDownloadRow(optData);
+      const row = createDownloadRow(optData);
       row.dataset.optimistic = 'true';
       insertRowSorted(row, optData);
       row.classList.add('fade-in');
       updateStats();
 
-      var replace = (event) => {
-        var realData;
+      const replace = (event) => {
+        let realData;
         try {
           realData = JSON.parse(event.data);
         } catch (_) {
           return;
         }
-        if (!realData || !realData.url) return;
-        var optRow = document.querySelector('[data-optimistic="true"]');
+        if (!realData?.url) return;
+        const optRow = document.querySelector('[data-optimistic="true"]');
         if (!optRow) return;
         if (optRow.querySelector('.url-text').textContent === realData.url) {
           optRow.dataset.jobId = realData.id;
@@ -342,41 +353,41 @@
   document
     .querySelector('form[hx-post="/web/downloads"]')
     ?.addEventListener('htmx:beforeRequest', function () {
-      var btn = this.querySelector('button[type="submit"]');
+      const btn = this.querySelector('button[type="submit"]');
       if (btn) btn.disabled = true;
     });
 
   document.body.addEventListener('htmx:afterRequest', (evt) => {
-    var form =
+    const form =
       evt.detail.elt && evt.detail.elt.tagName === 'FORM'
         ? evt.detail.elt
-        : evt.detail.elt && evt.detail.elt.closest
+        : evt.detail.elt?.closest
           ? evt.detail.elt.closest('form')
           : null;
     if (form) {
-      var btn = form.querySelector('button[type="submit"]');
+      const btn = form.querySelector('button[type="submit"]');
       if (btn) btn.disabled = false;
     }
   });
 
   // ─── Inline URL Validation ──────────────────────────────────────────
-  var urlInput = document.getElementById('new-download-url');
-  var validationTimer = null;
+  const urlInput = document.getElementById('new-download-url');
+  let validationTimer = null;
   if (urlInput) {
     urlInput.addEventListener('input', () => {
       clearTimeout(validationTimer);
       validationTimer = setTimeout(() => {
-        var val = urlInput.value.trim();
-        var errorEl = document.getElementById('url-validation-error');
+        const val = urlInput.value.trim();
+        const errorEl = document.getElementById('url-validation-error');
         if (!val) {
           if (errorEl) errorEl.remove();
           return;
         }
-        var valid = /^https?:\/\/.+/.test(val);
+        const valid = /^https?:\/\/.+/.test(val);
         if (valid) {
           if (errorEl) errorEl.remove();
         } else if (!errorEl) {
-          var err = document.createElement('p');
+          const err = document.createElement('p');
           err.id = 'url-validation-error';
           err.className = 'text-xs text-coral-400 font-body mt-1.5';
           err.textContent = 'Must start with http:// or https://';
@@ -387,32 +398,15 @@
   }
 
   document.body.addEventListener('htmx:beforeRequest', () => {
-    var errorEl = document.getElementById('url-validation-error');
+    const errorEl = document.getElementById('url-validation-error');
     if (errorEl) errorEl.remove();
   });
 
   // ─── SSE Health Monitor ──────────────────────────────────────────────
-  var lastMsg = Date.now();
-  var reconnectShown = false;
-  var sseFailed = false;
-  var SSE_TIMEOUT = 35000;
-
-  var _origHandleUpdate = handleJobUpdate;
-  handleJobUpdate = (event) => {
-    lastMsg = Date.now();
-    sseFailed = false;
-    var banner = document.getElementById('sse-reconnect-banner');
-    if (banner) {
-      banner.remove();
-      reconnectShown = false;
-    }
-    _origHandleUpdate(event);
-  };
-
   setInterval(() => {
-    var indicator = document.querySelector('.live-indicator');
+    const indicator = document.querySelector('.live-indicator');
     if (!indicator) return;
-    var elapsed = Date.now() - lastMsg;
+    const elapsed = Date.now() - lastMsg;
     if (elapsed > SSE_TIMEOUT) {
       indicator.className = 'live-indicator live-indicator--error';
       indicator.textContent = 'Reconnecting\u2026';
@@ -423,26 +417,19 @@
   }, 5000);
 
   setInterval(() => {
-    var elapsed = Date.now() - lastMsg;
+    const elapsed = Date.now() - lastMsg;
     if (elapsed > 60000 && !reconnectShown) {
       reconnectShown = true;
       sseFailed = elapsed > 120000;
-      var banner = document.createElement('div');
+      const banner = document.createElement('div');
       banner.id = 'sse-reconnect-banner';
       banner.className =
         'fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-coral-500/90 backdrop-blur-sm text-white px-5 py-3.5 rounded-xl shadow-2xl border border-white/10 slide-up';
-      banner.innerHTML =
-        '<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#icon-alert" /></svg>' +
-        '<span class="text-sm font-medium">' +
-        (sseFailed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused') +
-        '</span>' +
-        '<button onclick="location.reload()" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">' +
-        (sseFailed ? 'Retry Connection' : 'Refresh') +
-        '</button>';
+      banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#icon-alert" /></svg><span class="text-sm font-medium">${sseFailed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused'}</span><button onclick="location.reload()" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">${sseFailed ? 'Retry Connection' : 'Refresh'}</button>`;
       document.body.appendChild(banner);
-      var check = setInterval(() => {
+      const check = setInterval(() => {
         if (Date.now() - lastMsg < 10000) {
-          var b = document.getElementById('sse-reconnect-banner');
+          const b = document.getElementById('sse-reconnect-banner');
           if (b) b.remove();
           reconnectShown = false;
           sseFailed = false;
@@ -453,8 +440,54 @@
   }, 5000);
 
   // ─── Row Factory ─────────────────────────────────────────────────────
+  const statusBadgeTemplates = loadStatusBadgeTemplates();
+
+  function loadStatusBadgeTemplates() {
+    const script = document.getElementById('status-badge-templates');
+    if (!script) return { known: {}, template: '' };
+    try {
+      const data = JSON.parse(script.textContent || '{}');
+      return {
+        known: data.known || {},
+        template: data.template || '',
+      };
+    } catch (_err) {
+      return { known: {}, template: '' };
+    }
+  }
+
+  function normalizeStatus(status) {
+    const raw = String(status || 'unknown').trim();
+    return raw || 'unknown';
+  }
+
+  function statusClassSuffix(status) {
+    return (
+      normalizeStatus(status)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'unknown'
+    );
+  }
+
+  function getStatusBadgeHTML(status) {
+    const normalized = normalizeStatus(status);
+    const known = statusBadgeTemplates.known[normalized.toLowerCase()];
+    if (known) return known;
+    if (!statusBadgeTemplates.template) return '';
+    return statusBadgeTemplates.template
+      .replace('__STATUS_CLASS__', `status-${statusClassSuffix(normalized)}`)
+      .replace('__STATUS_LABEL__', escapeHtml(normalized));
+  }
+
+  function createStatusBadge(status) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = getStatusBadgeHTML(status);
+    return wrapper.firstElementChild;
+  }
+
   function createDownloadRow(data) {
-    var div = document.createElement('div');
+    const div = document.createElement('div');
     div.className = 'download-row';
     div.dataset.jobId = data.id;
     div.innerHTML = getRowHTML(data);
@@ -463,11 +496,20 @@
   }
 
   function updateDownloadRow(row, data) {
-    var badge = row.querySelector('.status-badge');
+    const badge = row.querySelector('.status-badge');
     if (badge) {
-      var old = badge.textContent.trim().toLowerCase();
-      var next = data.status.toLowerCase();
-      if (old !== next) {
+      const old = badge.textContent.trim().toLowerCase();
+      const next = normalizeStatus(data.status).toLowerCase();
+      const replacement = createStatusBadge(data.status);
+      if (replacement) {
+        if (old !== next) {
+          replacement.classList.add('status-changed');
+          setTimeout(() => {
+            replacement.classList.remove('status-changed');
+          }, 600);
+        }
+        badge.replaceWith(replacement);
+      } else if (old !== next) {
         badge.classList.remove('status-changed');
         void badge.offsetWidth;
         badge.classList.add('status-changed');
@@ -475,19 +517,17 @@
           badge.classList.remove('status-changed');
         }, 600);
       }
-      badge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-      badge.className = 'status-badge status-' + data.status;
     }
-    var ts = row.querySelector('.timestamp');
+    const ts = row.querySelector('.timestamp');
     if (ts && data.updated_at) ts.textContent = formatRelativeTime(data.updated_at);
 
-    var dlBtn = row.querySelector('.download-btn');
-    if (data.status === 'completed') {
+    let dlBtn = row.querySelector('.download-btn');
+    if (normalizeStatus(data.status).toLowerCase() === 'completed') {
       if (dlBtn) {
         dlBtn.style.display = 'inline-flex';
       } else {
         dlBtn = document.createElement('a');
-        dlBtn.href = '/web/downloads/' + data.id + '/file';
+        dlBtn.href = `/web/downloads/${encodeURIComponent(String(data.id || ''))}/file`;
         dlBtn.className = 'download-btn text-xs';
         dlBtn.download = '';
         dlBtn.target = '_blank';
@@ -495,9 +535,9 @@
         dlBtn.innerHTML =
           '<svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg> Save';
         dlBtn.style.display = 'inline-flex';
-        var containers = row.querySelectorAll('.flex.items-center.gap-3');
-        var c = containers[containers.length - 1];
-        var del = c.querySelector('button[hx-delete]');
+        const containers = row.querySelectorAll('.flex.items-center.gap-3');
+        const c = containers[containers.length - 1];
+        const del = c.querySelector('button[hx-delete]');
         if (del) c.insertBefore(dlBtn, del);
         else c.appendChild(dlBtn);
       }
@@ -507,61 +547,40 @@
   }
 
   function updateDownloadProgress(row, progress) {
-    var bar = row.querySelector('.progress-bar');
+    let bar = row.querySelector('.progress-bar');
     if (!bar) {
-      var badge = row.querySelector('.status-badge');
+      const badge = row.querySelector('.status-badge');
       if (!badge) return;
-      var wrap = document.createElement('div');
+      const wrap = document.createElement('div');
       wrap.className = 'progress-container';
-      wrap.innerHTML =
-        '<div class="progress-track"><div class="progress-bar" style="width:0%"></div></div>' +
-        (progress.eta != null ? '<span class="progress-eta"></span>' : '');
+      wrap.innerHTML = `<div class="progress-track"><div class="progress-bar" style="width:0%"></div></div>${progress.eta != null ? '<span class="progress-eta"></span>' : ''}`;
       badge.parentNode.insertBefore(wrap, badge.nextSibling);
       bar = wrap.querySelector('.progress-bar');
     }
-    if (bar && progress.percent != null) bar.style.width = Math.min(progress.percent, 100) + '%';
-    var eta = row.querySelector('.progress-eta');
+    if (bar && progress.percent != null) bar.style.width = `${Math.min(progress.percent, 100)}%`;
+    const eta = row.querySelector('.progress-eta');
     if (eta && progress.eta != null) {
-      var m = Math.floor(progress.eta / 60);
-      var s = Math.round(progress.eta % 60);
-      eta.textContent = m + 'm ' + s + 's';
+      const m = Math.floor(progress.eta / 60);
+      const s = Math.round(progress.eta % 60);
+      eta.textContent = `${m}m ${s}s`;
     }
   }
 
   function getRowHTML(data) {
-    var statusText = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-    var date = formatRelativeTime(data.created_at);
-    return (
-      '<div class="flex-1 min-w-0"><div class="flex items-center gap-3">' +
-      '<div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0">' +
-      '<svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="#icon-video" /></svg></div>' +
-      '<div><p class="url-text">' +
-      escapeHtml(data.title || data.url) +
-      '</p>' +
-      '<p class="timestamp">' +
-      date +
-      '</p></div></div></div>' +
-      '<div class="flex items-center gap-3">' +
-      '<span class="status-badge status-' +
-      data.status +
-      '">' +
-      statusText +
-      '</span>' +
-      (data.status === 'completed'
-        ? '<a href="/web/downloads/' +
-          data.id +
-          '/file" class="download-btn text-xs" download target="_blank" hx-boost="false">' +
-          '<svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg> Save</a>'
-        : '') +
-      '<button hx-delete="/web/downloads/' +
-      data.id +
-      '" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download">' +
-      '<svg class="h-5 w-5" aria-hidden="true"><use href="#icon-trash" /></svg></button></div>'
-    );
+    const date = formatRelativeTime(data.created_at);
+    const jobId = String(data.id || '');
+    const jobPathId = encodeURIComponent(jobId);
+    const createdAt = data.created_at ? String(data.created_at) : '';
+    const status = normalizeStatus(data.status);
+    return `<div class="flex-1 min-w-0"><div class="flex items-center gap-3"><div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"><svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="#icon-video" /></svg></div><div><p class="url-text" hx-disable title="${escapeHtml(data.title || data.url || '')}">${escapeHtml(data.title || data.url || '')}</p><p class="timestamp" data-timestamp="${escapeHtml(createdAt)}">${escapeHtml(date)}</p></div></div></div><div class="flex items-center gap-3">${getStatusBadgeHTML(status)}${
+      status.toLowerCase() === 'completed'
+        ? `<a href="/web/downloads/${jobPathId}/file" class="download-btn text-xs" download target="_blank" hx-boost="false"><svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg> Save</a>`
+        : ''
+    }<button hx-delete="/web/downloads/${jobPathId}" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download"><svg class="h-5 w-5" aria-hidden="true"><use href="#icon-trash" /></svg></button></div>`;
   }
 
   function escapeHtml(text) {
-    var div = document.createElement('div');
+    const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }

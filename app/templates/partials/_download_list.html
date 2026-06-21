@@ -21,59 +21,7 @@
 {% if jobs %}
 <div id="download-rows">
   {% for job in jobs %}
-  <div class="download-row" data-job-id="{{ job.id }}">
-    <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-3">
-        <div
-          class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"
-        >
-          <svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="#icon-video" /></svg>
-        </div>
-        <div>
-          <p class="url-text" hx-disable title="{{ job.title or job.url }}">{{ job.title or job.url }}</p>
-          <p class="timestamp" data-timestamp="{{ job.created_at.isoformat() if job.created_at else '' }}">
-            {% if job.created_at %}
-              {{ job.created_at.strftime('%b %d, %H:%M') }}
-            {% endif %}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-3">
-      {% if job.status == 'pending' %}
-      <span class="status-badge status-pending"> Pending </span>
-      {% elif job.status == 'processing' %}
-      <span class="status-badge status-processing"> Processing </span>
-      {% elif job.status == 'completed' %}
-      <span class="status-badge status-completed"> Completed </span>
-      {% elif job.status == 'failed' %}
-      <span class="status-badge status-failed"> Failed </span>
-      {% endif %} {% if job.status == 'completed' and job.file_name %}
-      <a
-        href="/web/downloads/{{ job.id }}/file"
-        download
-        target="_blank"
-        hx-boost="false"
-      class="download-btn text-xs"
-      >
-        <svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg>
-        Save
-      </a>
-      {% endif %}
-
-      <button
-        hx-delete="/web/downloads/{{ job.id }}"
-        hx-target="closest .download-row"
-        hx-swap="outerHTML"
-        hx-confirm="Delete this download?"
-        aria-label="Delete download"
-        class="btn-danger"
-      >
-        <svg class="h-5 w-5" aria-hidden="true"><use href="#icon-trash" /></svg>
-      </button>
-    </div>
-  </div>
+    {% include 'partials/_download_item.html' %}
   {% endfor %}
 </div>
 {% else %}

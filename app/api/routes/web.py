@@ -1,5 +1,4 @@
 import asyncio
-import html
 import os
 import posixpath
 import uuid
@@ -16,6 +15,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
+from app.api.routes.web_helpers import (
+    _error_html,
+    _status_badge_html,
+    _status_badge_templates_json,
+    _success_html,
+)
 from app.auth import (
     clear_token_cookies,
     create_access_token,
@@ -44,6 +49,8 @@ router = APIRouter(prefix="/web", tags=["web"])
 # web.py -> app/api/routes/web.py, so parent^3 = app/
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+templates.env.globals["status_badge_html"] = _status_badge_html
+templates.env.globals["status_badge_templates_json"] = _status_badge_templates_json
 
 # Allowed redirect targets — only internal paths
 _ALLOWED_REDIRECT_HOSTS: tuple[str, ...] = ("/web/",)
@@ -201,16 +208,6 @@ async def validate_csrf_token(request: Request) -> bool:
             pass
 
     return False
-
-
-def _error_html(message: str) -> str:
-    """Render a standardized error HTML fragment."""
-    return f"<div class='error-box' role='alert' aria-live='assertive'>{html.escape(message)}</div>"
-
-
-def _success_html(message: str) -> str:
-    """Render a standardized success HTML fragment."""
-    return f"<div class='success-box' role='status' aria-live='polite'>{html.escape(message)}</div>"
 
 
 def _resolve_login_errors(error_code: str | None) -> tuple[str | None, dict[str, str]]:
