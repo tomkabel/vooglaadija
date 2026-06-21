@@ -15,9 +15,9 @@ from sqlalchemy import select
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app.api.dependencies import CurrentUserFromCookie
-from app.logging_config import get_logger
 from app.services.pubsub_service import get_pubsub_service
 from core.database import get_async_session_factory
+from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
 
 router = APIRouter(prefix="/web", tags=["sse"])

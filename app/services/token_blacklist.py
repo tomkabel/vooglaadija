@@ -10,7 +10,7 @@ so revoked tokens are automatically cleaned up.
 
 import time
 
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -39,7 +39,7 @@ async def blacklist_token(token_jti: str, ttl_seconds: int = _blacklist_ttl) -> 
     entry is automatically cleaned up after the token would have expired.
     """
     try:
-        from app.services.redis_client import get_redis_client
+        from core.redis_client import get_redis_client
 
         r = get_redis_client()
         await r.setex(f"{_blacklist_prefix}{token_jti}", ttl_seconds, "1")
@@ -63,7 +63,7 @@ async def is_token_blacklisted(token_jti: str) -> bool:
     _jti_cache.pop(token_jti, None)
 
     try:
-        from app.services.redis_client import get_redis_client
+        from core.redis_client import get_redis_client
 
         r = get_redis_client()
         exists = await r.exists(f"{_blacklist_prefix}{token_jti}")

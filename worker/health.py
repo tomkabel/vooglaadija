@@ -8,8 +8,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app.logging_config import get_logger
-from app.services.redis_client import close_redis_client, get_redis_client, reset_redis_client
+from core.logging_config import get_logger
+from core.redis_client import close_redis_client, get_redis_client, reset_redis_client
 from core.config import settings
 
 logger = get_logger(__name__)

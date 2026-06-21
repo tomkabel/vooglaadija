@@ -55,7 +55,7 @@ class TestAtomicClaims:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.queue.redis_client", mock_redis),
+            patch("core.queue.redis_client", mock_redis),
             patch(
                 "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
@@ -311,7 +311,7 @@ class TestAtomicClaimsIntegration:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.queue.redis_client", mock_redis),
+            patch("core.queue.redis_client", mock_redis),
             patch(
                 "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,

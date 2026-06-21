@@ -21,10 +21,10 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import update
 
 from core.database import get_async_session_factory
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
-from app.services.redis_client import CHAOS_ZOMBIE_JOB_KEY, get_redis_client
+from core.redis_client import CHAOS_ZOMBIE_JOB_KEY, get_redis_client
 
 logger = get_logger(__name__)
 

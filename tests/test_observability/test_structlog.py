@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from app.logging_config import configure_logging, get_logger
+from core.logging_config import configure_logging, get_logger
 
 structlog = pytest.importorskip("structlog", reason="structlog not installed")
 

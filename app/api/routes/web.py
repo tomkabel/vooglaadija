@@ -22,19 +22,19 @@ from app.auth import (
     create_refresh_token,
     set_token_cookies,
 )
-from app.logging_config import get_logger
 from app.services.auth_service import hash_password, verify_password
 from app.services.outbox_service import write_job_to_outbox
-from app.services.redis_client import get_all_chaos_status, get_redis_client
 from app.services.yt_dlp_service import resolve_video_title
 from app.utils.security import validate_file_path as _validate_file_path
 from app.utils.username import default_username_from_email as _default_username_from_email
 from app.utils.validators import is_supported_url, validate_password
 from core.config import settings
+from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
 from core.models.user import User, not_deleted
-from worker.queue import enqueue_job
+from core.queue import enqueue_job
+from core.redis_client import get_all_chaos_status, get_redis_client
 
 logger = get_logger(__name__)
 

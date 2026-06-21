@@ -1,14 +1,14 @@
 """Redis queue operations for the download worker.
 
-Delegates to app.services.redis_client for the shared Redis singleton.
+Delegates to core.redis_client for the shared Redis singleton.
 Provides convenience wrappers for queue operations, metrics, and
 deduplication to prevent duplicate job entries.
 """
 
 from uuid import UUID
 
-from app.logging_config import get_logger
-from app.services.redis_client import get_redis_client
+from core.logging_config import get_logger
+from core.redis_client import get_redis_client
 
 logger = get_logger(__name__)
 

@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from core.config import settings
 from core.database import get_async_session_factory
-from app.logging_config import configure_logging, get_logger
+from core.logging_config import configure_logging, get_logger
 from core.metrics import CIRCUIT_DEFERRED_DEPTH, DLQ_DEPTH, QUEUE_DEPTH
 from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
@@ -27,7 +27,7 @@ from worker.processor import (
     process_next_job,
     sync_outbox_to_queue,
 )
-from worker.queue import redis_client
+from core.queue import redis_client
 from worker.state import shutdown_event
 from worker.zombie_sweeper import requeue_stuck_jobs
 

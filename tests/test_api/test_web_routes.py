@@ -5,8 +5,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.main import app
+from core.models.download_job import DownloadJob
+from core.models.outbox import Outbox
 from tests.conftest import TestingSessionLocal
 
 
@@ -804,6 +807,70 @@ class TestCreateDownloadForm:
         assert create_response.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_create_download_htmx_keeps_outbox_when_core_queue_enqueue_fails(
+        self, sample_url
+    ):
+        """Test HTMX create succeeds and preserves outbox recovery when enqueue fails."""
+        email = f"download_recovery_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
+
+            headers = {"HX-Request": "true"}
+            if csrf_token:
+                headers["X-CSRF-Token"] = csrf_token
+
+            with (
+                patch(
+                    "app.api.routes.web.resolve_video_title", new_callable=AsyncMock
+                ) as mock_title,
+                patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue,
+            ):
+                mock_title.return_value = "Story 1.4 queued video"
+                mock_enqueue.side_effect = RuntimeError("redis unavailable")
+
+                create_response = await client.post(
+                    "/web/downloads",
+                    data={"url": sample_url},
+                    headers=headers,
+                    cookies={"access_token": access_token},
+                )
+
+        assert create_response.status_code == 200
+        mock_enqueue.assert_awaited_once()
+
+        async with TestingSessionLocal() as session:
+            job_result = await session.execute(
+                select(DownloadJob).where(DownloadJob.url == sample_url)
+            )
+            job = job_result.scalars().one()
+
+            outbox_result = await session.execute(
+                select(Outbox).where(Outbox.job_id == job.id, Outbox.status == "pending")
+            )
+            outbox_entry = outbox_result.scalars().one()
+
+        assert job.status == "pending"
+        assert outbox_entry.event_type == "enqueue_download"
+
+    @pytest.mark.asyncio
     async def test_create_download_requires_auth(self, sample_url):
         """Test that creating download requires authentication."""
         async with AsyncClient(
@@ -902,6 +969,61 @@ class TestCreateDownloadFullPage:
                 )
 
         assert create_response.status_code == 303
+
+    @pytest.mark.asyncio
+    async def test_create_download_full_page_keeps_outbox_when_core_queue_enqueue_fails(
+        self, sample_url
+    ):
+        """Test full-page create redirects and preserves outbox recovery when enqueue fails."""
+        email = f"fullpage_recovery_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
+
+            with patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue:
+                mock_enqueue.side_effect = RuntimeError("redis unavailable")
+
+                create_response = await client.post(
+                    "/web/downloads/full",
+                    data={"url": sample_url},
+                    headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
+                    cookies={"access_token": access_token},
+                )
+
+        assert create_response.status_code == 303
+        assert create_response.headers["location"] == "/web/downloads"
+        mock_enqueue.assert_awaited_once()
+
+        async with TestingSessionLocal() as session:
+            job_result = await session.execute(
+                select(DownloadJob).where(DownloadJob.url == sample_url)
+            )
+            job = job_result.scalars().one()
+
+            outbox_result = await session.execute(
+                select(Outbox).where(Outbox.job_id == job.id, Outbox.status == "pending")
+            )
+            outbox_entry = outbox_result.scalars().one()
+
+        assert job.status == "pending"
+        assert outbox_entry.event_type == "enqueue_download"
 
     @pytest.mark.asyncio
     async def test_create_download_full_page_requires_auth(self, sample_url):

@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.schemas.error import ErrorCode, error_response_doc, success_response_doc
-from app.services.redis_client import get_redis_client
+from core.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 

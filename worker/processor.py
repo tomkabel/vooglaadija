@@ -26,7 +26,7 @@ from sqlalchemy.exc import OperationalError
 
 from core.config import settings
 from core.database import get_async_session_factory
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 from core.metrics import (
     CIRCUIT_DEFERRED_DEPTH,
     DLQ_DEPTH,
@@ -56,7 +56,7 @@ from app.services.error_classifier import (
 from app.services.pubsub_service import get_pubsub_service
 from app.services.throttle_predictor import get_risk_score, risk_check_and_warn
 from worker.health import update_worker_state
-from worker.queue import push_to_download_queue, push_to_retry_queue, redis_client
+from core.queue import push_to_download_queue, push_to_retry_queue, redis_client
 
 logger = get_logger(__name__)
 

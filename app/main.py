@@ -45,11 +45,11 @@ from app.api.routes.metrics import router as metrics_router
 from app.api.routes.sse import router as sse_router
 from app.api.routes.web import router as web_router
 from app.auth import verify_token
-from app.logging_config import configure_logging, get_logger
 from app.schemas.error import ErrorCode, error_response_dict
-from app.services.redis_client import check_worker_health
 from core.config import settings
+from core.logging_config import configure_logging, get_logger
 from core.metrics import WORKER_STATUS, init_metrics
+from core.redis_client import check_worker_health
 
 # Initialize structlog - must happen before any logging
 configure_logging(log_level=os.environ.get("LOG_LEVEL", "INFO"))

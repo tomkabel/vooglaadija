@@ -9,10 +9,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.logging_config import get_logger
 from app.services.outbox_service import write_job_to_outbox
+from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
-from worker.queue import enqueue_job
+from core.queue import enqueue_job
 
 logger = get_logger(__name__)
 

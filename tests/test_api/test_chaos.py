@@ -145,7 +145,7 @@ class TestChaosReset:
         )
         mock_redis.delete = AsyncMock()
 
-        with patch("app.services.redis_client.get_redis_client", return_value=mock_redis):
+        with patch("core.redis_client.get_redis_client", return_value=mock_redis):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -167,7 +167,7 @@ class TestChaosReset:
         mock_redis.scan = AsyncMock(return_value=(0, []))
         mock_redis.delete = AsyncMock()
 
-        with patch("app.services.redis_client.get_redis_client", return_value=mock_redis):
+        with patch("core.redis_client.get_redis_client", return_value=mock_redis):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:

@@ -4,13 +4,13 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.routes.web import validate_csrf_token
-from app.logging_config import get_logger
-from app.services.redis_client import (
+from core.config import settings
+from core.logging_config import get_logger
+from core.redis_client import (
     SCENARIO_KEY_MAP,
     delete_chaos_keys,
     get_redis_client,
 )
-from core.config import settings
 
 logger = get_logger(__name__)
 
@@ -122,7 +122,7 @@ async def chaos_status(
 ):
     _require_feature_flag()
 
-    from app.services.redis_client import KEY_TO_SCENARIO_FIELD
+    from core.redis_client import KEY_TO_SCENARIO_FIELD
 
     r = get_redis_client()
     status = ChaosStatus()

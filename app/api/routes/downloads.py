@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.rate_limit_config import limiter
-from app.logging_config import get_logger
 from app.schemas.download import (
     DownloadCreate,
     DownloadListResponse,
@@ -28,6 +27,7 @@ from app.schemas.error import (
 from app.services.outbox_service import write_job_to_outbox
 from app.services.yt_dlp_service import resolve_video_title
 from app.utils.security import validate_file_path
+from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
 

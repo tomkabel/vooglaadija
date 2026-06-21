@@ -9,8 +9,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse
 
-from app.logging_config import get_logger
 from app.utils.validators import validate_url_not_ssrf
+from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 

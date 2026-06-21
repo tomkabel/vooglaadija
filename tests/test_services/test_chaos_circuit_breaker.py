@@ -23,7 +23,7 @@ class TestChaosOverrideCache:
         cb._chaos_cache = (time.monotonic(), True)
 
         with patch(
-            "app.services.redis_client.check_chaos_key",
+            "core.redis_client.check_chaos_key",
             side_effect=Exception("should not be called"),
         ):
             result = await cb._is_chaos_override_active()
@@ -37,7 +37,7 @@ class TestChaosOverrideCache:
         cb._chaos_cache = (time.monotonic(), False)
 
         with patch(
-            "app.services.redis_client.check_chaos_key",
+            "core.redis_client.check_chaos_key",
             side_effect=Exception("should not be called"),
         ):
             result = await cb._is_chaos_override_active()
@@ -51,7 +51,7 @@ class TestChaosOverrideCache:
         cb._chaos_cache = (time.monotonic() - 2.0, False)
 
         with patch(
-            "app.services.redis_client.check_chaos_key",
+            "core.redis_client.check_chaos_key",
             AsyncMock(return_value=True),
         ):
             result = await cb._is_chaos_override_active()

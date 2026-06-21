@@ -23,8 +23,8 @@ from collections.abc import Awaitable, Callable
 from enum import Enum
 from typing import Any
 
-from app.logging_config import get_logger
-from app.services import redis_client
+from core import redis_client
+from core.logging_config import get_logger
 from core.metrics import CIRCUIT_BREAKER_STATE, RECOVERIES
 
 logger = get_logger(__name__)
