@@ -7,11 +7,10 @@ job status updates, replacing the polling-based SSE implementation.
 import json
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any
 
-import redis.asyncio as aioredis
-
-from core.config import settings
 from core.logging_config import get_logger
+from core.redis_client import get_redis_client
 
 logger = get_logger(__name__)
 
@@ -33,34 +32,16 @@ class PubSubService:
       - job_progress:{user_id} — download progress (percent/speed/ETA)
     """
 
-    def __init__(self, redis_url: str | None = None):
-        """Initialize the PubSubService.
-
-        Args:
-            redis_url: Redis connection URL. Defaults to settings.redis_url.
-        """
-        self.redis_url = redis_url or settings.redis_url
-        self._client: aioredis.Redis | None = None
-
-    async def get_client(self) -> aioredis.Redis:
-        """Get or create Redis client with connection pooling.
+    async def get_client(self) -> Any:
+        """Get the shared Redis client.
 
         Returns:
             Redis client instance.
         """
-        if self._client is None:
-            self._client = aioredis.from_url(
-                self.redis_url,
-                decode_responses=True,
-                max_connections=20,
-            )
-        return self._client
+        return get_redis_client()
 
     async def close(self) -> None:
-        """Close the Redis client connection."""
-        if self._client is not None:
-            await self._client.close()
-            self._client = None
+        """Clear PubSubService wrapper state without closing the shared client."""
 
     def get_channel_for_user(self, user_id: uuid.UUID) -> str:
         """Get the pub/sub channel name for a user.
@@ -107,7 +88,7 @@ class PubSubService:
             subscribers=result,
         )
 
-        return result
+        return int(result)
 
     async def publish_job_progress(self, user_id: uuid.UUID, job_data: dict) -> int:
         """Publish a download progress update to a user's progress channel.
@@ -132,10 +113,10 @@ class PubSubService:
             subscribers=result,
         )
 
-        return result
+        return int(result)
 
     async def _check_pool_health(self) -> bool:
-        """Check Redis connection pool utilization.
+        """Check shared Redis connection pool utilization.
 
         Returns True if pool has sufficient headroom. Logs a warning
         if >80% of connections are in use, which can happen under
@@ -237,17 +218,15 @@ class PubSubService:
             await pubsub.close()
             logger.debug("pubsub_subscription_ended", channel=channel, name=log_name)
 
-    async def subscribe(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
+    def subscribe(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
         """Subscribe to a user's job status channel."""
         channel = self.get_channel_for_user(user_id)
-        async for data in self._listen(channel, "status", yield_raw=True):
-            yield data
+        return self._listen(channel, "status", yield_raw=True)
 
-    async def subscribe_progress(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
+    def subscribe_progress(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
         """Subscribe to a user's download progress channel."""
         channel = self.get_progress_channel_for_user(user_id)
-        async for data in self._listen(channel, "progress", yield_raw=False):
-            yield data
+        return self._listen(channel, "progress", yield_raw=False)
 
     async def health_check(self) -> bool:
         """Check if Redis connection is healthy.
@@ -280,7 +259,7 @@ def get_pubsub_service() -> PubSubService:
 
 
 async def close_pubsub_service() -> None:
-    """Close the global PubSubService instance."""
+    """Clear the global PubSubService wrapper instance."""
     global _pubsub_service
     if _pubsub_service is not None:
         await _pubsub_service.close()

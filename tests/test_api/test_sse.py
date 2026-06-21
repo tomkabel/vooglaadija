@@ -1,5 +1,6 @@
 """Tests for SSE (Server-Sent Events) endpoints."""
 
+import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -516,6 +517,76 @@ class TestSubscribeToPubsub:
             events.append(event)
 
         assert len(events) == 1
+
+
+class TestSubscribeToProgressPubsub:
+    """Tests for _subscribe_to_progress_pubsub function."""
+
+    @pytest.mark.asyncio
+    async def test_subscribe_to_progress_pubsub_yields_valid_progress(self):
+        """Test that progress pub/sub messages are converted to progress SSE events."""
+        from app.api.routes.sse import _subscribe_to_progress_pubsub
+
+        job_id = str(uuid.uuid4())
+        pubsub_messages = [
+            {"id": job_id, "status": "processing"},
+            {"progress": {"percent": 15}},
+            {"id": job_id, "progress": {"percent": 42, "speed": "1.2MiB/s"}},
+        ]
+
+        async def mock_subscribe_progress(user_id):
+            for msg in pubsub_messages:
+                yield msg
+
+        mock_pubsub = MagicMock()
+        mock_pubsub.subscribe_progress = mock_subscribe_progress
+
+        events = []
+        async for event in _subscribe_to_progress_pubsub(mock_pubsub, uuid.uuid4()):
+            events.append(event)
+
+        assert len(events) == 1
+        assert events[0].event == "progress_update"
+        assert json.loads(events[0].data)["progress"]["percent"] == 42
+
+
+class TestProgressEventGenerator:
+    """Tests for progress_event_generator function."""
+
+    @pytest.mark.asyncio
+    async def test_progress_event_generator_reconnects_and_yields_updates(self):
+        """Test that progress SSE reconnects after a pub/sub error and yields updates."""
+        from app.api.routes.sse import progress_event_generator
+
+        mock_request = MagicMock()
+        mock_request.is_disconnected = AsyncMock(return_value=False)
+
+        job_id = str(uuid.uuid4())
+        attempt_count = [0]
+
+        async def mock_subscribe_progress(user_id):
+            attempt_count[0] += 1
+            if attempt_count[0] == 1:
+                raise Exception("Connection lost")
+            yield {"id": job_id, "progress": {"percent": 75}}
+
+        mock_pubsub = MagicMock()
+        mock_pubsub.subscribe_progress = mock_subscribe_progress
+
+        with (
+            patch("app.api.routes.sse.get_pubsub_service", return_value=mock_pubsub),
+            patch("app.api.routes.sse.asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
+            events = []
+            async for event in progress_event_generator(mock_request, uuid.uuid4()):
+                events.append(event)
+                break
+
+        assert attempt_count[0] == 2
+        assert len(events) == 1
+        assert events[0].event == "progress_update"
+        assert json.loads(events[0].data)["progress"]["percent"] == 75
+        mock_sleep.assert_awaited_once()
 
 
 class TestPubsubEventGenerator:

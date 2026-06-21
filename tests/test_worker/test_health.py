@@ -200,6 +200,22 @@ class TestWriteHealthAsync:
             assert isinstance(result, bool)
 
     @pytest.mark.asyncio
+    async def test_write_health_async_uses_shared_core_client(self):
+        """Test write_health_async writes through the shared core Redis client path."""
+        from worker.health import write_health_async
+
+        mock_client = AsyncMock()
+        mock_client.setex = AsyncMock()
+
+        with patch("worker.health.get_redis_client", return_value=mock_client) as mock_get_client:
+            result = await write_health_async()
+
+        assert result is True
+        mock_get_client.assert_called_once_with()
+        mock_client.setex.assert_called_once()
+        assert mock_client.setex.call_args.args[0].startswith("worker:health:")
+
+    @pytest.mark.asyncio
     async def test_write_health_async_handles_connection_error(self):
         """Test write_health_async handles connection errors."""
         import redis.asyncio as aioredis

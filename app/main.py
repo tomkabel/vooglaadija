@@ -49,7 +49,7 @@ from app.schemas.error import ErrorCode, error_response_dict
 from core.config import settings
 from core.logging_config import configure_logging, get_logger
 from core.metrics import WORKER_STATUS, init_metrics
-from core.redis_client import check_worker_health
+from core.redis_client import check_worker_health, close_redis_client
 
 # Initialize structlog - must happen before any logging
 configure_logging(log_level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -232,11 +232,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     WORKER_STATUS.set(0)  # Mark worker down on API shutdown
     WORKER_STATUS.set(0)
 
-    # Clean up global pubsub service connection pool
+    # Clear pub/sub wrapper state, then let core own shared Redis shutdown.
     try:
         from app.services.pubsub_service import close_pubsub_service
 
         await close_pubsub_service()
+        await close_redis_client()
     except Exception:
         pass
 
