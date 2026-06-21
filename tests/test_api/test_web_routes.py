@@ -328,7 +328,7 @@ class TestDownloadsBasePath:
         """The downloads base path is derived from the configured storage path."""
         from app.api.routes.web import _downloads_base_path
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
 
             assert _downloads_base_path() == f"{tmp_path}/downloads"
@@ -2257,7 +2257,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job1, mock_job2], mock_logger)
 
@@ -2298,7 +2298,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -2320,7 +2320,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -2344,9 +2344,12 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
-            with patch("app.api.routes.web.os.remove", side_effect=OSError("Permission denied")):
+            with patch(
+                "app.api.routes.web.web_settings.os.remove",
+                side_effect=OSError("Permission denied"),
+            ):
                 all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
         assert all_cleaned is False
@@ -2369,10 +2372,11 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch(
-                "app.api.routes.web.os.remove", side_effect=RuntimeError("Unexpected error")
+                "app.api.routes.web.web_settings.os.remove",
+                side_effect=RuntimeError("Unexpected error"),
             ):
                 all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -2841,7 +2845,7 @@ class TestDeleteAccount:
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.api.routes.web.web_settings.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 response = await client.post(
@@ -2965,7 +2969,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 delete_response = await client.delete(
@@ -3030,7 +3034,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
                 with patch(
                     "app.api.routes.web.web_downloads.os.remove",
@@ -3266,7 +3270,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
@@ -3315,7 +3319,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
@@ -3377,7 +3381,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.api.routes.web.web_helpers.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(

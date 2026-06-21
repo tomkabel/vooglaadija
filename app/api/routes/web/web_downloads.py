@@ -11,7 +11,7 @@ from sqlalchemy import delete, select
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
-from app.api.routes.web import (
+from app.api.routes.web.web_helpers import (
     _downloads_base_path,
     _htmx_or_redirect,
     get_csrf_token,

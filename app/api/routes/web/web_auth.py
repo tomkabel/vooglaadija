@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
-from app.api.routes.web import (
+from app.api.routes.web.web_helpers import (
     _change_password_response,
     _demo_user_or_raise,
     _htmx_or_redirect,
