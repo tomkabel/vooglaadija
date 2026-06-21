@@ -125,10 +125,21 @@ class TestStartHealthServer:
 
         health_module._health_server = None
 
-        with patch.dict(os.environ, {"WORKER_HEALTH_PORT": "18083"}):
-            start_health_server()
+        mock_server = MagicMock()
+
+        with (
+            patch.dict(os.environ, {"WORKER_HEALTH_PORT": "18083"}),
+            patch("worker.health.HTTPServer", return_value=mock_server) as mock_http_server,
+        ):
+            result = start_health_server()
+            assert result is mock_server
             stop_health_server()
             assert health_module._health_server is None
+            mock_http_server.assert_called_once_with(
+                ("0.0.0.0", 18083), health_module._HealthHandler
+            )
+            mock_server.shutdown.assert_called_once()
+            mock_server.server_close.assert_called_once()
 
 
 class TestWriteHealthSync:
