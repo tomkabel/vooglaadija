@@ -887,16 +887,14 @@ async def reset_stuck_jobs(timeout_minutes: int = 10) -> int:
 async def sync_outbox_to_queue(batch_size: int = 100) -> int:
     """Sync pending outbox entries to Redis queue.
 
-    Uses a 2-phase approach to prevent duplicate re-push on crash:
-    1. Mark entries as 'enqueued' in DB (before Redis push)
-    2. Push to Redis
-    3. Delete entries from DB (after successful Redis push)
+    Pending rows are selected with ``FOR UPDATE SKIP LOCKED`` where supported,
+    pushed to Redis, and deleted only after Redis confirms the enqueue. Failed
+    pushes remain ``pending`` for the next sync cycle.
 
-    If the process crashes between step 1 and step 2, the entry stays
-    'enqueued' and won't be re-claimed on the next cycle — the job
-    is safe (no duplicate). If crash between step 2 and step 3, the
-    entry is 'enqueued' but already in Redis — the next cleanup cycle
-    will delete it via cleanup_stale_outbox_entries.
+    This is intentionally at-least-once. Queue helpers deduplicate Redis entries,
+    so a crash after Redis push but before DB delete can be retried without
+    creating unbounded duplicate work, while a Redis outage cannot lose outbox
+    rows by moving them to a terminal "enqueued" state too early.
     """
     session_factory = get_async_session_factory()
     synced = 0
@@ -914,41 +912,35 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
         if not entries:
             return 0
 
-        # Phase 1: Mark all claimed entries as enqueued
-        entry_ids = [e.id for e in entries]
-        await db.execute(
-            update(Outbox)
-            .where(Outbox.id.in_(entry_ids), Outbox.status == "pending")
-            .values(status="enqueued", processed_at=datetime.now(UTC))
-        )
-        await db.commit()
-
-        # Phase 2: Push to Redis (no DB lock held — entries are no longer 'pending')
+        processed_entry_ids = []
         for entry in entries:
             try:
+                enqueued = False
                 if entry.event_type == "retry_scheduled":
                     payload_data = json.loads(entry.payload) if entry.payload else {}
                     next_retry_at = payload_data.get("next_retry_at")
                     if next_retry_at:
                         retry_timestamp = datetime.fromisoformat(next_retry_at).timestamp()
-                        await push_to_retry_queue(entry.job_id, retry_timestamp)
+                        enqueued = await push_to_retry_queue(entry.job_id, retry_timestamp)
                     else:
                         logger.error("missing_next_retry_at_in_payload", job_id=str(entry.job_id))
                         continue
                 else:
-                    await push_to_download_queue(entry.job_id)
-                synced += 1
+                    enqueued = await push_to_download_queue(entry.job_id)
+                if enqueued:
+                    processed_entry_ids.append(entry.id)
+                    synced += 1
             except Exception as e:
                 logger.error(
                     "failed_to_enqueue_job_from_outbox", job_id=str(entry.job_id), error=str(e)
                 )
 
-        # Phase 3: Delete processed entries (best-effort; cleanup handles leftovers)
-        try:
-            await db.execute(delete(Outbox).where(Outbox.id.in_(entry_ids)))
-            await db.commit()
-        except Exception:
-            await db.rollback()
+        if processed_entry_ids:
+            try:
+                await db.execute(delete(Outbox).where(Outbox.id.in_(processed_entry_ids)))
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
     if synced > 0:
         logger.info("synced_outbox_entries_to_queue", count=synced)
