@@ -49,6 +49,7 @@ from app.services.error_classifier import (
     ErrorCategory,
     calculate_delay,
     classify_error,
+    extract_retry_after,
     format_attempt_error,
     get_attempt_timeout,
     is_non_retryable,
@@ -723,6 +724,7 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
                     category=category,
                     attempt=job.retry_count,
                     prev_delay=prev_delay,
+                    retry_after=extract_retry_after(error_str),
                 )
                 next_retry = datetime.now(UTC) + timedelta(seconds=delay_seconds)
 

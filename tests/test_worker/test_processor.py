@@ -10,6 +10,12 @@ from sqlalchemy import select
 from core.models.download_job import DownloadJob
 
 
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 class TestProcessNextJob:
     """Tests for process_next_job function."""
 
@@ -99,6 +105,89 @@ class TestProcessNextJob:
             completed_job = result.scalar_one()
             assert completed_job.status == "completed"
             assert completed_job.file_path == "/storage/test.mp4"
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_retry_scheduling_delegates_delay_calculation(
+        self,
+        db_session,
+        mock_redis_client,
+    ):
+        """Test retry scheduling uses worker.processor.calculate_delay for next_retry_at."""
+        import asyncio
+
+        from app.services.error_classifier import ErrorCategory
+        from core.database import get_async_session_factory
+        from worker.processor import process_next_job
+
+        job_id = UUID("550e8400-e29b-41d4-a716-446655440010")
+        job = DownloadJob(
+            id=job_id,
+            user_id=UUID("550e8400-e29b-41d4-a716-446655440005"),
+            url="https://www.youtube.com/watch?v=retry",
+            status="pending",
+            retry_count=0,
+            max_retries=5,
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        sentinel_delay = 123.0
+        retry_queue_calls: list[tuple[UUID, float]] = []
+
+        async def record_retry_queue(job_id_arg: UUID, retry_timestamp: float) -> bool:
+            retry_queue_calls.append((job_id_arg, retry_timestamp))
+            return True
+
+        mock_shutdown_event = asyncio.Event()
+
+        with (
+            patch("worker.processor.redis_client", mock_redis_client),
+            patch(
+                "worker.processor.extract_media_with_circuit_breaker",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("HTTP Error 429 Too Many Requests Retry-After: 90"),
+            ),
+            patch("worker.processor._publish_job_status", new_callable=AsyncMock),
+            patch("worker.processor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
+            patch("worker.processor.calculate_delay", return_value=sentinel_delay) as delay_mock,
+            patch(
+                "worker.processor.push_to_retry_queue",
+                new_callable=AsyncMock,
+                side_effect=record_retry_queue,
+            ),
+            patch("worker.main.shutdown_event", mock_shutdown_event),
+            patch("worker.state.shutdown_event", mock_shutdown_event),
+        ):
+            started_at = datetime.now(UTC)
+            await process_next_job(job_id)
+            finished_at = datetime.now(UTC)
+
+        delay_mock.assert_called_once_with(
+            category=ErrorCategory.RATE_LIMITED,
+            attempt=0,
+            prev_delay=None,
+            retry_after=90,
+        )
+
+        session_factory = get_async_session_factory()
+        async with session_factory() as new_session:
+            result = await new_session.execute(select(DownloadJob).where(DownloadJob.id == job_id))
+            retried_job = result.scalar_one()
+
+        assert retried_job.status == "pending"
+        assert retried_job.retry_count == 1
+        assert retried_job.error_category == ErrorCategory.RATE_LIMITED.value
+        assert retried_job.next_retry_at is not None
+
+        scheduled_at = _as_utc(retried_job.next_retry_at)
+        assert started_at + timedelta(seconds=sentinel_delay - 1) <= scheduled_at
+        assert scheduled_at <= finished_at + timedelta(seconds=sentinel_delay + 1)
+
+        assert len(retry_queue_calls) == 1
+        queued_job_id, retry_timestamp = retry_queue_calls[0]
+        assert queued_job_id == job_id
+        assert retry_timestamp == pytest.approx(scheduled_at.timestamp(), abs=0.01)
 
     @pytest.mark.unit
     async def test_move_to_dlq_populates_final_error_category(self, db_session):
