@@ -482,9 +482,7 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
             # threshold) from racing with long-running extractions.
             _stop_hb = asyncio.Event()
             _hb_task = asyncio.create_task(
-                _periodic_heartbeat(
-                    get_async_session_factory(), job_id, _stop_hb
-                )
+                _periodic_heartbeat(get_async_session_factory(), job_id, _stop_hb)
             )
 
             loop = asyncio.get_running_loop()
@@ -513,9 +511,7 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
                     _cleanup_downloaded_file(None)
                     update_worker_state(status="running", current_job_started_at=None)
                     JOBS_COMPLETED.labels(status="deferred").inc()
-                    logger.info(
-                        "shutdown_requeued_timed_out_job", job_id=str(job_id)
-                    )
+                    logger.info("shutdown_requeued_timed_out_job", job_id=str(job_id))
                     return False
 
                 raise TimeoutError(
@@ -550,9 +546,7 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
             if result.rowcount == 0:
                 # Job was re-claimed by zombie sweeper — our work is orphaned
                 _cleanup_downloaded_file(file_path)
-                logger.warning(
-                    "job_already_requeued_by_zombie_sweeper", job_id=str(job_id)
-                )
+                logger.warning("job_already_requeued_by_zombie_sweeper", job_id=str(job_id))
                 update_worker_state(status="running", current_job_started_at=None)
                 return False
             await db.commit()
@@ -966,8 +960,9 @@ async def cleanup_stale_outbox_entries(hours: int = 24) -> int:
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
     async with session_factory() as db:
         result = await db.execute(
-            delete(Outbox)
-            .where(Outbox.created_at < cutoff, Outbox.status.in_(["enqueued", "completed"]))
+            delete(Outbox).where(
+                Outbox.created_at < cutoff, Outbox.status.in_(["enqueued", "completed"])
+            )
         )
         await db.commit()
         count = result.rowcount

@@ -145,6 +145,7 @@ async def _check_redirect_target(url: str) -> bool:
     connecting to it. Returns True if safe, False if any redirect target
     resolves to a private IP.
     """
+
     class _NoFollowRedirects(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             req._redirect_target = newurl  # stash for inspection

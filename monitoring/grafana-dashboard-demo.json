@@ -1,15 +1,15 @@
 {
   "__requires": [
     {
-      "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
+      "type": "grafana",
       "version": "9.0.0"
     },
     {
-      "type": "datasource",
       "id": "prometheus",
       "name": "Prometheus",
+      "type": "datasource",
       "version": "1.0.0"
     }
   ],
@@ -22,15 +22,6 @@
   "links": [],
   "panels": [
     {
-      "id": 1,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
-      "type": "stat",
-      "title": "Circuit Breaker State",
       "description": "GREEN=CLOSED (healthy) | RED=OPEN (failing fast) | YELLOW=HALF_OPEN (testing recovery)",
       "fieldConfig": {
         "defaults": {
@@ -41,16 +32,16 @@
             {
               "options": {
                 "0": {
-                  "text": "CLOSED",
-                  "color": "green"
+                  "color": "green",
+                  "text": "CLOSED"
                 },
                 "1": {
-                  "text": "OPEN",
-                  "color": "red"
+                  "color": "red",
+                  "text": "OPEN"
                 },
                 "2": {
-                  "text": "HALF_OPEN",
-                  "color": "yellow"
+                  "color": "yellow",
+                  "text": "HALF_OPEN"
                 }
               },
               "type": "value"
@@ -76,21 +67,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 48,
           "valueSize": 48
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -101,18 +99,12 @@
           "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Circuit Breaker State",
+      "type": "stat"
     },
     {
-      "id": 2,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "type": "timeseries",
-      "title": "Queue Depth",
+      "description": "Spikes when worker is unavailable — jobs accumulate in Redis queue",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -128,9 +120,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -161,6 +153,13 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
       "options": {
         "legend": {
           "calcs": [],
@@ -181,18 +180,11 @@
           "refId": "A"
         }
       ],
-      "description": "Spikes when worker is unavailable — jobs accumulate in Redis queue"
+      "title": "Queue Depth",
+      "type": "timeseries"
     },
     {
-      "id": 3,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "type": "timeseries",
-      "title": "Error Rate (5xx + 429)",
+      "description": "Spikes on YouTube 429 or connection failures — circuit breaker opens to protect",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -208,9 +200,9 @@
             "fillOpacity": 80,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "linear",
             "lineWidth": 0,
@@ -245,6 +237,13 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -265,18 +264,10 @@
           "refId": "A"
         }
       ],
-      "description": "Spikes on YouTube 429 or connection failures — circuit breaker opens to protect"
+      "title": "Error Rate (5xx + 429)",
+      "type": "timeseries"
     },
     {
-      "id": 4,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "type": "stat",
-      "title": "Recovery Events",
       "description": "Total number of recovery events (zombie sweep recoveries or circuit breaker HALF_OPEN→CLOSED transitions)",
       "fieldConfig": {
         "defaults": {
@@ -296,21 +287,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 4,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 48,
           "valueSize": 48
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -321,7 +319,9 @@
           "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Recovery Events",
+      "type": "stat"
     }
   ],
   "refresh": "2s",

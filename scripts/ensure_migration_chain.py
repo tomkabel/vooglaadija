@@ -28,7 +28,6 @@ import re
 import sys
 from pathlib import Path
 
-
 ALEMBIC_CFG_PATH = "/app/alembic.ini"
 VERSIONS_DIR = "/app/alembic/versions"
 
@@ -123,7 +122,8 @@ def main() -> int:
     available = _get_available_revisions(VERSIONS_DIR)
     if not available:
         print(
-            "WARNING: no migration files found in %s — skipping", VERSIONS_DIR,
+            "WARNING: no migration files found in %s — skipping",
+            VERSIONS_DIR,
             file=sys.stderr,
         )
         return 0

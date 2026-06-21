@@ -373,16 +373,14 @@
           return;
         }
         var valid = /^https?:\/\/.+/.test(val);
-        if (!valid) {
-          if (!errorEl) {
-            var err = document.createElement('p');
-            err.id = 'url-validation-error';
-            err.className = 'text-xs text-coral-400 font-body mt-1.5';
-            err.textContent = 'Must start with http:// or https://';
-            urlInput.parentElement.after(err);
-          }
-        } else {
+        if (valid) {
           if (errorEl) errorEl.remove();
+        } else if (!errorEl) {
+          var err = document.createElement('p');
+          err.id = 'url-validation-error';
+          err.className = 'text-xs text-coral-400 font-body mt-1.5';
+          err.textContent = 'Must start with http:// or https://';
+          urlInput.parentElement.after(err);
         }
       }, 300);
     });

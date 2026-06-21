@@ -454,9 +454,7 @@ def get_youtube_circuit_breaker() -> CircuitBreaker:
             success_threshold=int(os.environ.get("CIRCUIT_BREAKER_SUCCESS_THRESHOLD", "3")),
             reset_timeout=float(os.environ.get("CIRCUIT_BREAKER_RESET_TIMEOUT", "30.0")),
             half_open_max_calls=int(os.environ.get("CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS", "3")),
-            use_redis_distributed=os.environ.get(
-                "CIRCUIT_BREAKER_USE_REDIS", ""
-            ).lower()
+            use_redis_distributed=os.environ.get("CIRCUIT_BREAKER_USE_REDIS", "").lower()
             in ("1", "true", "yes"),
         )
     return _youtube_circuit_breaker

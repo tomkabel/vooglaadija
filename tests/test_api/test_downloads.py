@@ -1,8 +1,7 @@
 """Downloads API endpoint tests."""
 
 import uuid
-from datetime import UTC, datetime
-from unittest.mock import patch
+from datetime import datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -11,8 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.models.download_job import DownloadJob
-
-from tests.conftest import create_test_user_and_login  # noqa: F811
+from tests.conftest import create_test_user_and_login
 
 
 @pytest.mark.asyncio

@@ -14,9 +14,7 @@ pwd_context = CryptContext(
 
 async def hash_password(password: str) -> str:
     loop = asyncio.get_running_loop()
-    return str(
-        await loop.run_in_executor(None, pwd_context.hash, password)
-    )
+    return str(await loop.run_in_executor(None, pwd_context.hash, password))
 
 
 async def verify_password(plain_password: str, hashed_password: str) -> bool:

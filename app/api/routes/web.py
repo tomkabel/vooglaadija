@@ -918,9 +918,7 @@ async def create_download_form(
     # Enqueue job for processing (best-effort; outbox handles recovery)
     try:
         await enqueue_job(job_id)
-        await db.execute(
-            delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending")
-        )
+        await db.execute(delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending"))
         await db.commit()
     except Exception:
         logger.warning("failed_to_enqueue_job_outbox_recovery", job_id=str(job_id))
@@ -975,9 +973,7 @@ async def create_download_full_page(
     # Enqueue job for processing (best-effort; outbox handles recovery)
     try:
         await enqueue_job(job_id)
-        await db.execute(
-            delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending")
-        )
+        await db.execute(delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending"))
         await db.commit()
     except Exception:
         logger.warning("failed_to_enqueue_job_outbox_recovery", job_id=str(job_id))

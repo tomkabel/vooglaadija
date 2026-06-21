@@ -97,13 +97,15 @@ async def requeue_stuck_jobs(timeout_minutes: int = 15) -> int:
         # Create outbox entries for each requeued job
         now = datetime.now(UTC)
         for job_id in requeued_ids:
-            db.add(Outbox(
-                id=uuid.uuid4(),
-                job_id=job_id,
-                event_type="zombie_recovery",
-                payload=json.dumps({"recovered_at": now.isoformat()}),
-                status="pending",
-            ))
+            db.add(
+                Outbox(
+                    id=uuid.uuid4(),
+                    job_id=job_id,
+                    event_type="zombie_recovery",
+                    payload=json.dumps({"recovered_at": now.isoformat()}),
+                    status="pending",
+                )
+            )
 
         try:
             await db.commit()

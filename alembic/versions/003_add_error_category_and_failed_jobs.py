@@ -51,9 +51,7 @@ def upgrade() -> None:
         ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(
-            ["original_job_id"], ["download_jobs.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["original_job_id"], ["download_jobs.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
     op.create_index(

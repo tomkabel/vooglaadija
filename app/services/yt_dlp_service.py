@@ -47,9 +47,7 @@ _metadata_semaphore = asyncio.Semaphore(5)
 # Each extraction subprocess consumes ~50-100MB RAM during format negotiation and download
 # — 2 concurrent avoids OOM on constrained hosts.
 # Configurable via YT_DLP_EXTRACTION_CONCURRENCY env var (default 2).
-_EXTRACTION_CONCURRENCY = max(
-    1, int(os.environ.get("YT_DLP_EXTRACTION_CONCURRENCY", "2"))
-)
+_EXTRACTION_CONCURRENCY = max(1, int(os.environ.get("YT_DLP_EXTRACTION_CONCURRENCY", "2")))
 _EXTRACTION_SEMAPHORE = asyncio.Semaphore(_EXTRACTION_CONCURRENCY)
 
 
@@ -156,9 +154,7 @@ class StorageError(Exception):
     """Raised when storage operations fail."""
 
 
-async def _kill_process_group(
-    process: asyncio.subprocess.Process, graceful: bool = True
-) -> None:
+async def _kill_process_group(process: asyncio.subprocess.Process, graceful: bool = True) -> None:
     """Kill a process group with SIGTERM grace window before SIGKILL.
 
     Args:
@@ -525,7 +521,9 @@ async def extract_media_url(
     # Run via subprocess so it can be killed on timeout.
     # Extraction semaphore prevents OOM from N concurrent ~50-100MB processes.
     async with _EXTRACTION_SEMAPHORE:
-        info = await _extract_via_subprocess(url, output_template, progress_callback=progress_callback)
+        info = await _extract_via_subprocess(
+            url, output_template, progress_callback=progress_callback
+        )
 
     title: str | None = info.get("title") or None
     ext = info.get("ext") or "mp4"

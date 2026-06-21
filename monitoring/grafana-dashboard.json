@@ -1,15 +1,15 @@
 {
   "__requires": [
     {
-      "type": "grafana",
       "id": "grafana",
       "name": "Grafana",
+      "type": "grafana",
       "version": "9.0.0"
     },
     {
-      "type": "datasource",
       "id": "prometheus",
       "name": "Prometheus",
+      "type": "datasource",
       "version": "1.0.0"
     }
   ],
@@ -22,15 +22,6 @@
   "links": [],
   "panels": [
     {
-      "id": 1,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
-      "type": "stat",
-      "title": "Circuit Breaker State",
       "description": "GREEN=CLOSED (healthy) | RED=OPEN (failing fast) | YELLOW=HALF_OPEN (testing recovery)",
       "fieldConfig": {
         "defaults": {
@@ -41,16 +32,16 @@
             {
               "options": {
                 "0": {
-                  "text": "CLOSED",
-                  "color": "green"
+                  "color": "green",
+                  "text": "CLOSED"
                 },
                 "1": {
-                  "text": "OPEN",
-                  "color": "red"
+                  "color": "red",
+                  "text": "OPEN"
                 },
                 "2": {
-                  "text": "HALF_OPEN",
-                  "color": "yellow"
+                  "color": "yellow",
+                  "text": "HALF_OPEN"
                 }
               },
               "type": "value"
@@ -76,21 +67,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 48,
           "valueSize": 48
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -101,18 +99,12 @@
           "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Circuit Breaker State",
+      "type": "stat"
     },
     {
-      "id": 2,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "type": "timeseries",
-      "title": "Queue Depth",
+      "description": "Spikes when worker is unavailable — jobs accumulate in Redis queue",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -128,9 +120,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -161,6 +153,13 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
       "options": {
         "legend": {
           "calcs": [],
@@ -181,18 +180,11 @@
           "refId": "A"
         }
       ],
-      "description": "Spikes when worker is unavailable — jobs accumulate in Redis queue"
+      "title": "Queue Depth",
+      "type": "timeseries"
     },
     {
-      "id": 3,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "type": "timeseries",
-      "title": "Error Rate (5xx + 429)",
+      "description": "Spikes on YouTube 429 or connection failures — circuit breaker opens to protect",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -208,9 +200,9 @@
             "fillOpacity": 80,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "linear",
             "lineWidth": 0,
@@ -245,6 +237,13 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -265,18 +264,11 @@
           "refId": "A"
         }
       ],
-      "description": "Spikes on YouTube 429 or connection failures — circuit breaker opens to protect"
+      "title": "Error Rate (5xx + 429)",
+      "type": "timeseries"
     },
     {
-      "id": 4,
-      "gridPos": {
-        "h": 12,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "type": "timeseries",
-      "title": "Recovery Events",
+      "description": "Increments on each zombie sweep recovery or circuit breaker HALF_OPEN→CLOSED transition",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -292,9 +284,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -325,6 +317,13 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 4,
       "options": {
         "legend": {
           "calcs": [],
@@ -345,18 +344,10 @@
           "refId": "A"
         }
       ],
-      "description": "Increments on each zombie sweep recovery or circuit breaker HALF_OPEN→CLOSED transition"
+      "title": "Recovery Events",
+      "type": "timeseries"
     },
     {
-      "id": 5,
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "type": "timeseries",
-      "title": "Request Rate by Endpoint",
       "description": "HTTP request rate broken down by API endpoint -- identifies traffic patterns and hot endpoints",
       "fieldConfig": {
         "defaults": {
@@ -373,9 +364,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -396,6 +387,13 @@
           "unit": "reqps"
         }
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 5,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -416,18 +414,11 @@
           "legendFormat": "{{ endpoint }}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Request Rate by Endpoint",
+      "type": "timeseries"
     },
     {
-      "id": 6,
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
-      "type": "timeseries",
-      "title": "P95 Request Latency",
       "description": "P95 latency by endpoint with 5s degradation threshold -- shows degradation before errors spike",
       "fieldConfig": {
         "defaults": {
@@ -444,9 +435,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -480,6 +471,13 @@
           "unit": "s"
         }
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 6,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -500,18 +498,11 @@
           "legendFormat": "{{ endpoint }}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "P95 Request Latency",
+      "type": "timeseries"
     },
     {
-      "id": 7,
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 34
-      },
-      "type": "timeseries",
-      "title": "Job Completion Rate",
       "description": "Stacked rate of jobs completing by status (success/failed/deferred) -- flatlining indicates worker or queue issue",
       "fieldConfig": {
         "defaults": {
@@ -528,9 +519,9 @@
             "fillOpacity": 80,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "linear",
             "lineWidth": 0,
@@ -551,6 +542,13 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "id": 7,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -571,18 +569,11 @@
           "legendFormat": "{{ status }}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Job Completion Rate",
+      "type": "timeseries"
     },
     {
-      "id": 8,
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 34
-      },
-      "type": "timeseries",
-      "title": "Job Duration Distribution",
       "description": "P50/P95/P99 job processing time -- rising P95 before P50 indicates tail-latency degradation",
       "fieldConfig": {
         "defaults": {
@@ -599,9 +590,9 @@
             "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "smooth",
             "lineWidth": 2,
@@ -622,6 +613,13 @@
           "unit": "s"
         }
       },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "id": 8,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -654,18 +652,11 @@
           "legendFormat": "P99",
           "refId": "C"
         }
-      ]
+      ],
+      "title": "Job Duration Distribution",
+      "type": "timeseries"
     },
     {
-      "id": 9,
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 0,
-        "y": 44
-      },
-      "type": "stat",
-      "title": "Throttle Risk",
       "description": "YouTube throttle risk (0=low, 0.5=elevated, 0.8=high, 1=blocked) -- pumps before 429 errors hit the user",
       "fieldConfig": {
         "defaults": {
@@ -674,53 +665,53 @@
           },
           "mappings": [
             {
-              "type": "range",
               "options": {
                 "0": {
-                  "type": "range",
                   "options": {
                     "from": 0,
-                    "to": 0.5,
                     "result": {
-                      "text": "LOW",
-                      "color": "green"
-                    }
-                  }
+                      "color": "green",
+                      "text": "LOW"
+                    },
+                    "to": 0.5
+                  },
+                  "type": "range"
                 },
                 "0.5": {
-                  "type": "range",
                   "options": {
                     "from": 0.5,
-                    "to": 0.8,
                     "result": {
-                      "text": "ELEVATED",
-                      "color": "orange"
-                    }
-                  }
+                      "color": "orange",
+                      "text": "ELEVATED"
+                    },
+                    "to": 0.8
+                  },
+                  "type": "range"
                 },
                 "0.8": {
-                  "type": "range",
                   "options": {
                     "from": 0.8,
-                    "to": 1.0,
                     "result": {
-                      "text": "HIGH",
-                      "color": "red"
-                    }
-                  }
+                      "color": "red",
+                      "text": "HIGH"
+                    },
+                    "to": 1.0
+                  },
+                  "type": "range"
                 },
                 "1.0": {
-                  "type": "range",
                   "options": {
                     "from": 1.0,
-                    "to": 1.0,
                     "result": {
-                      "text": "BLOCKED",
-                      "color": "purple"
-                    }
-                  }
+                      "color": "purple",
+                      "text": "BLOCKED"
+                    },
+                    "to": 1.0
+                  },
+                  "type": "range"
                 }
-              }
+              },
+              "type": "range"
             }
           ],
           "thresholds": {
@@ -747,21 +738,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 44
+      },
+      "id": 9,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 36,
           "valueSize": 36
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -772,18 +770,11 @@
           "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Throttle Risk",
+      "type": "stat"
     },
     {
-      "id": 10,
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 44
-      },
-      "type": "stat",
-      "title": "Worker Status",
       "description": "1=healthy / 0=unhealthy -- worker heartbeat and processing state",
       "fieldConfig": {
         "defaults": {
@@ -794,12 +785,12 @@
             {
               "options": {
                 "0": {
-                  "text": "DOWN",
-                  "color": "red"
+                  "color": "red",
+                  "text": "DOWN"
                 },
                 "1": {
-                  "text": "HEALTHY",
-                  "color": "green"
+                  "color": "green",
+                  "text": "HEALTHY"
                 }
               },
               "type": "value"
@@ -821,21 +812,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 44
+      },
+      "id": 10,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 36,
           "valueSize": 36
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -846,18 +844,11 @@
           "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Worker Status",
+      "type": "stat"
     },
     {
-      "id": 11,
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 44
-      },
-      "type": "stat",
-      "title": "Outbox Pending",
       "description": "Crash-recovery entries waiting to be enqueued -- should be 0 in steady state",
       "fieldConfig": {
         "defaults": {
@@ -885,21 +876,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 44
+      },
+      "id": 11,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "value_and_name",
         "text": {
           "titleSize": 36,
           "valueSize": 36
-        }
+        },
+        "textMode": "value_and_name"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -910,18 +908,11 @@
           "instant": true,
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Outbox Pending",
+      "type": "stat"
     },
     {
-      "id": 12,
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 18,
-        "y": 44
-      },
-      "type": "stat",
-      "title": "Jobs Completed",
       "description": "Total completed jobs by status — tracks overall system throughput",
       "fieldConfig": {
         "defaults": {
@@ -930,8 +921,8 @@
           },
           "mappings": [
             {
-              "type": "value",
-              "options": {}
+              "options": {},
+              "type": "value"
             }
           ],
           "thresholds": {
@@ -946,21 +937,28 @@
           "unit": "none"
         }
       },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 44
+      },
+      "id": 12,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
-          "values": false,
           "calcs": ["lastNotNull"],
-          "fields": ""
+          "fields": "",
+          "values": false
         },
-        "textMode": "auto",
         "text": {
           "titleSize": 36,
           "valueSize": 36
-        }
+        },
+        "textMode": "auto"
       },
       "pluginVersion": "9.0.0",
       "targets": [
@@ -970,18 +968,11 @@
           "legendFormat": "{{ status }}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Jobs Completed",
+      "type": "stat"
     },
     {
-      "id": 13,
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 52
-      },
-      "type": "timeseries",
-      "title": "HTTP Status Code Breakdown",
       "description": "Request volume by status code family -- 5xx spikes, 429 bursts, and 2xx baseline at a glance",
       "fieldConfig": {
         "defaults": {
@@ -998,9 +989,9 @@
             "fillOpacity": 100,
             "gradientMode": "opacity",
             "hideFrom": {
+              "legend": false,
               "tooltip": false,
-              "viz": false,
-              "legend": false
+              "viz": false
             },
             "lineInterpolation": "linear",
             "lineWidth": 0,
@@ -1021,6 +1012,13 @@
           "unit": "reqps"
         }
       },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "id": 13,
       "options": {
         "legend": {
           "calcs": ["lastNotNull"],
@@ -1041,7 +1039,9 @@
           "legendFormat": "{{ status_code }}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "HTTP Status Code Breakdown",
+      "type": "timeseries"
     }
   ],
   "refresh": "2s",

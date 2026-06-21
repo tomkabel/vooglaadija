@@ -230,18 +230,14 @@ async def _merge_generators(
                 # represent terminal/job-state transitions the client
                 # needs. Progress events can be safely coalesced under
                 # backpressure since each supersedes the previous.
-                is_status = (
-                    hasattr(event, "event") and event.event == "job_update"
-                )
+                is_status = hasattr(event, "event") and event.event == "job_update"
                 if is_status:
                     # Block on status events — don't drop
                     await queue.put(event)
                 else:
                     # Progress events — safe to drop under backpressure
                     try:
-                        await asyncio.wait_for(
-                            queue.put(event), timeout=5.0
-                        )
+                        await asyncio.wait_for(queue.put(event), timeout=5.0)
                     except (TimeoutError, asyncio.QueueFull):
                         logger.warning(
                             "sse_queue_full_dropping_progress",
@@ -429,7 +425,9 @@ async def event_generator(
             )
 
         # Fall back to polling
-        async for event in fallback_polling_generator(request, session_factory, user_id, seen_initial):
+        async for event in fallback_polling_generator(
+            request, session_factory, user_id, seen_initial
+        ):
             yield event
     except GeneratorExit:
         # Client disconnected — clean up buffer task immediately
