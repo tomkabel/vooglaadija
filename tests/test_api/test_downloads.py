@@ -9,7 +9,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 from tests.conftest import create_test_user_and_login
 
 
@@ -542,7 +542,7 @@ async def test_retry_download_not_failed_returns_400(db_session: AsyncSession):
         )
 
     assert response.status_code == 400
-    assert "Only failed jobs can be retried" in response.json()["error"]["message"]
+    assert "Only failed or deferred jobs can be retried" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

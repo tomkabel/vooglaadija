@@ -26,8 +26,10 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 )
 from sqlalchemy.pool import NullPool  # noqa: E402
 
-import app.models  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
+from core import models as core_models  # noqa: E402
+
+_REGISTERED_MODEL_EXPORTS = core_models.__all__
 
 # Now import app - it will use the SQLite URL we set above
 from app.main import app as fastapi_app  # noqa: E402
@@ -92,6 +94,16 @@ def _reset_shutdown_event():
     worker_main = sys.modules.get("worker.main")
     if worker_main is not None:
         worker_main.shutdown_requested_at = None
+
+
+@pytest.fixture(autouse=True)
+def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid Redis-backed blacklist checks for ordinary authenticated test requests."""
+
+    async def _not_blacklisted(_token_jti: str) -> bool:
+        return False
+
+    monkeypatch.setattr("app.api.dependencies.is_token_blacklisted", _not_blacklisted)
 
 
 @pytest.fixture

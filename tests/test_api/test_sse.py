@@ -71,7 +71,7 @@ class TestEventGenerator:
         from fastapi import Request
 
         from app.api.routes.sse import event_generator
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         mock_request = MagicMock(spec=Request)
         mock_request.is_disconnected = AsyncMock(side_effect=[False, True])
@@ -80,6 +80,7 @@ class TestEventGenerator:
         mock_job = MagicMock(spec=DownloadJob)
         mock_job.id = uuid.uuid4()
         mock_job.url = "https://youtube.com/watch?v=test"
+        mock_job.title = None
         mock_job.status = "pending"
         mock_job.file_name = None
         mock_job.error = None
@@ -113,7 +114,7 @@ class TestEventGenerator:
             events = []
             async for event in event_generator(mock_request, mock_session_factory, uuid.uuid4()):
                 events.append(event)
-                if len(events) >= 1:
+                if len(events) >= 2:
                     break
 
         assert len(events) >= 1
@@ -137,7 +138,7 @@ class TestEventGenerator:
 
         async def mock_is_disconnected():
             call_count[0] += 1
-            if call_count[0] >= 15:  # Allow enough calls for all retry loops
+            if call_count[0] >= 100:  # Allow enough calls for startup buffering and replay
                 return True
             return False
 
@@ -201,7 +202,13 @@ class TestEventGenerator:
         # 2. first pubsub async-for iteration -> False
         # 3. second pubsub async-for iteration -> False (deduped, not yielded)
         # 4. fallback_polling_generator check -> True (break)
-        mock_request.is_disconnected = AsyncMock(side_effect=[False, False, False, True])
+        call_count = [0]
+
+        async def mock_is_disconnected():
+            call_count[0] += 1
+            return call_count[0] >= 20
+
+        mock_request.is_disconnected = mock_is_disconnected
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
@@ -215,8 +222,18 @@ class TestEventGenerator:
 
         job_id = str(uuid.uuid4())
         pubsub_messages = [
-            {"id": job_id, "status": "processing", "url": "https://youtube.com/watch?v=test"},
-            {"id": job_id, "status": "processing", "url": "https://youtube.com/watch?v=test"},
+            {
+                "id": job_id,
+                "status": "processing",
+                "url": "https://youtube.com/watch?v=test",
+                "updated_at": "2024-01-01T00:00:00",
+            },
+            {
+                "id": job_id,
+                "status": "processing",
+                "url": "https://youtube.com/watch?v=test",
+                "updated_at": "2024-01-01T00:00:00",
+            },
         ]
 
         async def mock_subscribe(user_id):
@@ -230,7 +247,7 @@ class TestEventGenerator:
             events = []
             async for event in event_generator(mock_request, mock_session_factory, uuid.uuid4()):
                 events.append(event)
-                if len(events) >= 2:
+                if len(events) >= 1:
                     break
 
         # Should only yield one event because status didn't change
@@ -242,7 +259,7 @@ class TestEventGenerator:
         from datetime import UTC, datetime
 
         from app.api.routes.sse import event_generator
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         # Create proper mock request
         class MockRequest:
@@ -260,6 +277,7 @@ class TestEventGenerator:
         mock_job = MagicMock(spec=DownloadJob)
         mock_job.id = uuid.uuid4()
         mock_job.url = "https://youtube.com/watch?v=test"
+        mock_job.title = None
         mock_job.status = "completed"
         mock_job.file_name = "video.mp4"
         mock_job.error = None
@@ -340,7 +358,7 @@ class TestEventGenerator:
         from fastapi import Request
 
         from app.api.routes.sse import MAX_SEEN_JOBS, event_generator
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         mock_request = MagicMock(spec=Request)
         call_count = [0]
@@ -359,6 +377,7 @@ class TestEventGenerator:
             mock_job = MagicMock(spec=DownloadJob)
             mock_job.id = uuid.uuid4()
             mock_job.url = f"https://youtube.com/watch?v=test{i}"
+            mock_job.title = None
             mock_job.status = "pending"
             mock_job.file_name = None
             mock_job.error = None
@@ -392,11 +411,12 @@ class TestJobToSseData:
         """Test _job_to_sse_data handles None timestamps."""
 
         from app.api.routes.sse import _job_to_sse_data
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         mock_job = MagicMock(spec=DownloadJob)
         mock_job.id = uuid.uuid4()
         mock_job.url = "https://youtube.com/watch?v=test"
+        mock_job.title = None
         mock_job.status = "pending"
         mock_job.file_name = None
         mock_job.error = None
@@ -419,7 +439,7 @@ class TestJobToSseData:
         from datetime import UTC, datetime
 
         from app.api.routes.sse import _job_to_sse_data
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         created = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         updated = datetime(2024, 1, 1, 12, 1, 0, tzinfo=UTC)
@@ -427,6 +447,7 @@ class TestJobToSseData:
         mock_job = MagicMock(spec=DownloadJob)
         mock_job.id = uuid.uuid4()
         mock_job.url = "https://youtube.com/watch?v=test"
+        mock_job.title = "Test Video"
         mock_job.status = "completed"
         mock_job.file_name = "video.mp4"
         mock_job.error = None
@@ -605,7 +626,7 @@ class TestFallbackPollingGenerator:
         from datetime import UTC, datetime
 
         from app.api.routes.sse import fallback_polling_generator
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         mock_request = MagicMock()
         mock_request.is_disconnected = AsyncMock(side_effect=[False, True])
@@ -613,6 +634,7 @@ class TestFallbackPollingGenerator:
         mock_job = MagicMock(spec=DownloadJob)
         mock_job.id = uuid.uuid4()
         mock_job.url = "https://youtube.com/watch?v=test"
+        mock_job.title = None
         mock_job.status = "pending"
         mock_job.file_name = None
         mock_job.error = None
@@ -680,7 +702,13 @@ class TestEventGeneratorExtended:
         from app.api.routes.sse import event_generator
 
         mock_request = MagicMock(spec=Request)
-        mock_request.is_disconnected = AsyncMock(side_effect=[False, False, True])
+        call_count = [0]
+
+        async def mock_is_disconnected():
+            call_count[0] += 1
+            return call_count[0] >= 20
+
+        mock_request.is_disconnected = mock_is_disconnected
 
         mock_session = MagicMock()
         mock_session.execute = AsyncMock(side_effect=Exception("DB error"))
@@ -724,7 +752,7 @@ class TestEventGeneratorExtended:
         from fastapi import Request
 
         from app.api.routes.sse import event_generator
-        from app.models.download_job import DownloadJob
+        from core.models.download_job import DownloadJob
 
         mock_request = MagicMock(spec=Request)
         mock_request.is_disconnected = AsyncMock(side_effect=[False, False, False, True])
@@ -732,6 +760,7 @@ class TestEventGeneratorExtended:
         mock_job = MagicMock(spec=DownloadJob)
         mock_job.id = uuid.uuid4()
         mock_job.url = "https://youtube.com/watch?v=test"
+        mock_job.title = "Test Video"
         mock_job.status = "completed"
         mock_job.file_name = "video.mp4"
         mock_job.error = None

@@ -17,8 +17,8 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 from app.api.dependencies import CurrentUserFromCookie
 from app.database import get_async_session_factory
 from app.logging_config import get_logger
-from app.models.download_job import DownloadJob
 from app.services.pubsub_service import get_pubsub_service
+from core.models.download_job import DownloadJob
 
 router = APIRouter(prefix="/web", tags=["sse"])
 
@@ -275,8 +275,9 @@ async def fallback_polling_generator(
     """Fallback polling generator when Pub/Sub is unavailable."""
     # Reuse existing dedup cache from request state if available
     if seen_jobs is None:
-        if hasattr(request.state, "seen_jobs") and request.state.seen_jobs:
-            seen_jobs = request.state.seen_jobs
+        existing_seen_jobs = getattr(request.state, "seen_jobs", None)
+        if isinstance(existing_seen_jobs, OrderedDict):
+            seen_jobs = existing_seen_jobs
         else:
             seen_jobs = OrderedDict()
 

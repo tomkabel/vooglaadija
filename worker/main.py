@@ -12,8 +12,8 @@ from app.config import settings
 from app.database import get_async_session_factory
 from app.logging_config import configure_logging, get_logger
 from app.metrics import CIRCUIT_DEFERRED_DEPTH, DLQ_DEPTH, QUEUE_DEPTH
-from app.models.download_job import DownloadJob
-from app.models.failed_job import FailedJob
+from core.models.download_job import DownloadJob
+from core.models.failed_job import FailedJob
 from worker.health import (
     close_health_redis_client,
     start_health_server,

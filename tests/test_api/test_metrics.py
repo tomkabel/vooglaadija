@@ -21,7 +21,7 @@ async def test_metrics_with_auth():
     from unittest.mock import MagicMock
 
     from app.api.dependencies import get_current_user
-    from app.models.user import User
+    from core.models.user import User
 
     mock_user = MagicMock(spec=User)
     mock_user.id = "test-user-id"
@@ -44,7 +44,7 @@ async def test_metrics_returns_prometheus_format():
     from unittest.mock import MagicMock
 
     from app.api.dependencies import get_current_user
-    from app.models.user import User
+    from core.models.user import User
 
     mock_user = MagicMock(spec=User)
     mock_user.id = "test-user-id"

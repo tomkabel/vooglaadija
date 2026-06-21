@@ -6,11 +6,11 @@ the engine is created with the correct configuration.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import declarative_base
 
 from app.config import settings
+from core.models.base import Base as CoreBase
 
-Base = declarative_base()
+Base = CoreBase
 
 
 class _EngineFactory:

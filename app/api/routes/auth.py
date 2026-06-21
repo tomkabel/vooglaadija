@@ -19,12 +19,12 @@ from app.auth import (
     verify_token,
 )
 from app.config import settings
-from app.models.user import User, not_deleted
 from app.schemas.error import ErrorCode, error_response_doc, success_response_doc
 from app.schemas.token import Token, TokenRefresh
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import hash_password, verify_password
 from app.utils.username import default_username_from_email
+from core.models.user import User, not_deleted
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

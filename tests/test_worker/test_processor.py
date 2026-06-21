@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select
 
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 
 
 class TestProcessNextJob:
@@ -78,7 +78,10 @@ class TestProcessNextJob:
                 "worker.processor.extract_media_with_circuit_breaker",
                 new_callable=AsyncMock,
             ) as mock_extract,
+            patch("worker.processor._publish_job_status", new_callable=AsyncMock),
+            patch("worker.processor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
             patch("worker.main.shutdown_event", mock_shutdown_event),
+            patch("worker.state.shutdown_event", mock_shutdown_event),
         ):
             mock_extract.return_value = ("/storage/test.mp4", "test.mp4", "Test Video")
             mock_redis_client.rpop = AsyncMock(return_value="550e8400-e29b-41d4-a716-446655440000")
@@ -100,8 +103,8 @@ class TestProcessNextJob:
     @pytest.mark.unit
     async def test_move_to_dlq_populates_final_error_category(self, db_session):
         """Test failed job retention writes all non-null DLQ columns."""
-        from app.models.failed_job import FailedJob
         from app.services.error_classifier import ErrorCategory
+        from core.models.failed_job import FailedJob
         from worker.processor import _move_to_dlq
 
         job = DownloadJob(

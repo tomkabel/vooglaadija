@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from app.database import Base
+from core.models.base import Base
 
 
 class FailedJob(Base):

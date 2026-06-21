@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import verify_token
 from app.database import get_db
-from app.models.user import User, not_deleted
 from app.services.token_blacklist import is_token_blacklisted
+from core.models.user import User, not_deleted
 
 security = HTTPBearer(auto_error=False)
 

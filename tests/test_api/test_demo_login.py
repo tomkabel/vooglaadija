@@ -8,9 +8,9 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from app.main import app
-from app.models.download_job import DownloadJob
-from app.models.user import User
 from app.services.auth_service import hash_password
+from core.models.download_job import DownloadJob
+from core.models.user import User
 from tests.conftest import TestingSessionLocal
 
 DEMO_EMAIL = "demo@vooglaadija.io"
@@ -222,7 +222,7 @@ class TestSeedDemoData:
 
     @pytest.mark.asyncio
     async def test_seed_script_creates_eight_jobs(self):
-        """Seed script creates exactly 8 completed jobs (6 platforms)."""
+        """Seed script creates exactly 8 pending jobs for demo priming."""
         from scripts.seed_demo_data import seed_demo_data
 
         await seed_demo_data()
@@ -233,12 +233,12 @@ class TestSeedDemoData:
                 .join(User, DownloadJob.user_id == User.id)
                 .where(
                     User.email == DEMO_EMAIL,
-                    DownloadJob.status == "completed",
+                    DownloadJob.status == "pending",
                 )
             )
             jobs = result.scalars().all()
 
         assert len(jobs) == 8
         for job in jobs:
-            assert job.status == "completed"
-            assert job.file_name is not None
+            assert job.status == "pending"
+            assert job.file_name is None

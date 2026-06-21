@@ -36,9 +36,9 @@ from app.metrics import (
     RECOVERIES,
     RETRIES_TOTAL,
 )
-from app.models.download_job import DownloadJob
-from app.models.failed_job import FailedJob
-from app.models.outbox import Outbox
+from core.models.download_job import DownloadJob
+from core.models.failed_job import FailedJob
+from core.models.outbox import Outbox
 from app.services.circuit_breaker import (
     CircuitBreakerOpenError,
     extract_media_with_circuit_breaker,

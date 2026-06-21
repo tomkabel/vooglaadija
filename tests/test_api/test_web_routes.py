@@ -37,7 +37,7 @@ async def do_register(client: AsyncClient, email: str, password: str) -> str:
 
 
 async def do_login(client: AsyncClient, email: str, password: str) -> str:
-    """Login a user and return the CSRF token from the response."""
+    """Login a user and return the rotated CSRF token from the response."""
     csrf_response = await client.get("/web/login")
     csrf_token = get_csrf_from_response(csrf_response)
 
@@ -45,12 +45,14 @@ async def do_login(client: AsyncClient, email: str, password: str) -> str:
     if csrf_token:
         headers["X-CSRF-Token"] = csrf_token
 
-    await client.post(
+    login_response = await client.post(
         "/web/login",
         data={"email": email, "password": password},
         headers=headers,
     )
-    return csrf_token
+    return (
+        login_response.cookies.get("csrf_token") or client.cookies.get("csrf_token") or csrf_token
+    )
 
 
 class TestValidateRedirectUrl:
@@ -258,7 +260,7 @@ class TestValidateFilePath:
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             safe_path = downloads_dir / "file.mp3"
             safe_path.write_text("test content")
@@ -275,7 +277,7 @@ class TestValidateFilePath:
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
 
             malicious_path = str(tmp_path / ".." / ".." / "etc" / "passwd")
@@ -707,6 +709,11 @@ class TestDashboardPage:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             dashboard_response = await client.get(
                 "/web/downloads",
@@ -734,6 +741,11 @@ class TestDashboardPage:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             dashboard_response = await client.get(
                 "/web/downloads",
@@ -743,10 +755,8 @@ class TestDashboardPage:
         assert dashboard_response.status_code == 200
         assert 'id="download-list" class="download-list-loading"' in dashboard_response.text
         assert 'id="download-skeleton"' in dashboard_response.text
-        assert "downloadSkeletonFallback" in dashboard_response.text
-        assert "clearDownloadSkeleton" in dashboard_response.text
-        assert "htmx:sseOpen" in dashboard_response.text
-        assert "htmx:sseError" in dashboard_response.text
+        assert 'sse-connect="/web/downloads/stream"' in dashboard_response.text
+        assert '<script src="/static/js/dashboard.js" defer></script>' in dashboard_response.text
 
 
 class TestCreateDownloadForm:
@@ -771,6 +781,11 @@ class TestCreateDownloadForm:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             headers = {"HX-Request": "true"}
             if csrf_token:
@@ -828,6 +843,11 @@ class TestCreateDownloadForm:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             headers = {"HX-Request": "true"}
             if csrf_token:
@@ -865,6 +885,11 @@ class TestCreateDownloadFullPage:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             with patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue:
                 mock_enqueue.return_value = None
@@ -918,6 +943,11 @@ class TestDeleteDownload:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             fake_uuid = str(uuid.uuid4())
 
@@ -952,6 +982,11 @@ class TestDeleteDownload:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             headers = {"HX-Request": "true"}
             if csrf_token:
@@ -999,6 +1034,11 @@ class TestDownloadFile:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             fake_uuid = str(uuid.uuid4())
             download_response = await client.get(
@@ -1027,6 +1067,11 @@ class TestDownloadFile:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             download_response = await client.get(
                 "/web/downloads/not-a-uuid/file",
@@ -1208,6 +1253,11 @@ class TestSettingsPage:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             response = await client.get(
                 "/web/settings",
@@ -1234,6 +1284,11 @@ class TestSettingsPage:
                 headers={"X-CSRF-Token": csrf_token},
             )
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             response = await client.get(
                 "/web/settings?error=bad_current_password",
@@ -1269,6 +1324,11 @@ class TestUpdateUsername:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             # Get fresh CSRF token
             csrf_response = await client.get(
@@ -1304,6 +1364,11 @@ class TestUpdateUsername:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -1338,6 +1403,11 @@ class TestUpdateUsername:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             response = await client.post(
                 "/web/settings/username",
@@ -1372,6 +1442,11 @@ class TestChangePassword:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -1410,6 +1485,11 @@ class TestChangePassword:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -1448,6 +1528,11 @@ class TestChangePassword:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -1486,6 +1571,11 @@ class TestChangePassword:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -1528,6 +1618,11 @@ class TestDeleteDownloadForm:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             fake_uuid = str(uuid.uuid4())
 
@@ -1603,11 +1698,11 @@ class TestValidateCsrfTokenStrategy2:
 
 
 class TestValidateCsrfTokenStrategy3:
-    """Tests for CSRF Strategy 3: No cookie, header present, form matches header."""
+    """Tests for state-changing requests without a CSRF cookie."""
 
     @pytest.mark.asyncio
     async def test_csrf_no_cookie_header_present_form_matches(self):
-        """Assert True when header and form tokens match and no cookie present."""
+        """Assert False even when submitted tokens match but no cookie is present."""
         from unittest.mock import MagicMock
 
         from fastapi import Request
@@ -1624,7 +1719,7 @@ class TestValidateCsrfTokenStrategy3:
         )
 
         result = await validate_csrf_token(mock_request)
-        assert result is True
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_csrf_no_cookie_header_present_form_mismatch(self):
@@ -1703,7 +1798,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job1, mock_job2], mock_logger)
 
@@ -1744,7 +1839,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -1766,7 +1861,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -1790,7 +1885,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch("app.api.routes.web.os.remove", side_effect=OSError("Permission denied")):
                 all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
@@ -1815,7 +1910,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.settings") as mock_settings:
+        with patch("app.utils.security.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch(
                 "app.api.routes.web.os.remove", side_effect=RuntimeError("Unexpected error")
@@ -1832,8 +1927,8 @@ class TestLoginInactiveUser:
     @pytest.mark.asyncio
     async def test_login_inactive_user(self, db_session):
         """Test login with inactive user returns redirect to login page."""
-        from app.models.user import User
         from app.services.auth_service import hash_password
+        from core.models.user import User
 
         email = f"inactive_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
@@ -1931,6 +2026,11 @@ class TestCreateDownloadFullPageErrors:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             create_response = await client.post(
                 "/web/downloads/full",
@@ -1961,6 +2061,11 @@ class TestCreateDownloadFullPageErrors:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/downloads", cookies={"access_token": access_token}
@@ -1996,6 +2101,11 @@ class TestCreateDownloadFullPageErrors:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/downloads", cookies={"access_token": access_token}
@@ -2040,6 +2150,11 @@ class TestDeleteAccount:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             response = await client.post(
                 "/web/settings/delete-account",
@@ -2070,6 +2185,11 @@ class TestDeleteAccount:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -2105,6 +2225,11 @@ class TestDeleteAccount:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -2140,6 +2265,11 @@ class TestDeleteAccount:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -2176,6 +2306,11 @@ class TestDeleteAccount:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
@@ -2214,14 +2349,19 @@ class TestDeleteAccount:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             # Create a job with a file path that will fail path traversal check
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
+            from core.models.download_job import DownloadJob
 
             # Need to get user id first
-            from app.models.user import User
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2242,7 +2382,7 @@ class TestDeleteAccount:
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.utils.security.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 response = await client.post(
@@ -2278,12 +2418,17 @@ class TestDeleteDownloadFormBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             # Create a processing job directly
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2331,11 +2476,16 @@ class TestDeleteDownloadFormBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2356,7 +2506,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.utils.security.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 delete_response = await client.delete(
@@ -2391,11 +2541,16 @@ class TestDeleteDownloadFormBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2416,7 +2571,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.utils.security.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
                 with patch(
                     "app.api.routes.web.os.remove", side_effect=OSError("Permission denied")
@@ -2460,11 +2615,16 @@ class TestDownloadFileBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2507,11 +2667,16 @@ class TestDownloadFileBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2557,11 +2722,16 @@ class TestDownloadFileBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2609,11 +2779,16 @@ class TestDownloadFileBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2631,7 +2806,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.utils.security.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
@@ -2666,11 +2841,16 @@ class TestDownloadFileBranches:
             )
 
             access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
 
             from sqlalchemy import select
 
-            from app.models.download_job import DownloadJob
-            from app.models.user import User
+            from core.models.download_job import DownloadJob
+            from core.models.user import User
 
             async with TestingSessionLocal() as session:
                 result = await session.execute(select(User).where(User.email == email))
@@ -2688,7 +2868,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.api.routes.web.settings") as mock_settings:
+            with patch("app.utils.security.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(

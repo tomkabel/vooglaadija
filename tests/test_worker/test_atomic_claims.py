@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import select, update
 
 from app.database import get_async_session_factory
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 
 
 class TestAtomicClaims:

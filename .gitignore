@@ -55,6 +55,7 @@ cloudflare.ini
 # AI Agent / Dev Tooling
 # =============================================
 .claude/
+.codex/
 .commandcode/
 .forge/
 _bmad/
@@ -175,3 +176,4 @@ docs/CRITIQUE-ISSUES.md
 .openchange/
 .agents/
 .kilocode/skills/*
+.agents/.story-automator-active

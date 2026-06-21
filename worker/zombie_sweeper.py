@@ -22,8 +22,8 @@ from sqlalchemy import update
 
 from app.database import get_async_session_factory
 from app.logging_config import get_logger
-from app.models.download_job import DownloadJob
-from app.models.outbox import Outbox
+from core.models.download_job import DownloadJob
+from core.models.outbox import Outbox
 from app.services.redis_client import CHAOS_ZOMBIE_JOB_KEY, get_redis_client
 
 logger = get_logger(__name__)

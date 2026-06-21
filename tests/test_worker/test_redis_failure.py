@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from starlette.responses import Response
 
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 
 
 class TestRedisFailureHandling:

@@ -15,8 +15,8 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select
 
-from app.models.download_job import DownloadJob
-from app.models.outbox import Outbox
+from core.models.download_job import DownloadJob
+from core.models.outbox import Outbox
 
 
 @pytest.fixture

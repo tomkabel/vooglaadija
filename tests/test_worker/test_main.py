@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 
 from app.config import settings
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 from worker.main import cleanup_expired_jobs
 
 _DOWNLOADS_DIR = f"{settings.storage_path}/downloads"

@@ -7,7 +7,7 @@ import pytest
 
 from app.config import settings
 from app.metrics import RECOVERIES
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 from worker.main import shutdown_event
 
 
@@ -78,7 +78,7 @@ class TestZombieSweepChaosFlow:
         """Verify inline recovery creates an outbox audit trail entry."""
         from sqlalchemy import select
 
-        from app.models.outbox import Outbox
+        from core.models.outbox import Outbox
         from worker.processor import process_next_job
 
         mock_redis = AsyncMock()

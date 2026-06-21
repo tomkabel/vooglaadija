@@ -1,8 +1,8 @@
-"""Database models."""
+"""Compatibility shim for database models.
 
-from app.models.download_job import DownloadJob
-from app.models.failed_job import FailedJob
-from app.models.outbox import Outbox
-from app.models.user import User
+Model definitions are owned by core.models.
+"""
 
-__all__ = ["DownloadJob", "FailedJob", "Outbox", "User"]
+from core.models import DownloadJob, FailedJob, Outbox, User, not_deleted
+
+__all__ = ["DownloadJob", "FailedJob", "Outbox", "User", "not_deleted"]
