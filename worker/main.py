@@ -14,6 +14,7 @@ from core.logging_config import configure_logging, get_logger
 from core.metrics import CIRCUIT_DEFERRED_DEPTH, DLQ_DEPTH, QUEUE_DEPTH
 from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
+from core.utils.security import validate_path
 from worker.health import (
     close_health_redis_client,
     start_health_server,
@@ -98,7 +99,7 @@ async def _update_circuit_deferred_depth() -> None:
 async def cleanup_expired_jobs() -> int:
     """Delete expired jobs and their files."""
     session_factory = get_async_session_factory()
-    downloads_dir = os.path.realpath(os.path.join(settings.storage_path, "downloads"))
+    downloads_dir = os.path.join(settings.storage_path, "downloads")
 
     async with session_factory() as db:
         now = datetime.now(UTC)
@@ -113,15 +114,21 @@ async def cleanup_expired_jobs() -> int:
         cleanup_count = 0
         for job in expired_jobs:
             if job.file_path:
-                resolved_path = os.path.realpath(job.file_path)
-                safe_dir = (
-                    downloads_dir if downloads_dir.endswith(os.sep) else downloads_dir + os.sep
-                )
-                if resolved_path.startswith(safe_dir) and os.path.exists(resolved_path):
+                try:
+                    safe_path = validate_path(downloads_dir, job.file_path)
+                except (ValueError, PermissionError):
+                    logger.warning(
+                        "path_traversal_attempt_skipped",
+                        job_id=str(job.id),
+                        file_path=job.file_path,
+                    )
+                    continue
+
+                if os.path.exists(safe_path):
                     try:
-                        os.remove(resolved_path)
+                        os.remove(safe_path)
                         logger.info(
-                            "cleaned_up_expired_file", file_path=resolved_path, job_id=str(job.id)
+                            "cleaned_up_expired_file", file_path=safe_path, job_id=str(job.id)
                         )
                         await db.delete(job)
                         cleanup_count += 1
@@ -129,16 +136,10 @@ async def cleanup_expired_jobs() -> int:
                         logger.warning(
                             "failed_to_delete_expired_file", file_path=job.file_path, error=str(e)
                         )
-                elif resolved_path.startswith(safe_dir):
+                else:
                     logger.info("file_already_deleted", job_id=str(job.id), file_path=job.file_path)
                     await db.delete(job)
                     cleanup_count += 1
-                else:
-                    logger.warning(
-                        "path_traversal_attempt_skipped",
-                        job_id=str(job.id),
-                        file_path=job.file_path,
-                    )
             else:
                 try:
                     await db.delete(job)

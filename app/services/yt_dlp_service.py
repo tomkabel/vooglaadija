@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from app.utils.exceptions import StorageError
 from app.utils.validators import validate_url_not_ssrf
 from core.logging_config import get_logger
+from core.utils.security import validate_path
 
 logger = get_logger(__name__)
 
@@ -468,20 +469,6 @@ sys.exit(1)
             await _kill_process_group(process)
 
 
-def _validate_path_within(base_path: str, target_path: str) -> str:
-    """Validate that target_path resolves within base_path.
-
-    Returns the resolved path if valid.
-    Raises StorageError if the path escapes the base directory.
-    """
-    from app.utils.security import validate_path_within
-
-    try:
-        return validate_path_within(base_path, target_path)
-    except ValueError as e:
-        raise StorageError(str(e)) from e
-
-
 async def extract_media_url(
     url: str,
     storage_path: str,
@@ -530,7 +517,10 @@ async def extract_media_url(
     file_path = os.path.join(download_dir, f"{file_id}.{ext}")
 
     # Validate the resolved path is within download_dir
-    file_path = _validate_path_within(download_dir, file_path)
+    try:
+        file_path = validate_path(download_dir, file_path)
+    except (ValueError, PermissionError) as e:
+        raise StorageError(str(e)) from e
 
     # Verify the file was actually created
     if not os.path.isfile(file_path):

@@ -26,14 +26,20 @@ from app.schemas.error import (
 )
 from app.services.outbox_service import write_job_to_outbox
 from app.services.yt_dlp_service import resolve_video_title
-from app.utils.security import validate_file_path
+from core.config import settings
 from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
+from core.utils.security import validate_path
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
+
+
+def _downloads_base_path() -> str:
+    """Build the configured downloads directory path."""
+    return os.path.join(settings.storage_path, "downloads")
 
 
 def _job_to_response(job: DownloadJob) -> DownloadResponse:
@@ -339,7 +345,13 @@ async def get_download_file(
                 detail="Download link has expired",
             )
 
-    safe_path = validate_file_path(job.file_path)
+    try:
+        safe_path = validate_path(_downloads_base_path(), job.file_path)
+    except (ValueError, PermissionError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: invalid file path",
+        ) from e
 
     if not os.path.isfile(safe_path):
         safe_job_id = str(job_id).replace("\r", "").replace("\n", "")
@@ -417,12 +429,15 @@ async def delete_download(
 
     if job.file_path:
         try:
-            safe_path = validate_file_path(job.file_path)
+            safe_path = validate_path(_downloads_base_path(), job.file_path)
             if os.path.isfile(safe_path):
                 os.remove(safe_path)
                 logger.info("file_deleted", file_path=safe_path)
-        except HTTPException:
-            raise
+        except (ValueError, PermissionError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: invalid file path",
+            ) from e
         except OSError as e:
             logger.warning("failed_to_delete_file", file_path=job.file_path, error=str(e))
             raise HTTPException(

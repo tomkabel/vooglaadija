@@ -253,42 +253,27 @@ class TestValidateCsrfToken:
         assert result is False
 
 
-class TestValidateFilePath:
-    """Tests for _validate_file_path helper."""
+class TestDownloadsBasePath:
+    """Tests for the web downloads base path helper."""
 
-    def test_valid_path_within_downloads(self, tmp_path):
-        """Test that valid paths within downloads directory are allowed."""
-        from app.api.routes.web import _validate_file_path
+    def test_downloads_base_path_uses_configured_storage_path(self, tmp_path):
+        """The downloads base path is derived from the configured storage path."""
+        from app.api.routes.web import _downloads_base_path
+
+        with patch("app.api.routes.web.settings") as mock_settings:
+            mock_settings.storage_path = str(tmp_path)
+
+            assert _downloads_base_path() == f"{tmp_path}/downloads"
+
+    def test_canonical_validator_blocks_path_traversal(self, tmp_path):
+        """The canonical validator rejects web download paths outside the base."""
+        from core.utils.security import validate_path
 
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
 
-        with patch("app.utils.security.settings") as mock_settings:
-            mock_settings.storage_path = str(tmp_path)
-            safe_path = downloads_dir / "file.mp3"
-            safe_path.write_text("test content")
-
-            result = _validate_file_path(str(safe_path))
-            assert result == str(safe_path)
-
-    def test_path_traversal_blocked(self, tmp_path):
-        """Test that path traversal attempts are blocked."""
-        from fastapi import HTTPException
-
-        from app.api.routes.web import _validate_file_path
-
-        downloads_dir = tmp_path / "downloads"
-        downloads_dir.mkdir()
-
-        with patch("app.utils.security.settings") as mock_settings:
-            mock_settings.storage_path = str(tmp_path)
-
-            malicious_path = str(tmp_path / ".." / ".." / "etc" / "passwd")
-
-            with pytest.raises(HTTPException) as exc_info:
-                _validate_file_path(malicious_path)
-
-            assert exc_info.value.status_code == 403
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            validate_path(str(downloads_dir), str(tmp_path / ".." / "etc" / "passwd"))
 
 
 class TestIsHtmxRequest:
@@ -1920,7 +1905,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.utils.security.settings") as mock_settings:
+        with patch("app.api.routes.web.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job1, mock_job2], mock_logger)
 
@@ -1961,7 +1946,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.utils.security.settings") as mock_settings:
+        with patch("app.api.routes.web.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -1983,7 +1968,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.utils.security.settings") as mock_settings:
+        with patch("app.api.routes.web.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -2007,7 +1992,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.utils.security.settings") as mock_settings:
+        with patch("app.api.routes.web.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch("app.api.routes.web.os.remove", side_effect=OSError("Permission denied")):
                 all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
@@ -2032,7 +2017,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.utils.security.settings") as mock_settings:
+        with patch("app.api.routes.web.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch(
                 "app.api.routes.web.os.remove", side_effect=RuntimeError("Unexpected error")
@@ -2504,7 +2489,7 @@ class TestDeleteAccount:
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
-            with patch("app.utils.security.settings") as mock_settings:
+            with patch("app.api.routes.web.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 response = await client.post(
@@ -2628,7 +2613,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.utils.security.settings") as mock_settings:
+            with patch("app.api.routes.web.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 delete_response = await client.delete(
@@ -2693,7 +2678,7 @@ class TestDeleteDownloadFormBranches:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.utils.security.settings") as mock_settings:
+            with patch("app.api.routes.web.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
                 with patch(
                     "app.api.routes.web.os.remove", side_effect=OSError("Permission denied")
@@ -2928,7 +2913,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.utils.security.settings") as mock_settings:
+            with patch("app.api.routes.web.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(
@@ -2938,6 +2923,55 @@ class TestDownloadFileBranches:
 
         assert download_response.status_code == 404
         assert "file not found on disk" in download_response.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_download_file_path_traversal_returns_403(self, tmp_path):
+        """Test downloading a stored path outside downloads returns 403."""
+        email = f"dlpath_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+
+            from core.models.user import User
+
+            async with TestingSessionLocal() as session:
+                result = await session.execute(select(User).where(User.email == email))
+                user = result.scalar_one()
+
+                job = DownloadJob(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    status="completed",
+                    file_path=str(tmp_path / ".." / "etc" / "passwd"),
+                    file_name="passwd",
+                )
+                session.add(job)
+                await session.commit()
+                job_id = str(job.id)
+
+            with patch("app.api.routes.web.settings") as mock_settings:
+                mock_settings.storage_path = str(tmp_path)
+
+                download_response = await client.get(
+                    f"/web/downloads/{job_id}/file",
+                    cookies={"access_token": access_token},
+                )
+
+        assert download_response.status_code == 403
+        assert "access denied" in download_response.text.lower()
 
     @pytest.mark.asyncio
     async def test_download_file_success(self, tmp_path):
@@ -2990,7 +3024,7 @@ class TestDownloadFileBranches:
                 await session.commit()
                 job_id = str(job.id)
 
-            with patch("app.utils.security.settings") as mock_settings:
+            with patch("app.api.routes.web.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 download_response = await client.get(

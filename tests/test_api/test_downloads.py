@@ -599,6 +599,34 @@ async def test_delete_download_file_cleanup_error(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_delete_download_path_traversal_returns_403(db_session: AsyncSession):
+    """Test that deleting a job with an invalid file path returns 403."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client)
+        create_response = await client.post(
+            "/api/v1/downloads",
+            json={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        job_id = uuid.UUID(create_response.json()["id"])
+
+        await db_session.execute(
+            update(DownloadJob)
+            .where(DownloadJob.id == job_id)
+            .values(status="completed", file_path="/etc/passwd"),
+        )
+        await db_session.commit()
+
+        response = await client.delete(
+            f"/api/v1/downloads/{job_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 403
+    assert "Access denied" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_create_download_non_youtube_urls():
     """Test that creating download jobs with non-YouTube URLs is accepted."""
     non_youtube_urls = [

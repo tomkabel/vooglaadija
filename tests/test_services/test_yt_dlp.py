@@ -319,18 +319,21 @@ class TestExtractMediaUrl:
                 await extract_media_url(sample_url, str(temp_storage_path))
             assert "Expected output file not found" in str(exc_info.value)
 
-    def test_validate_path_within_escape_raises_storage_error(
-        self, temp_storage_path: Path
+    @pytest.mark.asyncio
+    async def test_extract_media_url_converts_path_validation_error_to_storage_error(
+        self, temp_storage_path: Path, sample_url: str
     ) -> None:
-        """Verify path escapes still raise the canonical StorageError."""
-        from app.services.yt_dlp_service import _validate_path_within
-
-        download_dir = temp_storage_path / "downloads"
-        download_dir.mkdir()
-        escaped_path = download_dir / ".." / "escape.mp4"
-
-        with pytest.raises(StorageError) as exc_info:
-            _validate_path_within(str(download_dir), str(escaped_path))
+        """Invalid output paths from the canonical validator are converted to StorageError."""
+        mock_extract = _make_subprocess_mock()
+        with (
+            patch("app.services.yt_dlp_service._extract_via_subprocess", mock_extract),
+            patch(
+                "app.services.yt_dlp_service.validate_path",
+                side_effect=ValueError("Path traversal detected"),
+            ),
+        ):
+            with pytest.raises(StorageError) as exc_info:
+                await extract_media_url(sample_url, str(temp_storage_path))
 
         assert "Path traversal detected" in str(exc_info.value)
 

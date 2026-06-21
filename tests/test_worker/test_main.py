@@ -50,16 +50,8 @@ class TestCleanupExpiredJobs:
         db_session.add(job)
         await db_session.commit()
 
-        # Mock file operations: realpath resolves to downloads dir, file exists
-        def mock_realpath(path):
-            if path == settings.storage_path:
-                return settings.storage_path
-            if path == f"{settings.storage_path}/downloads":
-                return f"{settings.storage_path}/downloads"
-            return f"{_DOWNLOADS_DIR}/test.mp4"
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=mock_realpath),
+            patch("worker.main.validate_path", return_value=f"{_DOWNLOADS_DIR}/test.mp4"),
             patch("worker.main.os.path.exists", return_value=True),
         ):
             with patch("worker.main.os.remove") as mock_remove:
@@ -82,23 +74,17 @@ class TestCleanupExpiredJobs:
         db_session.add(job)
         await db_session.commit()
 
-        storage_paths = {settings.storage_path, f"{settings.storage_path}/downloads"}
-
-        def realpath_side_effect(path):
-            if path == "/etc/passwd":
-                return "/etc/passwd"
-            if path in storage_paths:
-                return f"{settings.storage_path}/downloads"
-            return path
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=realpath_side_effect),
+            patch("worker.main.validate_path", side_effect=ValueError("Path traversal detected")),
             patch("worker.main.os.path.exists", return_value=True),
         ):
             with patch("worker.main.os.remove") as mock_remove:
                 count = await cleanup_expired_jobs()
                 assert count == 0
                 mock_remove.assert_not_called()
+
+        await db_session.refresh(job)
+        assert job.status == "completed"
 
     @pytest.mark.unit
     async def test_cleanup_expired_jobs_handles_missing_file(self, db_session):
@@ -115,15 +101,8 @@ class TestCleanupExpiredJobs:
         db_session.add(job)
         await db_session.commit()
 
-        storage_paths = {settings.storage_path, f"{settings.storage_path}/downloads"}
-
-        def mock_realpath(path):
-            if path in storage_paths:
-                return f"{settings.storage_path}/downloads"
-            return f"{_DOWNLOADS_DIR}/nonexistent.mp4"
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=mock_realpath),
+            patch("worker.main.validate_path", return_value=f"{_DOWNLOADS_DIR}/nonexistent.mp4"),
             patch("worker.main.os.path.exists", return_value=False),
         ):
             with patch("worker.main.os.remove") as mock_remove:
@@ -186,19 +165,38 @@ class TestCleanupExpiredJobs:
             db_session.add(job)
         await db_session.commit()
 
-        storage_paths = {settings.storage_path, f"{settings.storage_path}/downloads"}
-
-        def mock_realpath(path):
-            if path in storage_paths:
-                return f"{settings.storage_path}/downloads"
-            return f"{_DOWNLOADS_DIR}/test0.mp4"
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=mock_realpath),
+            patch("worker.main.validate_path", return_value=f"{_DOWNLOADS_DIR}/test0.mp4"),
             patch("worker.main.os.path.exists", return_value=False),
         ):
             count = await cleanup_expired_jobs()
             assert count == 3
+
+    @pytest.mark.unit
+    async def test_cleanup_expired_jobs_rejects_sibling_prefix_path(self, db_session):
+        """Sibling-prefix paths are skipped without deleting the file or DB row."""
+        past_time = datetime.now(UTC) - timedelta(hours=1)
+        job = DownloadJob(
+            id=UUID("550e8400-e29b-41d4-a716-446655440023"),
+            user_id=UUID("550e8400-e29b-41d4-a716-446655440005"),
+            url="https://www.youtube.com/watch?v=test",
+            status="completed",
+            expires_at=past_time,
+            file_path=f"{_DOWNLOADS_DIR}_evil/test.mp4",
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        with (
+            patch("worker.main.os.path.exists", return_value=True),
+            patch("worker.main.os.remove") as mock_remove,
+        ):
+            count = await cleanup_expired_jobs()
+
+        assert count == 0
+        mock_remove.assert_not_called()
+        await db_session.refresh(job)
+        assert job.status == "completed"
 
 
 class TestWorkerMainStartup:

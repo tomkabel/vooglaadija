@@ -25,7 +25,6 @@ from app.auth import (
 from app.services.auth_service import hash_password, verify_password
 from app.services.outbox_service import write_job_to_outbox
 from app.services.yt_dlp_service import resolve_video_title
-from app.utils.security import validate_file_path as _validate_file_path
 from app.utils.username import default_username_from_email as _default_username_from_email
 from app.utils.validators import is_supported_url, validate_password
 from core.config import settings
@@ -35,6 +34,7 @@ from core.models.outbox import Outbox
 from core.models.user import User, not_deleted
 from core.queue import enqueue_job
 from core.redis_client import get_all_chaos_status, get_redis_client
+from core.utils.security import validate_path
 
 logger = get_logger(__name__)
 
@@ -47,6 +47,11 @@ templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 
 # Allowed redirect targets — only internal paths
 _ALLOWED_REDIRECT_HOSTS: tuple[str, ...] = ("/web/",)
+
+
+def _downloads_base_path() -> str:
+    """Build the configured downloads directory path."""
+    return os.path.join(settings.storage_path, "downloads")
 
 
 def _validate_redirect_url(url: str | None, default: str) -> str:
@@ -787,10 +792,10 @@ def _cleanup_job_files(jobs: list, logger) -> tuple[bool, list[str]]:
         if not job.file_path:
             continue
         try:
-            safe_path = _validate_file_path(job.file_path)
+            safe_path = validate_path(_downloads_base_path(), job.file_path)
             if os.path.isfile(safe_path):
                 os.remove(safe_path)
-        except HTTPException:
+        except (ValueError, PermissionError):
             logger.warning(
                 "Account deletion aborted: invalid download file path for job %s: %s",
                 job.id,
@@ -1025,12 +1030,15 @@ async def delete_download_form(
     # Delete file from disk before removing DB record
     if job.file_path:
         try:
-            safe_path = _validate_file_path(job.file_path)
+            safe_path = validate_path(_downloads_base_path(), job.file_path)
             if os.path.isfile(safe_path):
                 os.remove(safe_path)
                 logger.info("file_deleted", file_path=safe_path)
-        except HTTPException:
-            raise
+        except (ValueError, PermissionError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: invalid file path",
+            ) from e
         except OSError as e:
             logger.warning("failed_to_delete_file", file_path=job.file_path, error=str(e))
 
@@ -1108,7 +1116,13 @@ async def download_file(
             )
 
     # Validate path is within storage directory (prevents path traversal)
-    safe_path = _validate_file_path(job.file_path)
+    try:
+        safe_path = validate_path(_downloads_base_path(), job.file_path)
+    except (ValueError, PermissionError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: invalid file path",
+        ) from e
 
     # Check file exists on disk
     if not os.path.isfile(safe_path):
