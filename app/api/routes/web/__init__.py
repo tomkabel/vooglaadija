@@ -21,12 +21,7 @@ from app.api.routes.web_helpers import (
     _status_badge_templates_json,
     _success_html,
 )
-from app.auth import (
-    clear_token_cookies,
-    create_access_token,
-    create_refresh_token,
-    set_token_cookies,
-)
+from app.auth import clear_token_cookies, set_token_cookies
 from app.services.auth_service import hash_password, verify_password
 from app.services.outbox_service import write_job_to_outbox
 from app.services.yt_dlp_service import resolve_video_title
@@ -46,8 +41,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/web", tags=["web"])
 
 # Resolve templates relative to this file so it works regardless of CWD.
-# web.py -> app/api/routes/web.py, so parent^3 = app/
-_TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
+_TEMPLATE_DIR = Path(__file__).resolve().parents[3] / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 templates.env.globals["status_badge_html"] = _status_badge_html
 templates.env.globals["status_badge_templates_json"] = _status_badge_templates_json
@@ -210,38 +204,6 @@ async def validate_csrf_token(request: Request) -> bool:
     return False
 
 
-def _resolve_login_errors(error_code: str | None) -> tuple[str | None, dict[str, str]]:
-    """Map login error code to summary and field-level errors."""
-    if error_code in {"1", "invalid_credentials"}:
-        message = "Invalid email or password"
-        return message, {"email": message, "password": message}
-    if error_code == "csrf":
-        return "Invalid CSRF token", {}
-    if error_code == "inactive":
-        message = "Account is inactive"
-        return message, {"email": message}
-    return None, {}
-
-
-def _resolve_register_errors(error_code: str | None) -> tuple[str | None, dict[str, str]]:
-    """Map register error code to summary and field-level errors."""
-    if error_code == "password_mismatch":
-        message = "Passwords do not match"
-        return message, {"password_confirm": message}
-    if error_code == "password_too_short":
-        message = "Password must be at least 8 characters"
-        return message, {"password": message}
-    if error_code == "password_too_long":
-        message = "Password must be at most 128 characters"
-        return message, {"password": message}
-    if error_code == "email_exists":
-        message = "Email already registered"
-        return message, {"email": message}
-    if error_code == "csrf":
-        return "Invalid CSRF token", {}
-    return None, {}
-
-
 def _resolve_settings_errors(error_code: str | None) -> tuple[str | None, dict[str, str]]:
     """Map settings error code to summary and field-level errors."""
     error_map: dict[str, tuple[str, dict[str, str]]] = {
@@ -301,6 +263,38 @@ def _htmx_or_redirect(
     return RedirectResponse(url=redirect_url, status_code=redirect_status)
 
 
+def _resolve_login_errors(error_code: str | None) -> tuple[str | None, dict[str, str]]:
+    """Map login error code to summary and field-level errors."""
+    if error_code in {"1", "invalid_credentials"}:
+        message = "Invalid email or password"
+        return message, {"email": message, "password": message}
+    if error_code == "csrf":
+        return "Invalid CSRF token", {}
+    if error_code == "inactive":
+        message = "Account is inactive"
+        return message, {"email": message}
+    return None, {}
+
+
+def _resolve_register_errors(error_code: str | None) -> tuple[str | None, dict[str, str]]:
+    """Map register error code to summary and field-level errors."""
+    if error_code == "password_mismatch":
+        message = "Passwords do not match"
+        return message, {"password_confirm": message}
+    if error_code == "password_too_short":
+        message = "Password must be at least 8 characters"
+        return message, {"password": message}
+    if error_code == "password_too_long":
+        message = "Password must be at most 128 characters"
+        return message, {"password": message}
+    if error_code == "email_exists":
+        message = "Email already registered"
+        return message, {"email": message}
+    if error_code == "csrf":
+        return "Invalid CSRF token", {}
+    return None, {}
+
+
 def _login_success_response(
     request: Request,
     access_token: str,
@@ -308,10 +302,7 @@ def _login_success_response(
     safe_redirect: str,
     response: Response,
 ) -> HTMLResponse | RedirectResponse:
-    """Handle successful login response for both HTMX and regular requests.
-
-    Rotates the CSRF token to prevent reuse of the pre-authentication token.
-    """
+    """Handle successful login response for both HTMX and regular requests."""
     if is_htmx_request(request):
         resp = HTMLResponse(status_code=200, content="")
         resp.headers["HX-Redirect"] = safe_redirect
@@ -329,10 +320,7 @@ def _register_success_response(
     access_token: str,
     refresh_token: str,
 ) -> HTMLResponse | RedirectResponse:
-    """Handle successful registration response for both HTMX and regular requests.
-
-    Rotates the CSRF token to prevent reuse of the pre-registration token.
-    """
+    """Handle successful registration response for both HTMX and regular requests."""
     if is_htmx_request(request):
         resp = HTMLResponse(status_code=200, content="")
         resp.headers["HX-Redirect"] = "/web/downloads"
@@ -345,129 +333,123 @@ def _register_success_response(
     return redirect
 
 
-# ========================
-# PUBLIC ROUTES (no auth)
-# ========================
-
-
-@router.get("/login")
-async def login_page(
-    request: Request,
-    return_url: str = "/web/downloads",
-    error: Annotated[str | None, Query(max_length=100)] = None,
-):
-    """Render login page."""
-    token = get_csrf_token(request)
-    error_message, field_errors = _resolve_login_errors(error)
-    response = templates.TemplateResponse(
-        request,
-        "login.html",
-        get_template_context(
-            request,
-            csrf_token=token,
-            return_url=return_url,
-            error=error_message,
-            field_errors=field_errors,
-        ),
-    )
-    set_csrf_token_cookie(response, token)
-    return response
-
-
-@router.post("/login")
-@limiter.limit("5/minute")
-async def login_form(
-    request: Request,
-    response: Response,
-    db: DbSession,
-    email: Annotated[str, Form(max_length=255)],
-    password: Annotated[str, Form(max_length=255)],
-    return_url: Annotated[str | None, Form(max_length=500)] = None,
-):
-    """Handle login form submission via HTMX or regular POST."""
-    # CSRF validation
-    if not await validate_csrf_token(request):
-        return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
+async def _prime_demo_jobs(user_id: uuid.UUID, db: DbSession) -> None:
+    """Prime pending demo jobs for processing."""
+    pending_result = await db.execute(
+        select(DownloadJob).where(
+            DownloadJob.user_id == user_id,
+            DownloadJob.status == "pending",
         )
+    )
+    pending_jobs = pending_result.scalars().all()
+    if not pending_jobs:
+        return
 
-    result = await db.execute(select(User).where(User.email == email, not_deleted()))
+    r = get_redis_client()
+    already_primed = await r.exists("demo:jobs_primed")
+    if already_primed:
+        return
+
+    for i, job in enumerate(pending_jobs):
+        if i > 0:
+            await asyncio.sleep(0.2)
+        await enqueue_job(job.id)
+    await r.setex("demo:jobs_primed", 30, "1")
+    logger.info("demo_jobs_primed", count=len(pending_jobs))
+
+
+async def _demo_user_or_raise(db: DbSession, demo_email: str) -> User:
+    """Return the active demo user or raise the existing HTTP errors."""
+    result = await db.execute(select(User).where(User.email == demo_email, not_deleted()))
     user = result.scalar_one_or_none()
-
-    if user is None or not await verify_password(password, user.password_hash):
-        return _htmx_or_redirect(
-            request, 401, _error_html("Invalid email or password"), "/web/login?error=1"
+    if user is None:
+        logger.error("demo_user_not_found", email=demo_email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Demo user not found. Run scripts/seed_demo_data.py to seed the demo account.",
         )
-
     if not user.is_active:
-        return _htmx_or_redirect(
-            request, 401, _error_html("Account is inactive"), "/web/login?error=inactive"
-        )
-
-    access_token = create_access_token(user.id, token_version=user.token_version)
-    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
-
-    safe_redirect = _validate_redirect_url(return_url, "/web/downloads")
-
-    return _login_success_response(request, access_token, refresh_token, safe_redirect, response)
+        logger.error("demo_user_inactive", email=demo_email)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo user is inactive.")
+    return user
 
 
-@router.get("/register")
-async def register_page(
+async def _change_password_response(
     request: Request,
-    error: Annotated[str | None, Query(max_length=100)] = None,
-):
-    """Render register page."""
-    token = get_csrf_token(request)
-    error_message, field_errors = _resolve_register_errors(error)
-    response = templates.TemplateResponse(
-        request,
-        "register.html",
-        get_template_context(
-            request,
-            csrf_token=token,
-            error=error_message,
-            field_errors=field_errors,
-        ),
-    )
-    set_csrf_token_cookie(response, token)
-    return response
-
-
-@router.post("/register")
-@limiter.limit("5/minute")
-async def register_form(
-    request: Request,
-    email: Annotated[str, Form(max_length=255)],
-    password: Annotated[str, Form(max_length=255)],
-    password_confirm: Annotated[str, Form(max_length=255)],
+    current_password: str,
+    new_password: str,
+    new_password_confirm: str,
+    current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """Handle registration form submission via HTMX or regular POST."""
+) -> HTMLResponse | RedirectResponse:
+    """Apply password-change validation and return the existing web response."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
+            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
+        )
+    if not await verify_password(current_password, current_user.password_hash):
+        return _htmx_or_redirect(
+            request,
+            400,
+            _error_html("Current password is incorrect"),
+            "/web/settings?error=bad_current_password",
+        )
+    if new_password != new_password_confirm:
+        return _htmx_or_redirect(
+            request,
+            400,
+            _error_html("New passwords do not match"),
+            "/web/settings?error=password_mismatch",
+        )
+    pw_error = validate_password(new_password)
+    if pw_error:
+        error_code = "password_too_short" if len(new_password) < 8 else "password_too_long"
+        return _htmx_or_redirect(
+            request, 400, _error_html(pw_error), f"/web/settings?error={error_code}"
+        )
+
+    current_user.password_hash = await hash_password(new_password)
+    current_user.token_version += 1
+    await db.commit()
+    result = _htmx_or_redirect(
+        request,
+        200,
+        _success_html("Password changed successfully"),
+        "/web/settings?updated=password",
+    )
+    rotate_csrf_token(result)
+    return result
+
+
+async def _register_user_or_error_response(
+    request: Request,
+    email: str,
+    password: str,
+    password_confirm: str,
+    db: DbSession,
+) -> tuple[User | None, HTMLResponse | RedirectResponse | None]:
+    """Validate registration input and create a user, or return the existing error response."""
+    if not await validate_csrf_token(request):
+        return None, _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/register?error=csrf"
         )
-
     if password != password_confirm:
-        return _htmx_or_redirect(
+        return None, _htmx_or_redirect(
             request,
             400,
             _error_html("Passwords do not match"),
             "/web/register?error=password_mismatch",
         )
-
     pw_error = validate_password(password)
     if pw_error:
         error_code = "password_too_short" if len(password) < 8 else "password_too_long"
-        return _htmx_or_redirect(
+        return None, _htmx_or_redirect(
             request, 400, _error_html(pw_error), f"/web/register?error={error_code}"
         )
 
     result = await db.execute(select(User).where(User.email == email, not_deleted()))
-    existing = result.scalar_one_or_none()
-    if existing:
-        return _htmx_or_redirect(
+    if result.scalar_one_or_none():
+        return None, _htmx_or_redirect(
             request,
             409,
             _error_html("Email already registered"),
@@ -481,103 +463,28 @@ async def register_form(
         password_hash=await hash_password(password),
     )
     db.add(user)
-
     try:
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        return _htmx_or_redirect(
+        return None, _htmx_or_redirect(
             request,
             409,
             _error_html("Email already registered"),
             "/web/register?error=email_exists",
         )
-
     await db.refresh(user)
-
-    access_token = create_access_token(user.id, token_version=user.token_version)
-    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
-
-    return _register_success_response(request, access_token, refresh_token)
+    return user, None
 
 
-DEMO_EMAIL = "demo@vooglaadija.io"
+def _include_auth_router() -> None:
+    import app.api.routes.web.web_auth as web_auth_module
+
+    globals()["web_auth"] = web_auth_module
+    router.include_router(web_auth_module.router)
 
 
-@router.get("/demo-login")
-@limiter.limit("3/minute")
-async def demo_login(
-    request: Request,
-    response: Response,
-    db: DbSession,
-):
-    """One-click demo login — authenticates as pre-seeded demo user.
-
-    Sets JWT cookies and redirects to /web/downloads.
-    Returns 500 if demo user does not exist (seed script not run).
-    Rate-limited to 3/minute to prevent abuse.
-    """
-    result = await db.execute(select(User).where(User.email == DEMO_EMAIL, not_deleted()))
-    user = result.scalar_one_or_none()
-
-    if user is None:
-        logger.error("demo_user_not_found", email=DEMO_EMAIL)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Demo user not found. Run scripts/seed_demo_data.py to seed the demo account.",
-        )
-
-    if not user.is_active:
-        logger.error("demo_user_inactive", email=DEMO_EMAIL)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo user is inactive.",
-        )
-
-    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
-    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
-
-    # Prime demo jobs for processing so the UI shows live progress
-    try:
-        pending_result = await db.execute(
-            select(DownloadJob).where(
-                DownloadJob.user_id == user.id,
-                DownloadJob.status == "pending",
-            )
-        )
-        pending_jobs = pending_result.scalars().all()
-
-        if pending_jobs:
-            r = get_redis_client()
-            already_primed = await r.exists("demo:jobs_primed")
-            if not already_primed:
-                for i, job in enumerate(pending_jobs):
-                    if i > 0:
-                        await asyncio.sleep(0.2)
-                    await enqueue_job(job.id)
-                await r.setex("demo:jobs_primed", 30, "1")
-                logger.info("demo_jobs_primed", count=len(pending_jobs))
-    except Exception as e:
-        logger.warning("demo_jobs_prime_failed", error=str(e))
-        # Non-fatal — demo still works
-
-    redirect = RedirectResponse(url="/web/downloads", status_code=303)
-    set_token_cookies(redirect, access_token, refresh_token, secure=settings.cookie_secure)
-    rotate_csrf_token(redirect)
-    return redirect
-
-
-@router.post("/logout")
-async def logout(request: Request):
-    """Clear auth cookies and redirect to login."""
-    # CSRF validation - logout should be protected against CSRF
-    if not await validate_csrf_token(request):
-        return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf"
-        )
-    redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
-    clear_token_cookies(redirect)
-    return redirect
+_include_auth_router()
 
 
 # ========================
@@ -723,63 +630,6 @@ async def update_username(
         _success_html("Username updated successfully"),
         "/web/settings?updated=username",
     )
-
-
-@router.post("/settings/password")
-@limiter.limit("10/minute")
-async def change_password(
-    request: Request,
-    current_password: Annotated[str, Form(max_length=255)],
-    new_password: Annotated[str, Form(max_length=255)],
-    new_password_confirm: Annotated[str, Form(max_length=255)],
-    current_user: CurrentUserFromCookie,
-    db: DbSession,
-):
-    """Change current user's password.
-
-    On success, increments the user's token_version to invalidate all
-    existing sessions. Rotates the CSRF token.
-    """
-    if not await validate_csrf_token(request):
-        return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
-        )
-
-    if not await verify_password(current_password, current_user.password_hash):
-        return _htmx_or_redirect(
-            request,
-            400,
-            _error_html("Current password is incorrect"),
-            "/web/settings?error=bad_current_password",
-        )
-
-    if new_password != new_password_confirm:
-        return _htmx_or_redirect(
-            request,
-            400,
-            _error_html("New passwords do not match"),
-            "/web/settings?error=password_mismatch",
-        )
-
-    pw_error = validate_password(new_password)
-    if pw_error:
-        error_code = "password_too_short" if len(new_password) < 8 else "password_too_long"
-        return _htmx_or_redirect(
-            request, 400, _error_html(pw_error), f"/web/settings?error={error_code}"
-        )
-
-    current_user.password_hash = await hash_password(new_password)
-    current_user.token_version += 1
-    await db.commit()
-
-    result = _htmx_or_redirect(
-        request,
-        200,
-        _success_html("Password changed successfully"),
-        "/web/settings?updated=password",
-    )
-    rotate_csrf_token(result)
-    return result
 
 
 def _cleanup_job_files(jobs: list, logger) -> tuple[bool, list[str]]:

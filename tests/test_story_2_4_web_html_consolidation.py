@@ -72,11 +72,13 @@ def test_download_list_uses_canonical_row_partial():
 
 
 def test_web_fragment_helpers_are_defined_once_and_imported_by_web_routes():
-    """Programmatic web fragment helpers live only in web_helpers and are reused by web.py."""
+    """Programmatic web fragment helpers live only in web_helpers and are reused by web routes."""
     assert _python_function_definitions("_error_html") == [Path("app/api/routes/web_helpers.py")]
     assert _python_function_definitions("_success_html") == [Path("app/api/routes/web_helpers.py")]
 
-    web_source = _source("app/api/routes/web.py")
+    web_source = _source("app/api/routes/web/__init__.py") + _source(
+        "app/api/routes/web/web_auth.py"
+    )
     assert "from app.api.routes.web_helpers import" in web_source
     assert "_error_html" in web_source
     assert "_success_html" in web_source
