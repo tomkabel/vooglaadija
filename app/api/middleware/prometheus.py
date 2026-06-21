@@ -1,4 +1,4 @@
-"""API middleware for metrics collection."""
+"""Prometheus metrics collection middleware."""
 
 import time
 
@@ -7,8 +7,6 @@ from starlette.requests import Request
 from starlette.routing import BaseRoute
 
 from core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
-
-CONTENT_TYPE_LATEST = "text/plain; charset=utf-8"
 
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
@@ -24,7 +22,6 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception:
-            # Record metrics even on exceptions
             duration = time.time() - start_time
             route = request.scope.get("route")
             endpoint = self._get_endpoint_from_route(route)
