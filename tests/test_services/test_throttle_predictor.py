@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.config import settings
 from app.metrics import THROTTLE_RISK_SCORE
+from core.config import settings
 
 
 @pytest.fixture

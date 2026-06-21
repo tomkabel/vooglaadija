@@ -10,6 +10,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.logging_config import get_logger
 from app.services.redis_client import close_redis_client, get_redis_client, reset_redis_client
+from core.config import settings
 
 logger = get_logger(__name__)
 
@@ -42,35 +43,8 @@ def update_worker_state(**kwargs):
 
 
 def get_redis_url() -> str:
-    """Get Redis URL from environment or settings.
-
-    Checks REDIS_URL env var first, then component env vars (REDIS_HOST,
-    REDIS_PORT, REDIS_PASSWORD), then falls back to app.config.settings.
-    """
-    redis_url = os.environ.get("REDIS_URL")
-    if redis_url:
-        return redis_url
-
-    redis_host = os.environ.get("REDIS_HOST")
-    redis_port = os.environ.get("REDIS_PORT")
-    redis_password = os.environ.get("REDIS_PASSWORD")
-    if redis_host or redis_port or redis_password:
-        from urllib.parse import quote_plus
-
-        host = redis_host or "localhost"
-        port = redis_port or "6379"
-        if redis_password:
-            encoded = quote_plus(redis_password)
-            return f"redis://:{encoded}@{host}:{port}"
-        return f"redis://{host}:{port}"
-
-    try:
-        from app.config import settings
-
-        return settings.redis_url
-    except Exception:
-        pass
-    return "redis://localhost:6379"
+    """Get Redis URL from the canonical settings singleton."""
+    return settings.redis_url
 
 
 def get_worker_id() -> str:
@@ -82,7 +56,6 @@ def write_health_sync() -> bool:
     """Write worker health (synchronous version for shell scripts)."""
     import redis
 
-    redis_url = get_redis_url()
     worker_id = get_worker_id()
 
     health_data = {
@@ -93,7 +66,7 @@ def write_health_sync() -> bool:
     }
 
     r = redis.from_url(
-        redis_url,
+        settings.redis_url,
         socket_connect_timeout=5,
         socket_timeout=5,
         retry_on_timeout=False,

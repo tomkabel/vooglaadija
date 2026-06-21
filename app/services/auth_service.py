@@ -2,7 +2,7 @@ import asyncio
 
 from passlib.context import CryptContext
 
-from app.config import settings
+from core.config import settings
 
 # Configure bcrypt with configurable rounds
 pwd_context = CryptContext(

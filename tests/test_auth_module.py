@@ -13,7 +13,7 @@ from app.auth import (
     set_token_cookies,
     verify_token,
 )
-from app.config import settings
+from core.config import settings
 
 
 class TestCreateAccessToken:

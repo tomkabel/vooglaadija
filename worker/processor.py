@@ -24,7 +24,7 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import OperationalError
 
-from app.config import settings
+from core.config import settings
 from app.database import get_async_session_factory
 from app.logging_config import get_logger
 from app.metrics import (

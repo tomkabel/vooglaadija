@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.config import settings
+from core.config import settings
 from app.database import get_async_session_factory
 from app.logging_config import configure_logging, get_logger
 from app.metrics import CIRCUIT_DEFERRED_DEPTH, DLQ_DEPTH, QUEUE_DEPTH

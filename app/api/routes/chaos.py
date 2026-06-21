@@ -4,13 +4,13 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.routes.web import validate_csrf_token
-from app.config import settings
 from app.logging_config import get_logger
 from app.services.redis_client import (
     SCENARIO_KEY_MAP,
     delete_chaos_keys,
     get_redis_client,
 )
+from core.config import settings
 
 logger = get_logger(__name__)
 

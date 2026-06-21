@@ -10,11 +10,11 @@ _worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
 _test_db_path = os.path.abspath(f"test_{_worker_id}.db")
 _test_db_url = f"sqlite+aiosqlite:///{_test_db_path}"
 
-# Force reconfigure the database URL before any app imports
-# This ensures the app uses SQLite instead of PostgreSQL
-import app.config  # noqa: E402
+# Force reconfigure the database URL before any app imports.
+# This ensures the app uses SQLite instead of PostgreSQL.
+import core.config  # noqa: E402
 
-app.config.settings.database_url = _test_db_url
+core.config.settings.database_url = _test_db_url
 
 from collections.abc import AsyncGenerator  # noqa: E402
 

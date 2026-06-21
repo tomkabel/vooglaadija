@@ -6,8 +6,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies import get_current_user_from_cookie
-from app.config import settings
 from app.main import app
+from core.config import settings
 
 
 @pytest.fixture(autouse=True)

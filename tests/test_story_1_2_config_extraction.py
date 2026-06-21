@@ -1,0 +1,90 @@
+"""Regression tests for Story 1.2 configuration extraction."""
+
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+_LEGACY_CONFIG_MODULE = ".".join(("app", "config"))
+_SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
+_EXPECTED_ALEMBIC_VERSION_FILES = {
+    "001_initial.py",
+    "002_add_title_to_download_jobs.py",
+    "003_add_error_category_and_failed_jobs.py",
+    "004_add_token_version_to_users.py",
+}
+
+
+def _iter_python_files() -> list[Path]:
+    return [
+        path
+        for root in _SCAN_ROOTS
+        if (root_path := Path(root)).exists()
+        for path in root_path.rglob("*.py")
+    ]
+
+
+def test_internal_code_has_no_legacy_config_imports():
+    """Internal Python code references the canonical config module only."""
+    forbidden_fragments = (
+        f"from {_LEGACY_CONFIG_MODULE}",
+        f"import {_LEGACY_CONFIG_MODULE}",
+        _LEGACY_CONFIG_MODULE,
+    )
+
+    matches: list[str] = []
+    for path in _iter_python_files():
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if any(fragment in line for fragment in forbidden_fragments):
+                matches.append(f"{path}:{line_number}: {line.strip()}")
+
+    assert matches == []
+
+
+def test_config_extraction_added_no_alembic_migration():
+    """Config extraction does not introduce a database migration."""
+    migration_files = {path.name for path in Path("alembic/versions").glob("*.py")}
+
+    assert migration_files == _EXPECTED_ALEMBIC_VERSION_FILES
+
+
+def test_database_factory_reads_patched_core_database_url():
+    """The API database engine factory reads the patched core settings singleton."""
+    import app.database as database_module
+    from core.config import settings
+
+    factory = database_module._EngineFactory()
+    engine = object()
+    original_database_url = settings.database_url
+    patched_database_url = "sqlite+aiosqlite:///story_1_2_config_extraction.db"
+
+    settings.database_url = patched_database_url
+    try:
+        with patch("app.database.create_async_engine", return_value=engine) as mock_create_engine:
+            assert factory.get_engine() is engine
+    finally:
+        settings.database_url = original_database_url
+
+    assert mock_create_engine.call_args.args[0] == patched_database_url
+
+
+@pytest.mark.asyncio
+async def test_asgi_root_request_uses_core_config_singleton():
+    """An ASGI request runs through an app wired to the core settings singleton."""
+    import app.database as database_module
+    import app.main as main_module
+    from core.config import settings
+
+    assert main_module.settings is settings
+    assert database_module.settings is settings
+
+    async with AsyncClient(
+        transport=ASGITransport(app=main_module.app),
+        base_url="http://test",
+        follow_redirects=False,
+    ) as client:
+        response = await client.get("/")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/web/login"

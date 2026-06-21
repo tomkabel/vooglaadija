@@ -1,9 +1,9 @@
 import time
 
-from app.config import settings
 from app.logging_config import get_logger
 from app.metrics import THROTTLE_RISK_SCORE
 from app.services.redis_client import get_redis_client
+from core.config import settings
 
 logger = get_logger(__name__)
 

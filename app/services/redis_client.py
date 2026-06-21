@@ -55,7 +55,7 @@ def get_redis_client():
 
     import redis.asyncio as aioredis
 
-    from app.config import settings
+    from core.config import settings
 
     _redis_state["client"] = aioredis.from_url(
         settings.redis_url,

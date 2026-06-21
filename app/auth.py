@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 
-from app.config import settings
+from core.config import settings
 
 if TYPE_CHECKING:
     from starlette.responses import Response

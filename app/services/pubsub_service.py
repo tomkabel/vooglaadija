@@ -10,8 +10,8 @@ from collections.abc import AsyncGenerator
 
 import redis.asyncio as aioredis
 
-from app.config import settings
 from app.logging_config import get_logger
+from core.config import settings
 
 logger = get_logger(__name__)
 

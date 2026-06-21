@@ -13,6 +13,7 @@ from worker.health import (
     stop_health_server,
     update_worker_state,
 )
+from worker.health import settings as health_settings
 
 
 class TestUpdateWorkerState:
@@ -51,47 +52,35 @@ class TestUpdateWorkerState:
 class TestGetRedisUrl:
     """Tests for get_redis_url function."""
 
-    def test_get_redis_url_prefers_redis_url_env(self):
-        """Test that REDIS_URL env var takes precedence."""
-        with patch.dict(os.environ, {"REDIS_URL": "redis://custom:6379"}):
+    def test_get_redis_url_uses_canonical_settings(self):
+        """get_redis_url returns the canonical settings Redis URL."""
+        original_redis_url = health_settings.redis_url
+        health_settings.redis_url = "redis://settings-only:6379"
+        try:
             result = get_redis_url()
-            assert result == "redis://custom:6379"
+        finally:
+            health_settings.redis_url = original_redis_url
 
-    def test_get_redis_url_constructs_from_components(self):
-        """Test that get_redis_url constructs URL from components."""
+        assert result == "redis://settings-only:6379"
+
+    def test_get_redis_url_ignores_worker_local_components(self):
+        """Worker health does not assemble Redis URLs from raw env components."""
+        original_redis_url = health_settings.redis_url
+        health_settings.redis_url = "redis://canonical:6379"
         with patch.dict(
             os.environ,
             {
                 "REDIS_HOST": "myhost",
                 "REDIS_PORT": "6380",
-                "REDIS_PASSWORD": "",
-            },
-            clear=True,
-        ):
-            result = get_redis_url()
-            assert result == "redis://myhost:6380"
-
-    def test_get_redis_url_with_password(self):
-        """Test that get_redis_url handles password correctly."""
-        with patch.dict(
-            os.environ,
-            {
-                "REDIS_HOST": "myhost",
-                "REDIS_PORT": "6379",
                 "REDIS_PASSWORD": "secret:p@ss",
             },
-            clear=True,
         ):
-            result = get_redis_url()
-            assert "myhost" in result
-            assert "6379" in result
-            assert "secret" in result
+            try:
+                result = get_redis_url()
+            finally:
+                health_settings.redis_url = original_redis_url
 
-    def test_get_redis_url_default_values(self):
-        """Test default values when env vars not set."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = get_redis_url()
-            assert "localhost" in result or "redis://" in result
+        assert result == "redis://canonical:6379"
 
 
 class TestGetWorkerId:
@@ -156,6 +145,8 @@ class TestWriteHealthSync:
 
             result = write_health_sync()
             assert isinstance(result, bool)
+            mock_redis.assert_called_once()
+            assert mock_redis.call_args.args[0] == health_settings.redis_url
 
     def test_write_health_sync_handles_connection_error(self):
         """Test write_health_sync handles Redis connection errors."""

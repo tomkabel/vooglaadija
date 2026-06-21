@@ -49,7 +49,7 @@ def add_service_context(
     event_dict["service"] = "vooglaadija"
     # Try to get environment from settings, fall back to env var
     try:
-        from app.config import settings
+        from core.config import settings
 
         event_dict["environment"] = (
             settings.environment if hasattr(settings, "environment") else "unknown"

@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 
-from app.config import settings
+from core.config import settings
 from core.models.download_job import DownloadJob
 from worker.main import cleanup_expired_jobs
 

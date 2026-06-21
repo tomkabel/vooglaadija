@@ -4,7 +4,7 @@ import os
 
 from fastapi import HTTPException, status
 
-from app.config import settings
+from core.config import settings
 
 
 def get_downloads_dir() -> str:

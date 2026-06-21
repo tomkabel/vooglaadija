@@ -7,7 +7,7 @@ the engine is created with the correct configuration.
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import settings
+from core.config import settings
 from core.models.base import Base as CoreBase
 
 Base = CoreBase

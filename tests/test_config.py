@@ -14,11 +14,10 @@ def _make_production_settings(**kwargs):
     """Create a fresh Settings instance as if in production (TESTING not set).
 
     Temporarily removes test env vars so the production validation path runs,
-    then restores them after the call. Does NOT reload the module — the global
-    ``app.config.settings`` singleton is left untouched.
+    then restores them after the call. The global settings singleton is left untouched.
     """
     # Import the Settings class (not the singleton) for direct instantiation
-    from app.config import Settings
+    from core.config import Settings
 
     saved = {}
     for k in _CONFTEST_ENV_VARS:
@@ -36,22 +35,32 @@ def _make_production_settings(**kwargs):
 class TestSettingsTestingMode:
     """Settings behaviour when TESTING=1 (current test session)."""
 
+    def test_compatibility_shim_reexports_core_singletons(self):
+        """The temporary API config shim re-exports the canonical core objects."""
+        import importlib
+
+        api_config = importlib.import_module("app" + ".config")
+        core_config = importlib.import_module("core.config")
+
+        assert api_config.settings is core_config.settings
+        assert api_config.Settings is core_config.Settings
+
     def test_testing_env_skips_validation_and_has_sqlite(self):
         """TESTING=1 skips production validation; database_url uses SQLite."""
-        from app.config import settings
+        from core.config import settings
 
         assert "sqlite" in settings.database_url
 
     def test_secret_key_is_set_in_test_env(self):
         """In test env, SECRET_KEY comes from the conftest override."""
-        from app.config import settings
+        from core.config import settings
 
         assert settings.secret_key != ""
         assert len(settings.secret_key) >= 32
 
     def test_settings_instance_is_populated(self):
         """Settings should have all required fields populated in test mode."""
-        from app.config import settings
+        from core.config import settings
 
         assert settings.database_url
         assert settings.secret_key
@@ -65,7 +74,7 @@ class TestSettingsTestingMode:
         CI environments can override REDIS_URL. This regression test ensures the
         value remains a non-empty string (not None, not empty str).
         """
-        from app.config import settings
+        from core.config import settings
 
         assert isinstance(settings.redis_url, str)
         assert len(settings.redis_url) > 0

@@ -408,7 +408,7 @@ async def test_get_download_file_not_on_disk(db_session: AsyncSession):
     """
     import os
 
-    from app.config import settings
+    from core.config import settings
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         token = await create_test_user_and_login(client)
