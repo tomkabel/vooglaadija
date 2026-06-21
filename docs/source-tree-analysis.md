@@ -1,7 +1,6 @@
 # Source Tree Analysis
 
-**Project:** Vooglaadija — Media Link Processor
-**Repository Type:** Monorepo (4 parts)
+**Project:** Vooglaadija — Media Link Processor **Repository Type:** Monorepo (4 parts)
 
 ---
 
@@ -16,15 +15,30 @@ vooglaadija/
 │   │   ├── routes/               # HTTP route handlers
 │   │   │   ├── auth.py           # Auth endpoints (register, login, refresh, me, logout)
 │   │   │   ├── downloads.py      # Download job CRUD (REST API)
-│   │   │   ├── web.py            # HTMX/browser routes (HTML responses)
-│   │   │   ├── web_helpers.py    # Shared web HTML fragments and status badge helpers
+│   │   │   ├── web/              # HTMX/browser route package
+│   │   │   │   ├── __init__.py   # Aggregate /web router and compatibility re-exports
+│   │   │   │   ├── web_auth.py   # Login, register, demo login, logout, password
+│   │   │   │   ├── web_auth_helpers.py # Auth-specific helper functions
+│   │   │   │   ├── web_dashboard.py # Dashboard, chaos lab, slides
+│   │   │   │   ├── web_downloads.py # Web download CRUD, SSE page data, file serving
+│   │   │   │   ├── web_helpers.py # Package-local context/HTMX/file helpers
+│   │   │   │   └── web_settings.py # Username and account settings
+│   │   │   ├── web_helpers.py    # Shared HTML fragments and status badge helpers
 │   │   │   ├── sse.py            # Server-Sent Events for real-time updates
 │   │   │   ├── health.py         # Health check endpoints
 │   │   │   ├── metrics.py        # Prometheus metrics endpoint
 │   │   │   └── chaos.py          # Chaos engineering API (feature-gated)
 │   │   ├── dependencies/         # FastAPI dependency injection
 │   │   │   └── __init__.py       # DbSession, CurrentUser, get_current_user, etc.
-│   │   ├── middleware.py         # Prometheus middleware
+│   │   ├── middleware/           # Request middleware package
+│   │   │   ├── __init__.py       # Middleware re-exports
+│   │   │   ├── prometheus.py     # Prometheus request metrics middleware
+│   │   │   ├── request_body_size.py # Request body size limiting
+│   │   │   ├── request_id.py     # Request ID context/header middleware
+│   │   │   └── security_headers.py # CSP nonce and security headers
+│   │   ├── docs.py               # Custom Swagger/ReDoc static docs routes
+│   │   ├── exceptions.py         # Global exception handler registration
+│   │   ├── startup.py            # Sentry, startup checks, lifespan cleanup
 │   │   └── rate_limit_config.py  # SlowAPI rate limiter configuration
 │   ├── schemas/                  # Pydantic V2 request/response schemas
 │   │   └── error.py              # Standardized error response format
@@ -60,7 +74,12 @@ vooglaadija/
 │
 ├── worker/                      # Part: Worker (backend — background processor)
 │   ├── main.py                  # Entry point — event loop, signal handling, orchestration
-│   ├── processor.py             # Job execution, retry, circuit deferral
+│   ├── processor.py             # Thin job-processing orchestrator
+│   ├── job_claimer.py           # Queue pop normalization, DB claim, heartbeat helpers
+│   ├── job_executor.py          # yt-dlp execution, progress, completion, file cleanup
+│   ├── retry_scheduler.py       # Error classification, retry decisions, retry outbox writes
+│   ├── dlq_manager.py           # DLQ movement, depth metrics, replay/reset helpers
+│   ├── outbox_relay.py          # Pending outbox sync and stale terminal cleanup
 │   ├── health.py                # Internal health HTTP server + Redis heartbeat
 │   ├── state.py                 # Shared shutdown_event (lazy asyncio.Event)
 │   └── zombie_sweeper.py        # Reclaims stuck "processing" jobs
@@ -117,11 +136,11 @@ vooglaadija/
 
 ## Integration Points
 
-| From | To | Type | Details |
-|------|----|------|---------|
-| API Server | Worker | Redis List | Outbox → sync → `download_queue` (BRPOP) |
-| Worker | API Server | Redis Pub/Sub | `job_status:{user_id}`, `job_progress:{user_id}` |
-| API + Worker | PostgreSQL | Async SQLAlchemy | Shared models, connection pool |
-| API + Worker | Redis | aioredis | Queue, Pub/Sub, blacklist, health, chaos |
-| Worker | YouTube | Subprocess | yt-dlp via subprocess with SSRF protection |
-| User Browser | API | SSE (HTTP) | Real-time job status via `/web/downloads/stream` |
+| From         | To         | Type             | Details                                          |
+| ------------ | ---------- | ---------------- | ------------------------------------------------ |
+| API Server   | Worker     | Redis List       | Outbox → sync → `download_queue` (BRPOP)         |
+| Worker       | API Server | Redis Pub/Sub    | `job_status:{user_id}`, `job_progress:{user_id}` |
+| API + Worker | PostgreSQL | Async SQLAlchemy | Shared models, connection pool                   |
+| API + Worker | Redis      | aioredis         | Queue, Pub/Sub, blacklist, health, chaos         |
+| Worker       | YouTube    | Subprocess       | yt-dlp via subprocess with SSRF protection       |
+| User Browser | API        | SSE (HTTP)       | Real-time job status via `/web/downloads/stream` |

@@ -27,6 +27,7 @@ All web routes return HTML unless noted otherwise.
 | `POST`   | `/web/login`                   | No     | Login form submission (HTMX fragment + full-page fallback) |
 | `GET`    | `/web/register`                | No     | Registration page                                          |
 | `POST`   | `/web/register`                | No     | Registration form submission                               |
+| `GET`    | `/web/demo-login`              | No     | One-click demo login and demo job priming                  |
 | `POST`   | `/web/logout`                  | Cookie | Logout and redirect                                        |
 | `GET`    | `/web/downloads`               | Cookie | Downloads dashboard                                        |
 | `POST`   | `/web/downloads`               | Cookie | Create download (HTMX fragment)                            |
@@ -34,6 +35,9 @@ All web routes return HTML unless noted otherwise.
 | `GET`    | `/web/downloads/{id}/file`     | Cookie | Download processed file                                    |
 | `DELETE` | `/web/downloads/{id}`          | Cookie | Delete download (HTMX fragment)                            |
 | `GET`    | `/web/downloads/stream`        | Cookie | SSE real-time status stream                                |
+| `GET`    | `/web/chaos-lab`               | No     | Chaos engineering lab page when feature-gated on           |
+| `GET`    | `/web/chaos-lab/status`        | No     | Chaos flag status fragment when feature-gated on           |
+| `GET`    | `/web/slides`                  | No     | Presentation slides page                                   |
 | `GET`    | `/web/settings`                | Cookie | User settings page                                         |
 | `POST`   | `/web/settings/username`       | Cookie | Update username                                            |
 | `POST`   | `/web/settings/password`       | Cookie | Change password                                            |
