@@ -244,6 +244,17 @@ class CircuitBreaker:
         except Exception:
             self._half_open_calls = max(0, self._half_open_calls - 1)
 
+    async def _reset_half_open_slots(self) -> None:
+        """Clear all half-open trial slots after leaving HALF_OPEN state."""
+        self._half_open_calls = 0
+        if not self._use_redis:
+            return
+        try:
+            client = redis_client.get_redis_client()
+            await client.delete(f"{self._cb_key}:half_slots")
+        except Exception:
+            pass
+
     async def _distributed_last_failure(self) -> float | None:
         """Return the shared last-failure timestamp from Redis."""
         try:
@@ -325,6 +336,7 @@ class CircuitBreaker:
                     self._state = CircuitState.CLOSED
                     self._failure_count = 0
                     self._success_count = 0
+                    await self._reset_half_open_slots()
                     if self._use_redis:
                         await self._reset_failures_distributed()
                     CIRCUIT_BREAKER_STATE.labels(service=self.name).set(0)
@@ -365,7 +377,6 @@ class CircuitBreaker:
             )
 
             if self._state == CircuitState.HALF_OPEN:
-                await self._release_half_open_slot()
                 logger.warning(
                     "circuit_breaker_opening_from_half_open",
                     service=self.name,
@@ -373,6 +384,7 @@ class CircuitBreaker:
                 )
                 self._state = CircuitState.OPEN
                 self._success_count = 0
+                await self._reset_half_open_slots()
                 CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
             elif self._state == CircuitState.CLOSED:
                 if current_count >= self.failure_threshold:
