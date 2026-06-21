@@ -941,7 +941,15 @@ class TestCreateDownloadForm:
             if csrf_token:
                 headers["X-CSRF-Token"] = csrf_token
 
-            with patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue:
+            with (
+                patch(
+                    "app.api.routes.web.web_downloads.resolve_video_title", new_callable=AsyncMock
+                ) as mock_title,
+                patch(
+                    "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                ) as mock_enqueue,
+            ):
+                mock_title.return_value = "HTMX create video"
                 mock_enqueue.return_value = None
 
                 create_response = await client.post(
@@ -986,9 +994,11 @@ class TestCreateDownloadForm:
 
             with (
                 patch(
-                    "app.api.routes.web.resolve_video_title", new_callable=AsyncMock
+                    "app.api.routes.web.web_downloads.resolve_video_title", new_callable=AsyncMock
                 ) as mock_title,
-                patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue,
+                patch(
+                    "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                ) as mock_enqueue,
             ):
                 mock_title.return_value = "Story 1.4 queued video"
                 mock_enqueue.side_effect = RuntimeError("redis unavailable")
@@ -1107,9 +1117,11 @@ class TestCreateDownloadForm:
 
             with (
                 patch(
-                    "app.api.routes.web.resolve_video_title", new_callable=AsyncMock
+                    "app.api.routes.web.web_downloads.resolve_video_title", new_callable=AsyncMock
                 ) as mock_title,
-                patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue,
+                patch(
+                    "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+                ) as mock_enqueue,
             ):
                 mock_title.return_value = "Canonical HTMX row"
                 mock_enqueue.return_value = None
@@ -1170,6 +1182,86 @@ class TestCreateDownloadForm:
         assert "Invalid supported URL" in create_response.text
         assert "download-rows" not in create_response.text
 
+    @pytest.mark.asyncio
+    async def test_create_download_htmx_invalid_csrf_returns_inline_error_fragment(
+        self, sample_url
+    ):
+        """Test HTMX create with invalid CSRF returns the existing 403 error fragment."""
+        email = f"downloadcsrf_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+
+            create_response = await client.post(
+                "/web/downloads",
+                data={"url": sample_url},
+                headers={"HX-Request": "true", "X-CSRF-Token": "invalid_token"},
+                cookies={"access_token": access_token},
+            )
+
+        assert create_response.status_code == 403
+        assert "error-box" in create_response.text
+        assert "Invalid CSRF token" in create_response.text
+
+    @pytest.mark.asyncio
+    async def test_create_download_htmx_exception_during_creation_returns_error_fragment(
+        self, sample_url
+    ):
+        """Test HTMX create returns the existing 500 error fragment when outbox write fails."""
+        email = f"downloadcreateerr_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+
+            access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
+
+            headers = {"HX-Request": "true"}
+            if csrf_token:
+                headers["X-CSRF-Token"] = csrf_token
+
+            with patch(
+                "app.api.routes.web.web_downloads.write_job_to_outbox", new_callable=AsyncMock
+            ) as mock_outbox:
+                mock_outbox.side_effect = Exception("Database error")
+
+                create_response = await client.post(
+                    "/web/downloads",
+                    data={"url": sample_url},
+                    headers=headers,
+                    cookies={"access_token": access_token},
+                )
+
+        assert create_response.status_code == 500
+        assert "error-box" in create_response.text
+        assert "Failed to create download" in create_response.text
+
 
 class TestCreateDownloadFullPage:
     """Tests for POST /web/downloads/full (full page endpoint)."""
@@ -1199,7 +1291,9 @@ class TestCreateDownloadFullPage:
                 or csrf_token
             )
 
-            with patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue:
+            with patch(
+                "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+            ) as mock_enqueue:
                 mock_enqueue.return_value = None
 
                 create_response = await client.post(
@@ -1238,7 +1332,9 @@ class TestCreateDownloadFullPage:
                 or csrf_token
             )
 
-            with patch("app.api.routes.web.enqueue_job", new_callable=AsyncMock) as mock_enqueue:
+            with patch(
+                "app.api.routes.web.web_downloads.enqueue_job", new_callable=AsyncMock
+            ) as mock_enqueue:
                 mock_enqueue.side_effect = RuntimeError("redis unavailable")
 
                 create_response = await client.post(
@@ -2476,7 +2572,7 @@ class TestCreateDownloadFullPageErrors:
             csrf_token = get_csrf_from_response(csrf_response)
 
             with patch(
-                "app.api.routes.web.write_job_to_outbox", new_callable=AsyncMock
+                "app.api.routes.web.web_downloads.write_job_to_outbox", new_callable=AsyncMock
             ) as mock_outbox:
                 mock_outbox.side_effect = Exception("Database error")
 
@@ -2937,7 +3033,8 @@ class TestDeleteDownloadFormBranches:
             with patch("app.api.routes.web.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
                 with patch(
-                    "app.api.routes.web.os.remove", side_effect=OSError("Permission denied")
+                    "app.api.routes.web.web_downloads.os.remove",
+                    side_effect=OSError("Permission denied"),
                 ):
                     delete_response = await client.delete(
                         f"/web/downloads/{job_id}",

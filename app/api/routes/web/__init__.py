@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
@@ -23,14 +23,11 @@ from app.api.routes.web_helpers import (
 )
 from app.auth import clear_token_cookies, set_token_cookies
 from app.services.auth_service import hash_password, verify_password
-from app.services.outbox_service import write_job_to_outbox
-from app.services.yt_dlp_service import resolve_video_title
 from app.utils.username import default_username_from_email as _default_username_from_email
-from app.utils.validators import is_supported_url, validate_password
+from app.utils.validators import validate_password
 from core.config import settings
 from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
-from core.models.outbox import Outbox
 from core.models.user import User, not_deleted
 from core.queue import enqueue_job
 from core.redis_client import get_all_chaos_status, get_redis_client
@@ -487,6 +484,16 @@ def _include_auth_router() -> None:
 _include_auth_router()
 
 
+def _include_downloads_router() -> None:
+    import app.api.routes.web.web_downloads as web_downloads_module
+
+    globals()["web_downloads"] = web_downloads_module
+    router.include_router(web_downloads_module.router)
+
+
+_include_downloads_router()
+
+
 # ========================
 # CHAOS LAB (gated by FEATURE_CHAOS_API_ENABLED)
 # ========================
@@ -545,31 +552,6 @@ async def presentation_slides(request: Request):
 # ========================
 # PROTECTED ROUTES
 # ========================
-
-
-@router.get("/downloads")
-async def dashboard_page(
-    request: Request,
-    current_user: CurrentUserFromCookie,
-    db: DbSession,
-):
-    """Render main dashboard page with download list."""
-    result = await db.execute(
-        select(DownloadJob)
-        .where(DownloadJob.user_id == current_user.id)
-        .order_by(DownloadJob.created_at.desc())
-        .limit(50)
-    )
-    jobs = result.scalars().all()
-
-    token = get_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "dashboard.html",
-        get_template_context(request, csrf_token=token, current_user=current_user, jobs=jobs),
-    )
-    set_csrf_token_cookie(response, token)
-    return response
 
 
 @router.get("/settings")
@@ -729,259 +711,3 @@ async def delete_account(
     redirect = RedirectResponse(url="/web/login?account_deleted=1", status_code=303)
     clear_token_cookies(redirect)
     return redirect
-
-
-@router.post("/downloads")
-@limiter.limit("10/minute")
-async def create_download_form(
-    request: Request,
-    url: Annotated[str, Form(max_length=2000)],
-    current_user: CurrentUserFromCookie,
-    db: DbSession,
-):
-    """HTMX endpoint for form submissions. Returns HTML fragment."""
-    # CSRF validation
-    if not await validate_csrf_token(request):
-        return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
-
-    # Validate URL
-    if not is_supported_url(url):
-        return HTMLResponse(status_code=422, content=_error_html("Invalid supported URL"))
-
-    # Create job with transactional outbox pattern (same as REST API)
-    job_id = uuid.uuid4()
-
-    # Pre-resolve video title so the HTMX partial renders the actual title immediately.
-    # Fast (~0.5-3s) because yt-dlp runs with download=False.
-    # Falls back gracefully — worker resolves title if this fails.
-    title = await resolve_video_title(url)
-
-    job = DownloadJob(id=job_id, user_id=current_user.id, url=url, status="pending", title=title)
-    db.add(job)
-    try:
-        await write_job_to_outbox(db, job_id)
-        await db.commit()
-        await db.refresh(job)
-    except Exception:
-        await db.rollback()
-        logger.exception("failed_to_create_download_job")
-        return HTMLResponse(status_code=500, content=_error_html("Failed to create download"))
-
-    # Enqueue job for processing (best-effort; outbox handles recovery)
-    try:
-        await enqueue_job(job_id)
-        await db.execute(delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending"))
-        await db.commit()
-    except Exception:
-        logger.warning("failed_to_enqueue_job_outbox_recovery", job_id=str(job_id))
-
-    # Return HTML fragment for HTMX swap with rotated CSRF token
-    resp = templates.TemplateResponse(
-        request, "partials/_download_item.html", get_template_context(request, job=job)
-    )
-    rotate_csrf_token(resp)
-    return resp
-
-
-@router.post("/downloads/full")
-@limiter.limit("10/minute")
-async def create_download_full_page(
-    request: Request,
-    url: Annotated[str, Form(max_length=2000)],
-    current_user: CurrentUserFromCookie,
-    db: DbSession,
-):
-    """Full-page handler for form submissions (non-HTMX fallback)."""
-    # CSRF validation
-    if not await validate_csrf_token(request):
-        return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf"
-        )
-
-    # Validate URL
-    if not is_supported_url(url):
-        return _htmx_or_redirect(
-            request, 422, _error_html("Invalid supported URL"), "/web/downloads?error=invalid_url"
-        )
-
-    # Create job with transactional outbox pattern (same as REST API)
-    job_id = uuid.uuid4()
-    job = DownloadJob(id=job_id, user_id=current_user.id, url=url, status="pending")
-    db.add(job)
-    try:
-        await write_job_to_outbox(db, job_id)
-        await db.commit()
-        await db.refresh(job)
-    except Exception:
-        await db.rollback()
-        logger.exception("failed_to_create_download_job_full_page")
-        return _htmx_or_redirect(
-            request,
-            500,
-            _error_html("Failed to create download"),
-            "/web/downloads?error=creation_failed",
-        )
-
-    # Enqueue job for processing (best-effort; outbox handles recovery)
-    try:
-        await enqueue_job(job_id)
-        await db.execute(delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending"))
-        await db.commit()
-    except Exception:
-        logger.warning("failed_to_enqueue_job_outbox_recovery", job_id=str(job_id))
-
-    # Redirect to dashboard for full-page non-HTMX fallback
-    return RedirectResponse(url="/web/downloads", status_code=303)
-
-
-@router.delete("/downloads/{job_id}")
-@limiter.limit("30/minute")
-async def delete_download_form(
-    request: Request,
-    job_id: str,
-    current_user: CurrentUserFromCookie,
-    db: DbSession,
-):
-    """HTMX endpoint for deleting a download."""
-    # CSRF validation
-    if not await validate_csrf_token(request):
-        return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
-
-    # Validate job_id is a valid UUID
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
-        return HTMLResponse(status_code=400, content=_error_html("Invalid job ID"))
-
-    result = await db.execute(
-        select(DownloadJob).where(
-            DownloadJob.id == job_uuid,
-            DownloadJob.user_id == current_user.id,
-        )
-    )
-    job = result.scalar_one_or_none()
-
-    if job is None:
-        return HTMLResponse(status_code=404, content="")
-
-    # Only allow deletion of terminal jobs (completed, failed, cancelled)
-    # Reject deletes for jobs that are still processing to avoid races with worker
-    if job.status not in ("completed", "failed", "cancelled"):
-        return HTMLResponse(
-            status_code=409,
-            content=_error_html(
-                f"Cannot delete job with status '{job.status}'. Only completed, failed, or cancelled jobs can be deleted."
-            ),
-        )
-
-    # Delete file from disk before removing DB record
-    if job.file_path:
-        try:
-            safe_path = validate_path(_downloads_base_path(), job.file_path)
-            if os.path.isfile(safe_path):
-                os.remove(safe_path)
-                logger.info("file_deleted", file_path=safe_path)
-        except (ValueError, PermissionError) as e:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: invalid file path",
-            ) from e
-        except OSError as e:
-            logger.warning("failed_to_delete_file", file_path=job.file_path, error=str(e))
-
-    await db.delete(job)
-    await db.commit()
-
-    # Return empty response for hx-swap="outerHTML" (removes element) with rotated CSRF token
-    resp = HTMLResponse(content="")
-    rotate_csrf_token(resp)
-    return resp
-
-
-@router.get("/downloads/{job_id}/file")
-async def download_file(
-    request: Request,
-    job_id: str,
-    current_user: CurrentUserFromCookie,
-    db: DbSession,
-):
-    """Download the file for a completed job using cookie authentication.
-
-    This endpoint mirrors the API endpoint /api/v1/downloads/{job_id}/file
-    but uses cookie-based authentication instead of bearer tokens.
-    """
-    from fastapi.responses import FileResponse
-
-    # Validate job_id is a valid UUID
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid job ID format",
-        ) from None
-
-    result = await db.execute(
-        select(DownloadJob).where(
-            DownloadJob.id == job_uuid,
-            DownloadJob.user_id == current_user.id,
-        )
-    )
-    job = result.scalar_one_or_none()
-    if job is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Download job not found",
-        )
-
-    if job.status != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Job is not completed. Current status: {job.status}",
-        )
-
-    if not job.file_path:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found",
-        )
-
-    # Check if download has expired
-    if job.expires_at:
-        # Normalize both timestamps to UTC for comparison
-        now_utc = datetime.now(UTC)
-        expires_at = job.expires_at
-        # Ensure expires_at is timezone-aware (convert naive to UTC)
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=UTC)
-        else:
-            expires_at = expires_at.astimezone(UTC)
-        if expires_at < now_utc:
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE,
-                detail="Download link has expired",
-            )
-
-    # Validate path is within storage directory (prevents path traversal)
-    try:
-        safe_path = validate_path(_downloads_base_path(), job.file_path)
-    except (ValueError, PermissionError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: invalid file path",
-        ) from e
-
-    # Check file exists on disk
-    if not os.path.isfile(safe_path):
-        safe_job_id = str(job_id).replace("\r", "").replace("\n", "")
-        logger.error("file_missing_from_disk", job_id=safe_job_id, file_path=safe_path)
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found on disk",
-        )
-
-    return FileResponse(
-        path=safe_path,
-        filename=job.file_name,
-        media_type="application/octet-stream",
-    )
