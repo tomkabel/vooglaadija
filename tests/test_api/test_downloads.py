@@ -790,6 +790,15 @@ async def test_replay_failed_job_invalid_id_returns_400():
 
 
 @pytest.mark.asyncio
+async def test_replay_all_failed_jobs_requires_auth():
+    """Test that replay-all DLQ replay requires authentication on the static route."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/downloads/failed/replay-all")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_replay_all_failed_jobs_batches_original_lookup_and_preserves_filter(
     db_session: AsyncSession,
 ):

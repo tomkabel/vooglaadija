@@ -394,3 +394,120 @@ async def test_replay_all_batches_original_lookup_and_preserves_filter(db_sessio
     assert result.replayed == 3
     assert result.total == 3
     assert download_job_selects == 1
+
+
+@pytest.mark.asyncio
+async def test_replay_all_respects_max_batch_limit_for_orphans(db_session):
+    """Replay-all processes only the bounded batch and leaves extra DLQ rows queued."""
+    from app.services.download_service import DownloadService
+
+    user = await _user(db_session, "batch-limit@example.com")
+    failed_jobs = [
+        _failed_job(
+            user.id,
+            url=f"https://www.youtube.com/watch?v=batch-limit-{index}",
+            error_category="transient",
+        )
+        for index in range(3)
+    ]
+    db_session.add_all(failed_jobs)
+    await db_session.commit()
+
+    download_job_selects = 0
+
+    def count_download_job_selects(_conn, _cursor, statement, _parameters, _context, _executemany):
+        nonlocal download_job_selects
+        normalized = " ".join(statement.lower().split())
+        if normalized.startswith("select") and " from download_jobs " in normalized:
+            download_job_selects += 1
+
+    service = DownloadService(db_session, user.id)
+    event.listen(test_engine.sync_engine, "before_cursor_execute", count_download_job_selects)
+    try:
+        result = await service.replay_all_failed(category="transient", max_batch=2)
+    finally:
+        event.remove(test_engine.sync_engine, "before_cursor_execute", count_download_job_selects)
+
+    assert result.replayed == 2
+    assert result.total == 2
+    assert download_job_selects == 0
+
+    remaining_failed_result = await db_session.execute(select(FailedJob))
+    assert len(remaining_failed_result.scalars().all()) == 1
+
+    created_jobs_result = await db_session.execute(
+        select(DownloadJob).where(DownloadJob.user_id == user.id)
+    )
+    created_jobs = created_jobs_result.scalars().all()
+    assert len(created_jobs) == 2
+    assert {job.status for job in created_jobs} == {"pending"}
+
+    outbox_result = await db_session.execute(select(Outbox))
+    assert len(outbox_result.scalars().all()) == 2
+
+
+@pytest.mark.asyncio
+async def test_replay_all_treats_cross_user_original_as_orphan(db_session):
+    """Replay-all must not mutate another user's job from malformed DLQ data."""
+    from app.services.download_service import DownloadService
+
+    user = await _user(db_session, "malformed-dlq@example.com")
+    other = await _user(db_session, "malformed-dlq-other@example.com")
+    other_original = _job(
+        other.id,
+        status="failed",
+        retry_count=4,
+        error="other user failure",
+        error_category="transient",
+        completed_at=datetime.now(UTC),
+    )
+    malformed_failed = _failed_job(
+        user.id,
+        original_job_id=other_original.id,
+        url="https://www.youtube.com/watch?v=cross-user-orphan",
+        error_category="transient",
+    )
+    db_session.add_all([other_original, malformed_failed])
+    await db_session.commit()
+
+    download_job_selects = 0
+
+    def count_download_job_selects(_conn, _cursor, statement, _parameters, _context, _executemany):
+        nonlocal download_job_selects
+        normalized = " ".join(statement.lower().split())
+        if normalized.startswith("select") and " from download_jobs " in normalized:
+            download_job_selects += 1
+
+    service = DownloadService(db_session, user.id)
+    event.listen(test_engine.sync_engine, "before_cursor_execute", count_download_job_selects)
+    try:
+        result = await service.replay_all_failed(category="transient")
+    finally:
+        event.remove(test_engine.sync_engine, "before_cursor_execute", count_download_job_selects)
+
+    assert result.replayed == 1
+    assert result.total == 1
+    assert download_job_selects == 1
+
+    await db_session.refresh(other_original)
+    assert other_original.status == "failed"
+    assert other_original.retry_count == 4
+    assert other_original.error == "other user failure"
+    assert other_original.completed_at is not None
+
+    created_result = await db_session.execute(
+        select(DownloadJob).where(
+            DownloadJob.user_id == user.id,
+            DownloadJob.url == "https://www.youtube.com/watch?v=cross-user-orphan",
+        )
+    )
+    created_job = created_result.scalar_one()
+    assert created_job.status == "pending"
+
+    failed_result = await db_session.execute(
+        select(FailedJob).where(FailedJob.id == malformed_failed.id)
+    )
+    assert failed_result.scalar_one_or_none() is None
+
+    outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == created_job.id))
+    assert outbox_result.scalar_one().status == "pending"
