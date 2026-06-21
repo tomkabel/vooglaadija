@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from app.utils.exceptions import StorageError
 from app.utils.validators import validate_url_not_ssrf
 from core.logging_config import get_logger
 
@@ -148,10 +149,6 @@ except Exception as e:
     finally:
         if process and process.returncode is None:
             await _kill_process_group(process, graceful=True)
-
-
-class StorageError(Exception):
-    """Raised when storage operations fail."""
 
 
 async def _kill_process_group(process: asyncio.subprocess.Process, graceful: bool = True) -> None:

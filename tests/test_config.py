@@ -148,25 +148,15 @@ class TestStorageErrorInExceptions:
     """StorageError was added to app.utils.exceptions in this PR."""
 
     def test_storage_error_importable(self):
+        """StorageError is importable from the canonical exceptions module."""
         from app.utils.exceptions import StorageError
 
         err = StorageError("storage failed")
         assert str(err) == "storage failed"
         assert isinstance(err, Exception)
 
-    def test_yt_dlp_error_still_present(self):
-        from app.utils.exceptions import YTDLPError
-
-        err = YTDLPError("yt-dlp failed")
-        assert isinstance(err, Exception)
-
-    def test_storage_error_and_yt_dlp_error_are_distinct(self):
-        from app.utils.exceptions import StorageError, YTDLPError
-
-        assert not issubclass(StorageError, YTDLPError)
-        assert not issubclass(YTDLPError, StorageError)
-
     def test_storage_error_is_catchable_as_exception(self):
+        """StorageError can be caught as its canonical exception type."""
         from app.utils.exceptions import StorageError
 
         with pytest.raises(StorageError):

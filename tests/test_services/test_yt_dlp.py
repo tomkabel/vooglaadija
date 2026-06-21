@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.yt_dlp_service import StorageError, extract_media_url
+from app.services.yt_dlp_service import extract_media_url
+from app.utils.exceptions import StorageError
 from app.utils.validators import is_youtube_url
 
 
@@ -317,6 +318,21 @@ class TestExtractMediaUrl:
             with pytest.raises(StorageError) as exc_info:
                 await extract_media_url(sample_url, str(temp_storage_path))
             assert "Expected output file not found" in str(exc_info.value)
+
+    def test_validate_path_within_escape_raises_storage_error(
+        self, temp_storage_path: Path
+    ) -> None:
+        """Verify path escapes still raise the canonical StorageError."""
+        from app.services.yt_dlp_service import _validate_path_within
+
+        download_dir = temp_storage_path / "downloads"
+        download_dir.mkdir()
+        escaped_path = download_dir / ".." / "escape.mp4"
+
+        with pytest.raises(StorageError) as exc_info:
+            _validate_path_within(str(download_dir), str(escaped_path))
+
+        assert "Path traversal detected" in str(exc_info.value)
 
 
 # Helper functions for TestExtractViaSubprocessTimeoutHandling
