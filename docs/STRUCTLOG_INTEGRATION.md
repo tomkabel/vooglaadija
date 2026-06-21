@@ -26,7 +26,7 @@ except Exception as e:
 ### After (Structlog)
 
 ```python
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -77,7 +77,7 @@ except Exception as e:
 ### With Context (Context Variables)
 
 ```python
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 
 # Bind context that will be included in all subsequent logs
 logger = get_logger(__name__, user_id=user.id, request_id=request_id)
@@ -90,7 +90,7 @@ logger.info("database_query", query="SELECT * FROM users")  # Plus query
 
 ```python
 from fastapi import Request
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 
 async def some_endpoint(request: Request):
     # Get logger with request context
@@ -101,7 +101,7 @@ async def some_endpoint(request: Request):
 ### In Worker Jobs
 
 ```python
-from app.logging_config import get_logger
+from core.logging_config import get_logger
 
 async def process_download(job_id: UUID):
     logger = get_logger(__name__, job_id=str(job_id))
@@ -166,7 +166,7 @@ logger.info("api_call", api_key=mask_sensitive(api_key))
 
 ## Migration Checklist
 
-- [ ] Update imports from `logging` to `app.logging_config`
+- [ ] Update imports from `logging` to `core.logging_config`
 - [ ] Change `logging.getLogger(__name__)` to `get_logger(__name__)`
 - [ ] Convert log message formatting to structured fields
 - [ ] Remove string interpolation from log messages

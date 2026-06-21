@@ -10,7 +10,7 @@
 |-----------|------|---------------|
 | Main Loop | `worker/main.py` | Event loop, signal handling, orchestration, periodic maintenance |
 | Processor | `worker/processor.py` | Job execution (claim → extract → classify → retry/DLQ/defer) |
-| Queue | `worker/queue.py` | Redis queue wrappers with deduplication |
+| Queue | `core/queue.py` | Redis queue wrappers with deduplication shared by API and worker |
 | Health | `worker/health.py` | HTTP health server (port 8082) + Redis heartbeat |
 | State | `worker/state.py` | Shared `shutdown_event` (lazy asyncio.Event) |
 | Zombie Sweeper | `worker/zombie_sweeper.py` | Reclaims stuck processing jobs |

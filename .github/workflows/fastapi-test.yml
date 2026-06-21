@@ -203,7 +203,7 @@ jobs:
           uv run python -c "
           import asyncio
           from sqlalchemy.ext.asyncio import create_async_engine
-          from app.database import Base
+          from core.database import Base
           from core.models import User, DownloadJob
 
           async def init_db():
