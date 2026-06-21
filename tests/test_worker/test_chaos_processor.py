@@ -197,7 +197,7 @@ class TestZombieSweepRecoveryMetrics:
     @pytest.mark.asyncio
     async def test_recovery_counter_increments_on_stuck_job_reset(self, db_session):
         """reset_stuck_jobs increments RECOVERIES when it finds and resets stuck jobs."""
-        from worker.processor import reset_stuck_jobs
+        from worker.dlq_manager import reset_stuck_jobs
 
         job_id = uuid.uuid4()
         stuck_job = DownloadJob(
@@ -222,7 +222,7 @@ class TestZombieSweepRecoveryMetrics:
     @pytest.mark.asyncio
     async def test_recovery_counter_not_incremented_when_no_stuck_jobs(self, db_session):
         """reset_stuck_jobs does NOT increment RECOVERIES when no jobs are stuck."""
-        from worker.processor import reset_stuck_jobs
+        from worker.dlq_manager import reset_stuck_jobs
 
         initial = RECOVERIES.labels(reason="zombie_sweep_recovery")._value.get()
 

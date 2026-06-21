@@ -2,15 +2,50 @@
 
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import Mock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import update
+from sqlalchemy import event, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import verify_token
 from app.main import app
 from core.models.download_job import DownloadJob
-from tests.conftest import create_test_user_and_login
+from core.models.failed_job import FailedJob
+from core.models.outbox import Outbox
+from tests.conftest import create_test_user_and_login, test_engine
+
+
+def _user_id_from_token(token: str) -> uuid.UUID:
+    payload = verify_token(token)
+    assert payload is not None
+    return uuid.UUID(payload["sub"])
+
+
+def _failed_job(
+    user_id: uuid.UUID,
+    *,
+    failed_job_id: uuid.UUID | None = None,
+    original_job_id: uuid.UUID | None = None,
+    url: str = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    category: str = "transient",
+    title: str | None = None,
+) -> FailedJob:
+    return FailedJob(
+        id=failed_job_id or uuid.uuid4(),
+        original_job_id=original_job_id,
+        user_id=user_id,
+        url=url,
+        error_category=category,
+        retry_history="attempt 1 failed",
+        final_error=f"{category} failure",
+        final_error_category=category,
+        retry_count=2,
+        max_retries_at_failure=3,
+        title=title,
+        failed_at=datetime.now(UTC),
+    )
 
 
 @pytest.mark.asyncio
@@ -565,6 +600,274 @@ async def test_retry_download_requires_auth():
             f"/api/v1/downloads/{uuid.uuid4()}/retry",
         )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_failed_jobs_filters_by_user_and_category(db_session: AsyncSession):
+    """Test that DLQ listing preserves authentication, user isolation, and category filtering."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token_a = await create_test_user_and_login(client, "dlq_a@example.com")
+        token_b = await create_test_user_and_login(client, "dlq_b@example.com")
+        user_a = _user_id_from_token(token_a)
+        user_b = _user_id_from_token(token_b)
+
+        visible_failed = _failed_job(user_a, category="transient", title="Visible")
+        filtered_failed = _failed_job(user_a, category="timeout", title="Filtered")
+        other_user_failed = _failed_job(user_b, category="transient", title="Other")
+        db_session.add_all([visible_failed, filtered_failed, other_user_failed])
+        await db_session.commit()
+
+        unauthorized = await client.get("/api/v1/downloads/failed")
+        response = await client.get(
+            "/api/v1/downloads/failed?category=transient",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pagination"]["total"] == 1
+    assert [job["id"] for job in data["failed_jobs"]] == [str(visible_failed.id)]
+    assert data["failed_jobs"][0]["title"] == "Visible"
+
+
+@pytest.mark.asyncio
+async def test_replay_failed_job_resets_original_and_writes_outbox(db_session: AsyncSession):
+    """Test that single DLQ replay resets the original job and writes an enqueue outbox row."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client, "dlq_replay@example.com")
+        user_id = _user_id_from_token(token)
+        job_id = uuid.uuid4()
+        failed_job_id = uuid.uuid4()
+
+        job = DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=replay-original",
+            status="failed",
+            retry_count=2,
+            next_retry_at=datetime.now(UTC),
+            error="attempts failed",
+            error_category="transient",
+            completed_at=datetime.now(UTC),
+        )
+        db_session.add(job)
+        db_session.add(_failed_job(user_id, failed_job_id=failed_job_id, original_job_id=job_id))
+        await db_session.commit()
+
+        response = await client.post(
+            f"/api/v1/downloads/failed/{failed_job_id}/replay",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == str(job_id)
+    assert data["status"] == "pending"
+    assert data["retry_count"] == 0
+    assert data["next_retry_at"] is None
+    assert data["error"] is None
+    assert data["error_category"] is None
+    assert data["completed_at"] is None
+
+    await db_session.refresh(job)
+    assert job.status == "pending"
+    assert job.retry_count == 0
+    assert job.error is None
+    assert job.error_category is None
+
+    failed_result = await db_session.execute(select(FailedJob).where(FailedJob.id == failed_job_id))
+    assert failed_result.scalar_one_or_none() is None
+
+    outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
+    outbox = outbox_result.scalar_one()
+    assert outbox.event_type == "enqueue_download"
+    assert outbox.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_replay_failed_job_without_original_creates_job_and_updates_dlq_depth(
+    db_session: AsyncSession,
+):
+    """Test that replaying an orphan DLQ row creates a job and updates DLQ depth."""
+    metric = Mock()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client, "dlq_replay_new@example.com")
+        user_id = _user_id_from_token(token)
+        failed_job_id = uuid.uuid4()
+
+        db_session.add(
+            _failed_job(
+                user_id,
+                failed_job_id=failed_job_id,
+                url="https://www.youtube.com/watch?v=replay-new",
+            )
+        )
+        await db_session.commit()
+
+        with patch("core.metrics.DLQ_DEPTH", metric):
+            response = await client.post(
+                f"/api/v1/downloads/failed/{failed_job_id}/replay",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "pending"
+    assert data["url"] == "https://www.youtube.com/watch?v=replay-new"
+    metric.set.assert_called_once_with(0.0)
+
+    failed_result = await db_session.execute(select(FailedJob).where(FailedJob.id == failed_job_id))
+    assert failed_result.scalar_one_or_none() is None
+
+    job_result = await db_session.execute(
+        select(DownloadJob).where(DownloadJob.id == uuid.UUID(data["id"]))
+    )
+    created_job = job_result.scalar_one()
+    assert created_job.user_id == user_id
+    assert created_job.status == "pending"
+
+    outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == created_job.id))
+    assert outbox_result.scalar_one().status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_replay_failed_job_invalid_id_returns_400():
+    """Test that single DLQ replay rejects malformed failed-job IDs."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client, "dlq_invalid@example.com")
+        response = await client.post(
+            "/api/v1/downloads/failed/not-a-uuid/replay",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 400
+    assert "Invalid failed job ID format" in response.text
+
+
+@pytest.mark.asyncio
+async def test_replay_all_failed_jobs_batches_original_lookup_and_preserves_filter(
+    db_session: AsyncSession,
+):
+    """Test that replay-all batches original lookup and only replays the filtered user's DLQ rows."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client, "dlq_all@example.com")
+        other_token = await create_test_user_and_login(client, "dlq_other@example.com")
+        user_id = _user_id_from_token(token)
+        other_user_id = _user_id_from_token(other_token)
+
+        original_one = DownloadJob(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=replay-all-one",
+            status="failed",
+            retry_count=2,
+            error="first failed",
+            error_category="transient",
+            completed_at=datetime.now(UTC),
+        )
+        original_two = DownloadJob(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=replay-all-two",
+            status="failed",
+            retry_count=3,
+            error="second failed",
+            error_category="transient",
+            completed_at=datetime.now(UTC),
+        )
+        db_session.add_all([original_one, original_two])
+
+        transient_ids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+        skipped_timeout_id = uuid.uuid4()
+        other_user_failed_id = uuid.uuid4()
+        db_session.add_all(
+            [
+                _failed_job(
+                    user_id,
+                    failed_job_id=transient_ids[0],
+                    original_job_id=original_one.id,
+                    category="transient",
+                ),
+                _failed_job(
+                    user_id,
+                    failed_job_id=transient_ids[1],
+                    original_job_id=original_two.id,
+                    category="transient",
+                ),
+                _failed_job(
+                    user_id,
+                    failed_job_id=transient_ids[2],
+                    url="https://www.youtube.com/watch?v=replay-all-new",
+                    category="transient",
+                ),
+                _failed_job(user_id, failed_job_id=skipped_timeout_id, category="timeout"),
+                _failed_job(
+                    other_user_id,
+                    failed_job_id=other_user_failed_id,
+                    category="transient",
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        download_job_selects = 0
+
+        def count_download_job_selects(
+            _conn,
+            _cursor,
+            statement: str,
+            _parameters,
+            _context,
+            _executemany,
+        ) -> None:
+            nonlocal download_job_selects
+            normalized = " ".join(statement.lower().split())
+            if normalized.startswith("select") and " from download_jobs " in normalized:
+                download_job_selects += 1
+
+        event.listen(test_engine.sync_engine, "before_cursor_execute", count_download_job_selects)
+        try:
+            response = await client.post(
+                "/api/v1/downloads/failed/replay-all?category=transient",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            event.remove(
+                test_engine.sync_engine,
+                "before_cursor_execute",
+                count_download_job_selects,
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"replayed": 3, "total": 3}
+    assert download_job_selects == 1
+
+    await db_session.refresh(original_one)
+    await db_session.refresh(original_two)
+    assert original_one.status == "pending"
+    assert original_one.retry_count == 0
+    assert original_one.error is None
+    assert original_two.status == "pending"
+    assert original_two.retry_count == 0
+    assert original_two.error is None
+
+    new_job_result = await db_session.execute(
+        select(DownloadJob).where(
+            DownloadJob.user_id == user_id,
+            DownloadJob.url == "https://www.youtube.com/watch?v=replay-all-new",
+        )
+    )
+    new_job = new_job_result.scalar_one()
+    assert new_job.status == "pending"
+
+    remaining_result = await db_session.execute(select(FailedJob.id))
+    remaining_failed_ids = set(remaining_result.scalars().all())
+    assert remaining_failed_ids == {skipped_timeout_id, other_user_failed_id}
+
+    outbox_result = await db_session.execute(select(Outbox))
+    outbox_job_ids = {entry.job_id for entry in outbox_result.scalars().all()}
+    assert outbox_job_ids == {original_one.id, original_two.id, new_job.id}
 
 
 @pytest.mark.asyncio

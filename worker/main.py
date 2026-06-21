@@ -11,10 +11,10 @@ from sqlalchemy import select
 from core.config import settings
 from core.database import get_async_session_factory
 from core.logging_config import configure_logging, get_logger
-from core.metrics import CIRCUIT_DEFERRED_DEPTH, DLQ_DEPTH, QUEUE_DEPTH
+from core.metrics import CIRCUIT_DEFERRED_DEPTH, QUEUE_DEPTH
 from core.models.download_job import DownloadJob
-from core.models.failed_job import FailedJob
 from core.utils.security import validate_path
+from worker.dlq_manager import cleanup_expired_dlq, update_dlq_depth as _update_dlq_depth
 from worker.health import (
     close_health_redis_client,
     start_health_server,
@@ -22,12 +22,8 @@ from worker.health import (
     update_worker_state,
     write_health_async,
 )
-from worker.processor import (
-    _drain_circuit_deferred,
-    cleanup_stale_outbox_entries,
-    process_next_job,
-    sync_outbox_to_queue,
-)
+from worker.outbox_relay import cleanup_stale_outbox_entries, sync_outbox_to_queue
+from worker.processor import _drain_circuit_deferred, process_next_job
 from core.queue import redis_client
 from worker.state import shutdown_event
 from worker.zombie_sweeper import requeue_stuck_jobs
@@ -74,18 +70,6 @@ def get_grace_period_remaining() -> float | None:
     elapsed = _time.monotonic() - shutdown_requested_at
     remaining = GRACE_PERIOD_SECONDS - elapsed
     return max(0.0, remaining)
-
-
-async def _update_dlq_depth() -> None:
-    try:
-        session_factory = get_async_session_factory()
-        async with session_factory() as db:
-            from sqlalchemy import func as sa_func
-
-            result = await db.execute(sa_func.count(FailedJob.id))
-            DLQ_DEPTH.set(result.scalar() or 0)
-    except Exception:
-        pass
 
 
 async def _update_circuit_deferred_depth() -> None:
@@ -158,22 +142,6 @@ async def cleanup_expired_jobs() -> int:
             logger.info("cleanup_completed", expired_jobs_cleaned=cleanup_count)
 
         return cleanup_count
-
-
-async def cleanup_expired_dlq() -> int:
-    """Delete expired DLQ entries."""
-    session_factory = get_async_session_factory()
-    async with session_factory() as db:
-        now = datetime.now(UTC)
-        result = await db.execute(select(FailedJob).where(FailedJob.expires_at < now))
-        expired = result.scalars().all()
-        count = len(expired)
-        for entry in expired:
-            await db.delete(entry)
-        await db.commit()
-        if count > 0:
-            logger.info("dlq_cleanup_completed", purged_entries=count)
-        return count
 
 
 async def _update_queue_depth() -> None:

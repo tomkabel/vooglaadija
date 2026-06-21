@@ -114,7 +114,7 @@ class TestProcessNextJob:
         db_session,
         mock_redis_client,
     ):
-        """Test retry scheduling uses worker.processor.calculate_delay for next_retry_at."""
+        """Test retry scheduling uses worker.retry_scheduler.calculate_delay for next_retry_at."""
         import asyncio
 
         from app.services.error_classifier import ErrorCategory
@@ -151,9 +151,11 @@ class TestProcessNextJob:
             ),
             patch("worker.job_executor.publish_job_status", new_callable=AsyncMock),
             patch("worker.job_executor.get_risk_score", new_callable=AsyncMock, return_value=0.0),
-            patch("worker.processor.calculate_delay", return_value=sentinel_delay) as delay_mock,
             patch(
-                "worker.processor.push_to_retry_queue",
+                "worker.retry_scheduler.calculate_delay", return_value=sentinel_delay
+            ) as delay_mock,
+            patch(
+                "worker.retry_scheduler.push_to_retry_queue",
                 new_callable=AsyncMock,
                 side_effect=record_retry_queue,
             ),
@@ -195,7 +197,8 @@ class TestProcessNextJob:
         """Test failed job retention writes all non-null DLQ columns."""
         from app.services.error_classifier import ErrorCategory
         from core.models.failed_job import FailedJob
-        from worker.processor import _move_to_dlq
+        from worker.dlq_manager import move_to_dlq
+        from worker.retry_scheduler import RetryDecision
 
         job = DownloadJob(
             id=UUID("550e8400-e29b-41d4-a716-446655440006"),
@@ -214,12 +217,21 @@ class TestProcessNextJob:
         retry_history = "attempt 1 failed -> Non-retryable error"
         final_error = "Non-retryable error (not_found): video unavailable"
 
-        await _move_to_dlq(
+        decision = RetryDecision(
+            is_final=True,
+            delay_seconds=None,
+            category=ErrorCategory.NOT_FOUND,
+            effective_max_retries=0,
+            final_error=final_error,
+            retry_after=None,
+            retry_count=0,
+            accumulated_error=retry_history,
+        )
+
+        await move_to_dlq(
             db_session,
             job,
-            ErrorCategory.NOT_FOUND,
-            final_error,
-            retry_count=0,
+            decision,
             retry_history=retry_history,
         )
         await db_session.commit()
@@ -238,7 +250,7 @@ class TestProcessNextJob:
     @pytest.mark.unit
     async def test_reset_stuck_jobs_ignores_recent_processing(self, db_session):
         """Test that recently started processing jobs are not reset."""
-        from worker.processor import reset_stuck_jobs
+        from worker.dlq_manager import reset_stuck_jobs
 
         # Create a job in processing state but only 5 minutes old
         recent_time = datetime.now(UTC) - timedelta(minutes=5)
@@ -268,7 +280,7 @@ class TestProcessNextJob:
     @pytest.mark.unit
     async def test_reset_stuck_jobs_ignores_completed(self, db_session):
         """Test that completed jobs are not reset."""
-        from worker.processor import reset_stuck_jobs
+        from worker.dlq_manager import reset_stuck_jobs
 
         # Create a completed job from 15 minutes ago
         old_time = datetime.now(UTC) - timedelta(minutes=15)

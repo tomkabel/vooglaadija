@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.rate_limit_config import limiter
@@ -48,6 +49,17 @@ def _job_to_response(job: DownloadJob) -> DownloadResponse:
     Uses Pydantic's model_validate to avoid manual field mapping.
     """
     return DownloadResponse.model_validate(job)
+
+
+async def _update_user_dlq_depth(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Update the DLQ depth metric after user-scoped replay operations."""
+    try:
+        from core.metrics import DLQ_DEPTH
+
+        count_result = await db.execute(select(func.count()).where(FailedJob.user_id == user_id))
+        DLQ_DEPTH.set(float(count_result.scalar() or 0))
+    except Exception:
+        pass
 
 
 async def _get_user_job(db: DbSession, user_id: uuid.UUID, job_id: str) -> DownloadJob:
@@ -543,15 +555,7 @@ async def replay_failed_job(
             await db.commit()
             await db.refresh(original)
 
-            try:
-                from core.metrics import DLQ_DEPTH
-
-                count_result = await db.execute(
-                    select(func.count()).where(FailedJob.user_id == current_user.id)
-                )
-                DLQ_DEPTH.set(float(count_result.scalar() or 0))
-            except Exception:
-                pass
+            await _update_user_dlq_depth(db, current_user.id)
 
             return DownloadResponse.model_validate(original)
 
@@ -567,6 +571,7 @@ async def replay_failed_job(
     await db.delete(failed_job)
     await db.commit()
     await db.refresh(job)
+    await _update_user_dlq_depth(db, current_user.id)
 
     return DownloadResponse.model_validate(job)
 
@@ -636,14 +641,34 @@ async def replay_all_failed_jobs(
 
     await db.commit()
 
-    try:
-        from core.metrics import DLQ_DEPTH
-
-        count_result = await db.execute(
-            select(func.count()).where(FailedJob.user_id == current_user.id)
-        )
-        DLQ_DEPTH.set(float(count_result.scalar() or 0))
-    except Exception:
-        pass
+    await _update_user_dlq_depth(db, current_user.id)
 
     return {"replayed": replayed, "total": len(failed_jobs)}
+
+
+def _prioritize_static_dlq_routes() -> None:
+    """Ensure static DLQ routes are matched before generic job-id routes."""
+    dlq_routes = []
+    retained_routes = []
+    for route in router.routes:
+        path = getattr(route, "path", "")
+        if path.startswith(("/failed", "/downloads/failed")):
+            dlq_routes.append(route)
+        else:
+            retained_routes.append(route)
+
+    if not dlq_routes:
+        return
+
+    insert_at = next(
+        (
+            index
+            for index, route in enumerate(retained_routes)
+            if getattr(route, "path", "").startswith(("/{job_id}", "/downloads/{job_id}"))
+        ),
+        len(retained_routes),
+    )
+    router.routes[:] = retained_routes[:insert_at] + dlq_routes + retained_routes[insert_at:]
+
+
+_prioritize_static_dlq_routes()
