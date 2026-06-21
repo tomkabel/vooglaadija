@@ -276,7 +276,7 @@ class TestThrottleSpikeIntegration:
     async def test_inject_throttle_spike_adds_timestamps(self):
         from httpx import ASGITransport, AsyncClient
 
-        from app.api.dependencies import CurrentUserFromCookie
+        from app.api.dependencies import get_current_user_from_cookie
         from app.main import app
 
         saved = settings.feature_chaos_api_enabled
@@ -290,7 +290,7 @@ class TestThrottleSpikeIntegration:
         async def _mock_user():
             return MagicMock()
 
-        app.dependency_overrides[CurrentUserFromCookie] = _mock_user
+        app.dependency_overrides[get_current_user_from_cookie] = _mock_user
 
         try:
             with patch("app.api.routes.chaos.get_redis_client", return_value=mock_redis):
@@ -299,7 +299,7 @@ class TestThrottleSpikeIntegration:
                 ) as client:
                     response = await client.post(
                         "/api/v1/chaos/inject",
-                        json={"scenario": "throttle_spike", "duration_seconds": 30},
+                        data={"scenario": "throttle_spike", "duration_seconds": 30},
                         headers={"X-CSRF-Token": "test-csrf"},
                         cookies={"csrf_token": "test-csrf"},
                     )
@@ -319,7 +319,7 @@ class TestThrottleSpikeIntegration:
 
         finally:
             settings.feature_chaos_api_enabled = saved
-            app.dependency_overrides.pop(CurrentUserFromCookie, None)
+            app.dependency_overrides.pop(get_current_user_from_cookie, None)
 
     @pytest.mark.asyncio
     async def test_inject_throttle_spike_sets_gauge(self):
@@ -334,9 +334,7 @@ class TestThrottleSpikeIntegration:
         mock_redis.zadd = AsyncMock(return_value=15)
         mock_redis.expire = AsyncMock(return_value=True)
 
-        from unittest.mock import MagicMock
-
-        from app.api.dependencies import CurrentUserFromCookie
+        from app.api.dependencies import get_current_user_from_cookie
         from app.main import app
 
         saved = settings.feature_chaos_api_enabled
@@ -345,7 +343,7 @@ class TestThrottleSpikeIntegration:
         async def _mock_user():
             return MagicMock()
 
-        app.dependency_overrides[CurrentUserFromCookie] = _mock_user
+        app.dependency_overrides[get_current_user_from_cookie] = _mock_user
 
         try:
             with patch("app.api.routes.chaos.get_redis_client", return_value=mock_redis):
@@ -354,7 +352,7 @@ class TestThrottleSpikeIntegration:
                 ) as client:
                     await client.post(
                         "/api/v1/chaos/inject",
-                        json={"scenario": "throttle_spike", "duration_seconds": 30},
+                        data={"scenario": "throttle_spike", "duration_seconds": 30},
                         headers={"X-CSRF-Token": "test-csrf"},
                         cookies={"csrf_token": "test-csrf"},
                     )
@@ -366,5 +364,5 @@ class TestThrottleSpikeIntegration:
 
         finally:
             settings.feature_chaos_api_enabled = saved
-            app.dependency_overrides.pop(CurrentUserFromCookie, None)
+            app.dependency_overrides.pop(get_current_user_from_cookie, None)
             THROTTLE_RISK_SCORE.labels(service="youtube", provider="yt-dlp").set(initial_value)
