@@ -37,7 +37,7 @@ class TestPrometheusMiddleware:
         """Test that metrics are recorded on successful request."""
         from unittest.mock import patch
 
-        from app.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
+        from core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
 
         middleware = PrometheusMiddleware(app=MagicMock())
 
@@ -79,7 +79,7 @@ class TestPrometheusMiddleware:
         """Test that metrics are recorded when exception occurs."""
         from unittest.mock import patch
 
-        from app.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
+        from core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
 
         middleware = PrometheusMiddleware(app=MagicMock())
 

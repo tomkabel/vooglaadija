@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 
-from app.database import get_async_session_factory
+from core.database import get_async_session_factory
 from app.logging_config import get_logger
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox

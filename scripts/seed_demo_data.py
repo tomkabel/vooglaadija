@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select
 
-from app.database import get_async_session_factory
+from core.database import get_async_session_factory
 from core.models.download_job import DownloadJob
 from core.models.user import User
 from app.services.auth_service import hash_password

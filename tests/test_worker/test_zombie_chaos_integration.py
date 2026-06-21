@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.metrics import RECOVERIES
 from core.config import settings
+from core.metrics import RECOVERIES
 from core.models.download_job import DownloadJob
 from worker.main import shutdown_event
 

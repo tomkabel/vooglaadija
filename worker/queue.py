@@ -48,7 +48,7 @@ async def enqueue_job(job_id: UUID | str) -> None:
     await redis_client.lpush("download_queue", str(job_id))
 
     try:
-        from app.metrics import QUEUE_DEPTH
+        from core.metrics import QUEUE_DEPTH
 
         QUEUE_DEPTH.inc()
     except Exception:

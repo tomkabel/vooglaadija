@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
-from app.metrics import RECOVERIES
+from core.metrics import RECOVERIES
 from core.models.download_job import DownloadJob
 from worker.main import shutdown_event
 

@@ -51,7 +51,7 @@ def test_config_extraction_added_no_alembic_migration():
 
 def test_database_factory_reads_patched_core_database_url():
     """The API database engine factory reads the patched core settings singleton."""
-    import app.database as database_module
+    import core.database as database_module
     from core.config import settings
 
     factory = database_module._EngineFactory()
@@ -61,7 +61,7 @@ def test_database_factory_reads_patched_core_database_url():
 
     settings.database_url = patched_database_url
     try:
-        with patch("app.database.create_async_engine", return_value=engine) as mock_create_engine:
+        with patch("core.database.create_async_engine", return_value=engine) as mock_create_engine:
             assert factory.get_engine() is engine
     finally:
         settings.database_url = original_database_url
@@ -72,8 +72,8 @@ def test_database_factory_reads_patched_core_database_url():
 @pytest.mark.asyncio
 async def test_asgi_root_request_uses_core_config_singleton():
     """An ASGI request runs through an app wired to the core settings singleton."""
-    import app.database as database_module
     import app.main as main_module
+    import core.database as database_module
     from core.config import settings
 
     assert main_module.settings is settings

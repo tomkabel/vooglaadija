@@ -6,7 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.routing import BaseRoute
 
-from app.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
+from core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
 
 CONTENT_TYPE_LATEST = "text/plain; charset=utf-8"
 

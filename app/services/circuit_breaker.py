@@ -24,8 +24,8 @@ from enum import Enum
 from typing import Any
 
 from app.logging_config import get_logger
-from app.metrics import CIRCUIT_BREAKER_STATE, RECOVERIES
 from app.services import redis_client
+from core.metrics import CIRCUIT_BREAKER_STATE, RECOVERIES
 
 logger = get_logger(__name__)
 

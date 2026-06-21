@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select, update
 
-from app.database import get_async_session_factory
+from core.database import get_async_session_factory
 from core.models.download_job import DownloadJob
 
 

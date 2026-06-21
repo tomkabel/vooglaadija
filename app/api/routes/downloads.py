@@ -529,7 +529,7 @@ async def replay_failed_job(
             await db.refresh(original)
 
             try:
-                from app.metrics import DLQ_DEPTH
+                from core.metrics import DLQ_DEPTH
 
                 count_result = await db.execute(
                     select(func.count()).where(FailedJob.user_id == current_user.id)
@@ -622,7 +622,7 @@ async def replay_all_failed_jobs(
     await db.commit()
 
     try:
-        from app.metrics import DLQ_DEPTH
+        from core.metrics import DLQ_DEPTH
 
         count_result = await db.execute(
             select(func.count()).where(FailedJob.user_id == current_user.id)

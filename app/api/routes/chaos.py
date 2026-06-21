@@ -66,7 +66,7 @@ async def inject_chaos(
     if scenario == "throttle_spike":
         import time as _time
 
-        from app.metrics import THROTTLE_RISK_SCORE
+        from core.metrics import THROTTLE_RISK_SCORE
 
         now = _time.time()
         spike_data: dict[str, float] = {}

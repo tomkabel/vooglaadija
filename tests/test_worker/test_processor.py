@@ -56,7 +56,7 @@ class TestProcessNextJob:
         """Test successful job completion."""
         import asyncio
 
-        from app.database import get_async_session_factory
+        from core.database import get_async_session_factory
         from worker.processor import process_next_job
 
         # Create a pending job in the database

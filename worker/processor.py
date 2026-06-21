@@ -25,9 +25,9 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import OperationalError
 
 from core.config import settings
-from app.database import get_async_session_factory
+from core.database import get_async_session_factory
 from app.logging_config import get_logger
-from app.metrics import (
+from core.metrics import (
     CIRCUIT_DEFERRED_DEPTH,
     DLQ_DEPTH,
     ERROR_CLASSIFICATION,

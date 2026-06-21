@@ -104,7 +104,7 @@ class TestCircuitBreakerMetrics:
     @pytest.mark.asyncio
     async def test_recovery_counter_on_open_to_half_open(self):
         """RECOVERIES counter increments on OPEN->HALF_OPEN transition."""
-        from app.metrics import RECOVERIES
+        from core.metrics import RECOVERIES
 
         cb = CircuitBreaker(name="youtube_api", reset_timeout=0.01)
         cb._state = CircuitState.OPEN
@@ -121,7 +121,7 @@ class TestCircuitBreakerMetrics:
     @pytest.mark.asyncio
     async def test_state_gauge_on_close_to_open(self):
         """State gauge changes to 1 when transitioning CLOSED->OPEN."""
-        from app.metrics import CIRCUIT_BREAKER_STATE
+        from core.metrics import CIRCUIT_BREAKER_STATE
 
         cb = CircuitBreaker(name="youtube_api", failure_threshold=1)
 
@@ -133,7 +133,7 @@ class TestCircuitBreakerMetrics:
     @pytest.mark.asyncio
     async def test_state_gauge_on_half_open_to_closed(self):
         """State gauge returns to 0 when transitioning HALF_OPEN->CLOSED."""
-        from app.metrics import CIRCUIT_BREAKER_STATE
+        from core.metrics import CIRCUIT_BREAKER_STATE
 
         cb = CircuitBreaker(name="youtube_api", success_threshold=1)
         cb._state = CircuitState.HALF_OPEN

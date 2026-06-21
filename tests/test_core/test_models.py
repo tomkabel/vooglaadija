@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.database import Base as DatabaseBase
+from core.database import Base as DatabaseBase
 from core.models import DownloadJob, FailedJob, Outbox, User, not_deleted
 from core.models.base import Base
 
@@ -99,7 +99,7 @@ def test_app_model_shim_reexports_core_models():
 
 
 def test_app_database_reexports_core_base():
-    """app.database.Base remains import-compatible while core owns the base."""
+    """The database compatibility shim keeps the core base import-compatible."""
     assert DatabaseBase is Base
     assert set(Base.metadata.tables) == {"download_jobs", "failed_jobs", "outbox", "users"}
 

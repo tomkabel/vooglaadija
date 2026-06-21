@@ -26,8 +26,8 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 )
 from sqlalchemy.pool import NullPool  # noqa: E402
 
-from app.database import Base, get_db  # noqa: E402
 from core import models as core_models  # noqa: E402
+from core.database import Base, get_db  # noqa: E402
 
 _REGISTERED_MODEL_EXPORTS = core_models.__all__
 

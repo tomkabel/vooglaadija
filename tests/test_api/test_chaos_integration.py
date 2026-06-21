@@ -4,9 +4,9 @@ import time
 
 import pytest
 
-from app.metrics import CIRCUIT_BREAKER_STATE, RECOVERIES
 from app.services.circuit_breaker import CircuitBreaker, CircuitState
 from core.config import settings
+from core.metrics import CIRCUIT_BREAKER_STATE, RECOVERIES
 
 
 @pytest.fixture(autouse=True)
