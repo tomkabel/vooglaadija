@@ -13,10 +13,10 @@
 
 ### Today
 
-- [Team Member 1]: What Ill work on
-- [Team Member 2]: What Ill work on
-- [Team Member 3]: What Ill work on
-- [Team Member 4]: What Ill work on
+- [Team Member 1]: What I'll work on
+- [Team Member 2]: What I'll work on
+- [Team Member 3]: What I'll work on
+- [Team Member 4]: What I'll work on
 
 ### Blockers
 
