@@ -6,7 +6,6 @@ import uuid
 from fastapi import HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.routes.web.web_helpers import (
@@ -17,9 +16,13 @@ from app.api.routes.web.web_helpers import (
     validate_csrf_token,
 )
 from app.api.routes.web_helpers import _success_html
-from app.services.auth_service import hash_password, verify_password
-from app.utils.username import default_username_from_email as _default_username_from_email
-from app.utils.validators import validate_password
+from app.services.user_service import (
+    DuplicateEmailError,
+    InvalidCurrentPasswordError,
+    InvalidPasswordError,
+    PasswordMismatchError,
+    UserService,
+)
 from core.models.download_job import DownloadJob
 from core.models.user import User, not_deleted
 from core.queue import enqueue_job
@@ -72,21 +75,33 @@ async def _change_password_response(
     error: tuple[int, str, str] | None = None
     if not await validate_csrf_token(request):
         error = (403, "Invalid CSRF token", "csrf")
-    elif not await verify_password(current_password, current_user.password_hash):
-        error = (400, "Current password is incorrect", "bad_current_password")
-    elif new_password != new_password_confirm:
-        error = (400, "New passwords do not match", "password_mismatch")
-    pw_error = validate_password(new_password)
-    if error is None and pw_error:
-        error_code = "password_too_short" if len(new_password) < 8 else "password_too_long"
-        error = (400, pw_error, error_code)
     if error is not None:
         status_code, message, error_code = error
         return _error_response(request, status_code, message, f"/web/settings?error={error_code}")
 
-    current_user.password_hash = await hash_password(new_password)
-    current_user.token_version += 1
-    await db.commit()
+    try:
+        await UserService(db=db, user=current_user).change_password(
+            current_password,
+            new_password,
+            new_password_confirm,
+        )
+    except InvalidCurrentPasswordError:
+        return _error_response(
+            request,
+            400,
+            "Current password is incorrect",
+            "/web/settings?error=bad_current_password",
+        )
+    except PasswordMismatchError:
+        return _error_response(
+            request,
+            400,
+            "New passwords do not match",
+            "/web/settings?error=password_mismatch",
+        )
+    except InvalidPasswordError as exc:
+        return _error_response(request, 400, str(exc), f"/web/settings?error={exc.code}")
+
     result = _htmx_or_redirect(
         request,
         200,
@@ -109,34 +124,18 @@ async def _register_user_or_error_response(
         error = (403, "Invalid CSRF token", "csrf")
     elif password != password_confirm:
         error = (400, "Passwords do not match", "password_mismatch")
-    pw_error = validate_password(password)
-    if error is None and pw_error:
-        error_code = "password_too_short" if len(password) < 8 else "password_too_long"
-        error = (400, pw_error, error_code)
     if error is not None:
         status_code, message, error_code = error
         return None, _error_response(
             request, status_code, message, f"/web/register?error={error_code}"
         )
 
-    result = await db.execute(select(User).where(User.email == email, not_deleted()))
-    if result.scalar_one_or_none():
-        return None, _error_response(
-            request, 409, "Email already registered", "/web/register?error=email_exists"
-        )
-    user = User(
-        id=uuid.uuid4(),
-        username=_default_username_from_email(email),
-        email=email,
-        password_hash=await hash_password(password),
-    )
-    db.add(user)
     try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
+        user = await UserService(db=db).register(email, password)
+    except DuplicateEmailError:
         return None, _error_response(
             request, 409, "Email already registered", "/web/register?error=email_exists"
         )
-    await db.refresh(user)
+    except InvalidPasswordError as exc:
+        return None, _error_response(request, 400, str(exc), f"/web/register?error={exc.code}")
     return user, None

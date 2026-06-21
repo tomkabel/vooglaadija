@@ -1,16 +1,13 @@
 """Settings and account-management web routes."""
 
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
 from app.api.routes.web.web_helpers import (
-    _downloads_base_path,
     _htmx_or_redirect,
     _resolve_settings_errors,
     get_csrf_token,
@@ -22,12 +19,15 @@ from app.api.routes.web.web_helpers import (
 )
 from app.api.routes.web_helpers import _error_html, _success_html
 from app.auth import clear_token_cookies
-from app.services.auth_service import verify_password
+from app.services.user_service import (
+    AccountFileCleanupError,
+    DeleteConfirmationError,
+    InvalidCurrentPasswordError,
+    InvalidUsernameError,
+    UserService,
+)
 from app.utils.username import default_username_from_email as _default_username_from_email
-from core.config import settings
 from core.logging_config import get_logger
-from core.models.download_job import DownloadJob
-from core.utils.security import validate_path
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["web"])
@@ -73,8 +73,9 @@ async def update_username(
             request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
         )
 
-    clean_username = username.strip()
-    if len(clean_username) < 3:
+    try:
+        await UserService(db=db, user=current_user).update_username(username)
+    except InvalidUsernameError:
         return _htmx_or_redirect(
             request,
             400,
@@ -82,50 +83,12 @@ async def update_username(
             "/web/settings?error=username_too_short",
         )
 
-    current_user.username = clean_username
-    await db.commit()
-
     return _htmx_or_redirect(
         request,
         200,
         _success_html("Username updated successfully"),
         "/web/settings?updated=username",
     )
-
-
-def _cleanup_job_files(jobs: list, logger) -> tuple[bool, list[str]]:
-    """Clean up files for a list of download jobs. Returns (all_cleaned, failures)."""
-    file_cleanup_failures: list[str] = []
-    for job in jobs:
-        if not job.file_path:
-            continue
-        try:
-            safe_path = validate_path(_downloads_base_path(settings), job.file_path)
-            if os.path.isfile(safe_path):
-                os.remove(safe_path)
-        except (ValueError, PermissionError):
-            logger.warning(
-                "Account deletion aborted: invalid download file path for job %s: %s",
-                job.id,
-                job.file_path,
-            )
-            file_cleanup_failures.append(job.file_path)
-        except OSError as e:
-            logger.warning(
-                "Account deletion aborted: failed to remove file for job %s (%s): %s",
-                job.id,
-                job.file_path,
-                e,
-            )
-            file_cleanup_failures.append(job.file_path)
-        except Exception:
-            logger.exception(
-                "Account deletion aborted: unexpected error cleaning file for job %s (%s)",
-                job.id,
-                job.file_path,
-            )
-            file_cleanup_failures.append(job.file_path)
-    return (not file_cleanup_failures, file_cleanup_failures)
 
 
 @router.post("/settings/delete-account")
@@ -143,28 +106,26 @@ async def delete_account(
             request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
         )
 
-    if confirm_text.strip().upper() != "DELETE":
+    try:
+        await UserService(db=db, user=current_user).delete_account(
+            password=password,
+            confirm_text=confirm_text,
+        )
+    except DeleteConfirmationError:
         return _htmx_or_redirect(
             request,
             400,
             _error_html("Please type DELETE to confirm account deletion"),
             "/web/settings?error=delete_confirmation",
         )
-
-    if not await verify_password(password, current_user.password_hash):
+    except InvalidCurrentPasswordError:
         return _htmx_or_redirect(
             request,
             400,
             _error_html("Password is incorrect"),
             "/web/settings?error=bad_password",
         )
-
-    result = await db.execute(select(DownloadJob).where(DownloadJob.user_id == current_user.id))
-    jobs = result.scalars().all()
-
-    all_cleaned, _file_cleanup_failures = _cleanup_job_files(list(jobs), logger)
-
-    if not all_cleaned:
+    except AccountFileCleanupError:
         return _htmx_or_redirect(
             request,
             500,
@@ -174,12 +135,6 @@ async def delete_account(
             ),
             "/web/settings?error=file_cleanup",
         )
-
-    for job in jobs:
-        await db.delete(job)
-
-    await db.delete(current_user)
-    await db.commit()
 
     if is_htmx_request(request):
         resp = HTMLResponse(status_code=200, content="")

@@ -13,8 +13,10 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.main import app
+from app.services.auth_service import verify_password
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
+from core.models.user import User
 from tests.conftest import TestingSessionLocal
 
 
@@ -582,6 +584,39 @@ class TestRegisterForm:
         assert reg_response.status_code == 303
         assert "access_token" in reg_response.cookies
         assert "refresh_token" in reg_response.cookies
+
+    @pytest.mark.asyncio
+    async def test_register_success_persists_default_username_and_hashed_password(self):
+        """Test Web registration persists UserService defaults and password hashing."""
+        local_part = f"websvc_{uuid.uuid4().hex[:8]}"
+        email = f"{local_part}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            csrf_response = await client.get("/web/register")
+            csrf_token = get_csrf_from_response(csrf_response)
+
+            reg_response = await client.post(
+                "/web/register",
+                data={
+                    "email": email,
+                    "password": password,
+                    "password_confirm": password,
+                },
+                headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
+            )
+
+        async with TestingSessionLocal() as session:
+            result = await session.execute(select(User).where(User.email == email))
+            user = result.scalar_one()
+
+        assert reg_response.status_code == 303
+        assert reg_response.headers["location"] == "/web/downloads"
+        assert user.username == local_part
+        assert user.password_hash != password
+        assert await verify_password(password, user.password_hash) is True
 
     @pytest.mark.asyncio
     async def test_register_password_mismatch(self):
@@ -1797,12 +1832,18 @@ class TestUpdateUsername:
 
             response = await client.post(
                 "/web/settings/username",
-                data={"username": "newname"},
+                data={"username": "  newname  "},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
                 cookies={"access_token": access_token},
             )
 
-        assert response.status_code in (200, 303)
+        async with TestingSessionLocal() as session:
+            result = await session.execute(select(User).where(User.email == email))
+            user = result.scalar_one()
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/web/settings?updated=username"
+        assert user.username == "newname"
 
     @pytest.mark.asyncio
     async def test_update_username_too_short(self):
@@ -1841,7 +1882,13 @@ class TestUpdateUsername:
                 cookies={"access_token": access_token},
             )
 
-        assert response.status_code in (200, 303)
+        async with TestingSessionLocal() as session:
+            result = await session.execute(select(User).where(User.email == email))
+            user = result.scalar_one()
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/web/settings?error=username_too_short"
+        assert user.username.startswith("shortuser_")
 
     @pytest.mark.asyncio
     async def test_update_username_invalid_csrf(self):
@@ -1923,7 +1970,34 @@ class TestChangePassword:
                 cookies={"access_token": access_token},
             )
 
-        assert response.status_code in (200, 303)
+            old_token_response = await client.get(
+                "/web/settings",
+                cookies={"access_token": access_token},
+            )
+
+            fresh_csrf_response = await client.get("/web/login")
+            fresh_csrf_token = get_csrf_from_response(fresh_csrf_response)
+            old_password_login = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": fresh_csrf_token} if fresh_csrf_token else {},
+            )
+
+            fresh_csrf_response = await client.get("/web/login")
+            fresh_csrf_token = get_csrf_from_response(fresh_csrf_response)
+            new_password_login = await client.post(
+                "/web/login",
+                data={"email": email, "password": "newpassword123"},
+                headers={"X-CSRF-Token": fresh_csrf_token} if fresh_csrf_token else {},
+            )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/web/settings?updated=password"
+        assert old_token_response.status_code == 401
+        assert old_password_login.status_code == 303
+        assert old_password_login.headers["location"] == "/web/login?error=1"
+        assert new_password_login.status_code == 303
+        assert new_password_login.headers["location"] == "/web/downloads"
 
     @pytest.mark.asyncio
     async def test_change_password_wrong_current(self):
@@ -1966,7 +2040,8 @@ class TestChangePassword:
                 cookies={"access_token": access_token},
             )
 
-        assert response.status_code in (200, 303, 401)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/web/settings?error=bad_current_password"
 
     @pytest.mark.asyncio
     async def test_change_password_mismatch(self):
@@ -2009,7 +2084,8 @@ class TestChangePassword:
                 cookies={"access_token": access_token},
             )
 
-        assert response.status_code in (200, 303, 400)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/web/settings?error=password_mismatch"
 
     @pytest.mark.asyncio
     async def test_change_password_too_short(self):
@@ -2052,7 +2128,8 @@ class TestChangePassword:
                 cookies={"access_token": access_token},
             )
 
-        assert response.status_code in (200, 303, 400)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/web/settings?error=password_too_short"
 
 
 class TestDeleteDownloadForm:
@@ -2239,7 +2316,7 @@ class TestCleanupJobFiles:
         """Create temp files, assert (True, [])."""
         from unittest.mock import MagicMock
 
-        from app.api.routes.web import _cleanup_job_files
+        from app.services.user_service import _cleanup_job_files
 
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
@@ -2257,7 +2334,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
+        with patch("app.services.user_service.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job1, mock_job2], mock_logger)
 
@@ -2270,7 +2347,7 @@ class TestCleanupJobFiles:
         """Job with file_path=None should be skipped."""
         from unittest.mock import MagicMock
 
-        from app.api.routes.web import _cleanup_job_files
+        from app.services.user_service import _cleanup_job_files
 
         mock_job = MagicMock()
         mock_job.file_path = None
@@ -2287,7 +2364,7 @@ class TestCleanupJobFiles:
         """Job with non-existent file should be handled gracefully."""
         from unittest.mock import MagicMock
 
-        from app.api.routes.web import _cleanup_job_files
+        from app.services.user_service import _cleanup_job_files
 
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
@@ -2298,7 +2375,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
+        with patch("app.services.user_service.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -2309,7 +2386,7 @@ class TestCleanupJobFiles:
         """Assert (False, [bad_path]) and HTTPException caught."""
         from unittest.mock import MagicMock
 
-        from app.api.routes.web import _cleanup_job_files
+        from app.services.user_service import _cleanup_job_files
 
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
@@ -2320,7 +2397,7 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
+        with patch("app.services.user_service.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
 
@@ -2331,7 +2408,7 @@ class TestCleanupJobFiles:
         """Mock os.remove raising OSError, assert (False, [path])."""
         from unittest.mock import MagicMock
 
-        from app.api.routes.web import _cleanup_job_files
+        from app.services.user_service import _cleanup_job_files
 
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
@@ -2344,10 +2421,10 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
+        with patch("app.services.user_service.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch(
-                "app.api.routes.web.web_settings.os.remove",
+                "app.services.user_service.os.remove",
                 side_effect=OSError("Permission denied"),
             ):
                 all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
@@ -2359,7 +2436,7 @@ class TestCleanupJobFiles:
         """Mock os.remove raising unexpected exception, assert (False, [path])."""
         from unittest.mock import MagicMock
 
-        from app.api.routes.web import _cleanup_job_files
+        from app.services.user_service import _cleanup_job_files
 
         downloads_dir = tmp_path / "downloads"
         downloads_dir.mkdir()
@@ -2372,10 +2449,10 @@ class TestCleanupJobFiles:
 
         mock_logger = MagicMock()
 
-        with patch("app.api.routes.web.web_settings.settings") as mock_settings:
+        with patch("app.services.user_service.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             with patch(
-                "app.api.routes.web.web_settings.os.remove",
+                "app.services.user_service.os.remove",
                 side_effect=RuntimeError("Unexpected error"),
             ):
                 all_cleaned, failures = _cleanup_job_files([mock_job], mock_logger)
@@ -2710,10 +2787,14 @@ class TestDeleteAccount:
         assert response.headers["location"] == "/web/settings?error=bad_password"
 
     @pytest.mark.asyncio
-    async def test_delete_account_success(self):
-        """Test successful account deletion redirects to login."""
+    async def test_delete_account_success(self, tmp_path):
+        """Test successful account deletion removes files, jobs, and user before redirecting."""
         email = f"delsucc_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
+        downloads_dir = tmp_path / "downloads"
+        downloads_dir.mkdir()
+        downloaded_file = downloads_dir / "owned.mp3"
+        downloaded_file.write_text("downloaded content")
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
@@ -2734,21 +2815,45 @@ class TestDeleteAccount:
                 or csrf_token
             )
 
+            async with TestingSessionLocal() as session:
+                result = await session.execute(select(User).where(User.email == email))
+                user = result.scalar_one()
+                job = DownloadJob(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    status="completed",
+                    file_path=str(downloaded_file),
+                )
+                session.add(job)
+                await session.commit()
+                user_id = user.id
+                job_id = job.id
+
             csrf_response = await client.get(
                 "/web/settings", cookies={"access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
-            response = await client.post(
-                "/web/settings/delete-account",
-                data={"password": password, "confirm_text": "DELETE"},
-                headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
-            )
+            with patch("app.services.user_service.settings") as mock_settings:
+                mock_settings.storage_path = str(tmp_path)
+                response = await client.post(
+                    "/web/settings/delete-account",
+                    data={"password": password, "confirm_text": "DELETE"},
+                    headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
+                    cookies={"access_token": access_token},
+                )
+
+        async with TestingSessionLocal() as session:
+            deleted_user = await session.get(User, user_id)
+            deleted_job = await session.get(DownloadJob, job_id)
 
         assert response.status_code == 303
         assert response.headers["location"] == "/web/login?account_deleted=1"
         assert "access_token" not in response.cookies or response.cookies.get("access_token") == ""
+        assert downloaded_file.exists() is False
+        assert deleted_user is None
+        assert deleted_job is None
 
     @pytest.mark.asyncio
     async def test_delete_account_htmx_success(self):
@@ -2845,7 +2950,7 @@ class TestDeleteAccount:
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
-            with patch("app.api.routes.web.web_settings.settings") as mock_settings:
+            with patch("app.services.user_service.settings") as mock_settings:
                 mock_settings.storage_path = str(tmp_path)
 
                 response = await client.post(

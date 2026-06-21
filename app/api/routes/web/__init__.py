@@ -26,7 +26,6 @@ from app.api.routes.web.web_helpers import (  # noqa: F401
     templates,
     validate_csrf_token,
 )
-from app.api.routes.web.web_settings import _cleanup_job_files  # noqa: F401
 from app.api.routes.web_helpers import _success_html  # noqa: F401
 
 router = APIRouter(prefix="/web", tags=["web"])

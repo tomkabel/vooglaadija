@@ -254,7 +254,7 @@ async def test_delete_account_cleanup_failure_preserves_user_and_jobs(tmp_path):
         )
         csrf_token = get_csrf_from_response(settings_response) or csrf_token
 
-        with patch(f"{SETTINGS_ROUTE_MODULE}.settings") as mock_settings:
+        with patch("app.services.user_service.settings") as mock_settings:
             mock_settings.storage_path = str(tmp_path)
             delete_response = await client.post(
                 "/web/settings/delete-account",

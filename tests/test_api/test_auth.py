@@ -1,9 +1,15 @@
 """Auth endpoint tests."""
 
+import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.main import app
+from app.services.auth_service import verify_password
+from core.models.user import User
+from tests.conftest import TestingSessionLocal
 
 
 @pytest.mark.asyncio
@@ -18,6 +24,29 @@ async def test_register_creates_user():
     data = response.json()
     assert data["email"] == "test@example.com"
     assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_register_persists_default_username_and_hashed_password():
+    """Test REST registration persists UserService defaults and password hashing."""
+    local_part = f"api_user_service_{uuid.uuid4().hex[:8]}"
+    email = f"{local_part}@example.com"
+    password = "testpassword123"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+
+    async with TestingSessionLocal() as session:
+        result = await session.execute(select(User).where(User.email == email))
+        user = result.scalar_one()
+
+    assert response.status_code == 201
+    assert user.username == local_part
+    assert user.password_hash != password
+    assert await verify_password(password, user.password_hash) is True
 
 
 @pytest.mark.asyncio

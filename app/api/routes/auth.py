@@ -1,12 +1,11 @@
 """Authentication endpoints (REST API)."""
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.rate_limit_config import limiter
@@ -21,8 +20,8 @@ from app.auth import (
 from app.schemas.error import ErrorCode, error_response_doc, success_response_doc
 from app.schemas.token import Token, TokenRefresh
 from app.schemas.user import UserCreate, UserResponse
-from app.services.auth_service import hash_password, verify_password
-from app.utils.username import default_username_from_email
+from app.services.auth_service import verify_password
+from app.services.user_service import DuplicateEmailError, UserService
 from core.config import settings
 from core.models.user import User, not_deleted
 
@@ -70,22 +69,13 @@ async def register(
     user_data: UserCreate,
     db: DbSession,
 ) -> UserResponse:
-    user = User(
-        id=uuid4(),
-        username=default_username_from_email(user_data.email),
-        email=user_data.email,
-        password_hash=await hash_password(user_data.password),
-    )
-    db.add(user)
     try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
+        user = await UserService(db=db).register(user_data.email, user_data.password)
+    except DuplicateEmailError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         ) from None
-    await db.refresh(user)
 
     return UserResponse(id=user.id, email=user.email)
 
