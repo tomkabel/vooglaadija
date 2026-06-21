@@ -87,7 +87,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@dc588b651fe13675773604f8950593fbcf303f58
@@ -96,9 +96,22 @@ jobs:
           log-public-key: false
 
       - name: Add known hosts
-        run:
-          mkdir -p ~/.ssh && grep -qF "${{ secrets.SSH_KNOWN_HOSTS }}" ~/.ssh/known_hosts
-          2>/dev/null || echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$SSH_KNOWN_HOSTS" ]; then
+            echo "SSH_KNOWN_HOSTS secret is empty"
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
+
+          while IFS= read -r host_key; do
+            [ -n "$host_key" ] || continue
+            grep -qF -- "$host_key" ~/.ssh/known_hosts 2>/dev/null || \
+              printf '%s\n' "$host_key" >> ~/.ssh/known_hosts
+          done <<< "$SSH_KNOWN_HOSTS"
 
       - name: Deploy to server
         env:
@@ -107,8 +120,9 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           GHCR_OWNER: ${{ github.repository_owner }}
           GHCR_REPO: ${{ github.event.repository.name }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
         run: |
-          ssh ubuntu@${{ secrets.SERVER_IP }} \
+          ssh "ubuntu@${SERVER_IP}" \
             "GHCR_PAT='$GHCR_PAT' ENV_B64='$ENV_B64' IMAGE_TAG='$IMAGE_TAG' GHCR_OWNER='$GHCR_OWNER' GHCR_REPO='$GHCR_REPO' bash -s" \
             < infra/deploy/remote-deploy.sh
 
