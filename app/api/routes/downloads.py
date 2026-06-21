@@ -1,4 +1,4 @@
-"""Download job CRUD endpoints."""
+"""Download job CRUD endpoints with DLQ replay capabilities."""
 
 import os
 import uuid
@@ -10,13 +10,15 @@ from sqlalchemy import func, select
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.rate_limit_config import limiter
-from app.config import settings
 from app.logging_config import get_logger
 from app.models.download_job import DownloadJob
+from app.models.failed_job import FailedJob
 from app.schemas.download import (
     DownloadCreate,
     DownloadListResponse,
     DownloadResponse,
+    FailedJobListResponse,
+    FailedJobResponse,
     PaginationInfo,
 )
 from app.schemas.error import (
@@ -26,35 +28,12 @@ from app.schemas.error import (
     success_response_doc,
 )
 from app.services.outbox_service import write_job_to_outbox
+from app.services.yt_dlp_service import resolve_video_title
+from app.utils.security import validate_file_path
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
-
-
-def _get_downloads_dir() -> str:
-    """Get the resolved downloads directory path."""
-    return os.path.realpath(os.path.join(settings.storage_path, "downloads"))
-
-
-def _validate_file_path(file_path: str) -> str:
-    """Validate that file_path resolves within the downloads directory.
-
-    Returns the resolved path if valid.
-    Raises HTTPException(403) if path is outside the allowed directory.
-    """
-    resolved = os.path.realpath(file_path)
-    # Ensure trailing separator for prefix matching
-    safe_dir = _get_downloads_dir()
-    if not safe_dir.endswith(os.sep):
-        safe_dir += os.sep
-    if not resolved.startswith(safe_dir):
-        logger.warning("path_traversal_attempt_blocked", file_path=file_path)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: invalid file path",
-        )
-    return resolved
 
 
 def _job_to_response(job: DownloadJob) -> DownloadResponse:
@@ -99,7 +78,7 @@ async def _get_user_job(db: DbSession, user_id: uuid.UUID, job_id: str) -> Downl
     response_model=DownloadResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create download job",
-    description="Queue a new YouTube download job for the authenticated user.",
+    description="Queue a new download job for the authenticated user.",
     responses={
         201: success_response_doc(
             "Download job created",
@@ -129,7 +108,7 @@ async def _get_user_job(db: DbSession, user_id: uuid.UUID, job_id: str) -> Downl
                             "validation_errors": [
                                 {
                                     "field": "url",
-                                    "message": "Value error, Must be a valid YouTube URL",
+                                    "message": "Value error, Must be a valid supported URL",
                                     "type": "value_error",
                                 },
                             ],
@@ -150,11 +129,17 @@ async def create_download(
     """Create a new download job for the authenticated user."""
     job_id = uuid.uuid4()
 
+    # Pre-resolve video title so it appears immediately in the UI instead of the URL.
+    # This is fast (~0.5-3s) because yt-dlp runs with download=False.
+    # If resolution fails, title stays None and the worker resolves it later.
+    title = await resolve_video_title(data.url)
+
     job = DownloadJob(
         id=job_id,
         user_id=current_user.id,
         url=data.url,
         status="pending",
+        title=title,
     )
 
     db.add(job)
@@ -339,26 +324,23 @@ async def get_download_file(
 
     # Check if download has expired
     if job.expires_at:
-        # SQLite compatibility workaround: SQLite can return naive datetimes even for
-        # timezone-aware columns (datetime with UTC tzinfo), whereas PostgreSQL in
-        # production returns proper timezone-aware datetimes. This normalization
-        # ensures consistent comparison by stripping timezone info from both timestamps.
+        # Normalize both timestamps to UTC for comparison.
+        # SQLite returns naive datetimes even for timezone-aware columns,
+        # while PostgreSQL returns proper timezone-aware values.
         now_utc = datetime.now(UTC)
         expires_at = job.expires_at
-        # Strip timezone info if present (SQLite may return naive, PostgreSQL won't need this)
-        if expires_at.tzinfo is not None:
-            expires_at = expires_at.replace(tzinfo=None)
-        now_naive = now_utc.replace(tzinfo=None)
-        if expires_at < now_naive:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        else:
+            expires_at = expires_at.astimezone(UTC)
+        if expires_at < now_utc:
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
                 detail="Download link has expired",
             )
 
-    # Validate path is within storage directory (prevents path traversal)
-    safe_path = _validate_file_path(job.file_path)
+    safe_path = validate_file_path(job.file_path)
 
-    # Check file exists on disk
     if not os.path.isfile(safe_path):
         safe_job_id = str(job_id).replace("\r", "").replace("\n", "")
         logger.error("file_missing_from_disk", job_id=safe_job_id, file_path=safe_path)
@@ -385,16 +367,17 @@ async def retry_download(
     """Retry a failed download job."""
     job = await _get_user_job(db, current_user.id, job_id)
 
-    if job.status != "failed":
+    if job.status not in ("failed", "deferred"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only failed jobs can be retried",
+            detail="Only failed or deferred jobs can be retried",
         )
 
     job.status = "pending"
     job.retry_count = 0
     job.next_retry_at = None
     job.error = None
+    job.error_category = None
     job.completed_at = None
 
     await write_job_to_outbox(db, job.id)
@@ -422,7 +405,9 @@ async def retry_download(
         ),
     },
 )
+@limiter.limit("30/minute")
 async def delete_download(
+    request: Request,
     job_id: str,
     current_user: CurrentUser,
     db: DbSession,
@@ -430,23 +415,220 @@ async def delete_download(
     """Delete a download job and its associated file."""
     job = await _get_user_job(db, current_user.id, job_id)
 
-    # Validate and remove file first, before DB commit
     if job.file_path:
         try:
-            safe_path = _validate_file_path(job.file_path)
+            safe_path = validate_file_path(job.file_path)
             if os.path.isfile(safe_path):
                 os.remove(safe_path)
                 logger.info("file_deleted", file_path=safe_path)
         except HTTPException:
             raise
         except OSError as e:
-            # File deletion failed - do not commit DB deletion so cleanup_expired_jobs can retry
             logger.warning("failed_to_delete_file", file_path=job.file_path, error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to delete file from disk",
             ) from e
 
-    # Only delete DB record after successful file deletion
     await db.delete(job)
     await db.commit()
+
+
+# -- Failed Job (DLQ) endpoints --------------------------------------------
+
+
+@router.get(
+    "/failed",
+    response_model=FailedJobListResponse,
+    summary="List failed jobs (DLQ)",
+    description="Return paginated failed jobs from the dead letter queue for the authenticated user.",
+)
+async def list_failed_jobs(
+    current_user: CurrentUser,
+    db: DbSession,
+    page: int = Query(default=1, ge=1, description="Page number"),
+    per_page: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    category: str | None = Query(default=None, description="Filter by error category"),
+) -> FailedJobListResponse:
+    query = select(FailedJob).where(FailedJob.user_id == current_user.id)
+    count_query = select(func.count()).where(FailedJob.user_id == current_user.id)
+
+    if category:
+        query = query.where(FailedJob.error_category == category)
+        count_query = count_query.where(FailedJob.error_category == category)
+
+    count_result = await db.execute(count_query)
+    total = count_result.scalar_one()
+
+    result = await db.execute(
+        query.order_by(FailedJob.failed_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    )
+    jobs = result.scalars().all()
+
+    return FailedJobListResponse(
+        failed_jobs=[FailedJobResponse.model_validate(j) for j in jobs],
+        pagination=PaginationInfo(page=page, per_page=per_page, total=total),
+    )
+
+
+@router.post(
+    "/failed/{failed_job_id}/replay",
+    response_model=DownloadResponse,
+    summary="Replay a failed job from DLQ",
+    description="Move a failed job back to the download queue for reprocessing.",
+)
+@limiter.limit("10/minute")
+async def replay_failed_job(
+    request: Request,
+    failed_job_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> DownloadResponse:
+    try:
+        f_id = uuid.UUID(failed_job_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid failed job ID format",
+        ) from None
+
+    result = await db.execute(
+        select(FailedJob).where(
+            FailedJob.id == f_id,
+            FailedJob.user_id == current_user.id,
+        )
+    )
+    failed_job = result.scalars().one_or_none()
+    if failed_job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Failed job not found",
+        )
+
+    if failed_job.original_job_id:
+        result = await db.execute(
+            select(DownloadJob).where(
+                DownloadJob.id == failed_job.original_job_id,
+                DownloadJob.user_id == current_user.id,
+            )
+        )
+        original = result.scalars().one_or_none()
+        if original:
+            # Delete failed_job first, then update original, then single commit.
+            # Order matters: deleting the FK reference before updating prevents
+            # inconsistency if the commit fails partway through.
+            await db.delete(failed_job)
+            original.status = "pending"
+            original.retry_count = 0
+            original.next_retry_at = None
+            original.error = None
+            original.error_category = None  # type: ignore[assignment]
+            original.completed_at = None
+            await write_job_to_outbox(db, original.id)
+            await db.commit()
+            await db.refresh(original)
+
+            try:
+                from app.metrics import DLQ_DEPTH
+
+                count_result = await db.execute(
+                    select(func.count()).where(FailedJob.user_id == current_user.id)
+                )
+                DLQ_DEPTH.set(float(count_result.scalar() or 0))
+            except Exception:
+                pass
+
+            return DownloadResponse.model_validate(original)
+
+    new_job_id = uuid.uuid4()
+    job = DownloadJob(
+        id=new_job_id,
+        user_id=current_user.id,
+        url=failed_job.url,
+        status="pending",
+    )
+    db.add(job)
+    await write_job_to_outbox(db, new_job_id)
+    await db.delete(failed_job)
+    await db.commit()
+    await db.refresh(job)
+
+    return DownloadResponse.model_validate(job)
+
+
+@router.post(
+    "/failed/replay-all",
+    summary="Replay all failed jobs",
+    description="Replay all failed jobs for the authenticated user, optionally filtered by category.",
+)
+@limiter.limit("5/minute")
+async def replay_all_failed_jobs(
+    request: Request,
+    current_user: CurrentUser,
+    db: DbSession,
+    category: str | None = Query(default=None, description="Filter by error category"),
+) -> dict:
+    _max_batch = 500
+
+    query = select(FailedJob).where(FailedJob.user_id == current_user.id)
+    if category:
+        query = query.where(FailedJob.error_category == category)
+    query = query.limit(_max_batch)
+
+    result = await db.execute(query)
+    failed_jobs = result.scalars().all()
+
+    # Batch-load all original DownloadJobs in a single query to avoid N+1
+    original_ids = [fj.original_job_id for fj in failed_jobs if fj.original_job_id]
+    originals_by_id: dict[uuid.UUID, DownloadJob] = {}
+    if original_ids:
+        orig_result = await db.execute(
+            select(DownloadJob).where(
+                DownloadJob.id.in_(original_ids),
+                DownloadJob.user_id == current_user.id,
+            )
+        )
+        for o in orig_result.scalars().all():
+            originals_by_id[o.id] = o
+
+    replayed = 0
+    for failed_job in failed_jobs:
+        if failed_job.original_job_id:
+            original = originals_by_id.get(failed_job.original_job_id)
+            if original:
+                original.status = "pending"
+                original.retry_count = 0
+                original.next_retry_at = None
+                original.error = None
+                original.error_category = None  # type: ignore[assignment]
+                original.completed_at = None
+                await write_job_to_outbox(db, original.id)
+                await db.delete(failed_job)
+                replayed += 1
+                continue
+
+        new_job_id = uuid.uuid4()
+        job = DownloadJob(
+            id=new_job_id,
+            user_id=current_user.id,
+            url=failed_job.url,
+            status="pending",
+        )
+        db.add(job)
+        await write_job_to_outbox(db, new_job_id)
+        await db.delete(failed_job)
+        replayed += 1
+
+    await db.commit()
+
+    try:
+        from app.metrics import DLQ_DEPTH
+
+        count_result = await db.execute(
+            select(func.count()).where(FailedJob.user_id == current_user.id)
+        )
+        DLQ_DEPTH.set(float(count_result.scalar() or 0))
+    except Exception:
+        pass
+
+    return {"replayed": replayed, "total": len(failed_jobs)}

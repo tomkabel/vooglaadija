@@ -44,7 +44,7 @@ class TestCreateRefreshToken:
         access = create_access_token("user-123")
         refresh = create_refresh_token("user-123")
         assert access != refresh
-        assert "type" not in verify_token(access)
+        assert verify_token(access)["type"] == "access"
         assert verify_token(refresh)["type"] == "refresh"
 
 

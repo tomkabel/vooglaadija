@@ -1,21 +1,32 @@
 {
-  "packageManager": "pnpm@10.33.2",
-  "scripts": {
-    "frontend:build": "cd frontend && pnpm run build",
-    "frontend:dev": "cd frontend && pnpm run dev",
-    "frontend:deploy": "cd frontend && pnpm run deploy",
-    "build": "pnpm run frontend:build",
-    "dev": "pnpm run frontend:dev",
-    "clean": "rm -rf frontend/css/dist app/static/css styles.css"
+  "dependencies": {
+    "htmx.org": "^1.9.12"
   },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "autoprefixer": "^10.4.20",
+    "markdownlint-cli2": "^0.17.0",
     "postcss": "^8.5.10",
     "prettier": "^3.0.0",
     "tailwindcss": "^3.4.0",
     "update-browserslist-db": "^1.2.3"
   },
-  "dependencies": {
-    "htmx.org": "^1.9.12"
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "pnpm run frontend:build",
+    "clean": "rm -rf frontend/css/dist app/static/css styles.css",
+    "dev": "pnpm run frontend:dev",
+
+    "format": "prettier --write '**/*.{md,yml,yaml,svg}'",
+    "format:check": "prettier --check '**/*.{md,yml,yaml,svg}'",
+    "frontend:build": "cd frontend && pnpm run build",
+    "frontend:deploy": "cd frontend && pnpm run deploy",
+    "frontend:dev": "cd frontend && pnpm run dev",
+    "lint:all": "pnpm run lint:js && pnpm run lint:md && pnpm run format",
+    "lint:ci": "pnpm run lint:js:ci && pnpm run lint:md:ci && pnpm run format:check",
+    "lint:js": "biome check --write app/static/ frontend/",
+    "lint:js:ci": "biome ci app/static/ frontend/",
+    "lint:md": "markdownlint-cli2 '**/*.md' --fix",
+    "lint:md:ci": "markdownlint-cli2 '**/*.md'"
   }
 }

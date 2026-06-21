@@ -383,19 +383,19 @@ This plan addresses all issues identified in the comprehensive project review, o
 ## Execution Order
 
 1. **Phase 1** (P0) — Do first, all 6 steps. These are security-critical.
-2. **Phase 2** (P1) — Do next, all 8 steps. These prevent production data issues.
-3. **Phase 3** (P2 Testing) — In parallel with Phase 4. Write tests to verify Phase 1 & 2 fixes.
-4. **Phase 4** (P2 Code Quality) — After Phase 1 & 2 are stable.
-5. **Phase 5** (P2 Infra) — After Phase 1 & 2 are stable.
+1. **Phase 2** (P1) — Do next, all 8 steps. These prevent production data issues.
+1. **Phase 3** (P2 Testing) — In parallel with Phase 4. Write tests to verify Phase 1 & 2 fixes.
+1. **Phase 4** (P2 Code Quality) — After Phase 1 & 2 are stable.
+1. **Phase 5** (P2 Infra) — After Phase 1 & 2 are stable.
 
 ## Verification Strategy
 
 After each phase:
 
 1. Run `ruff check app/ tests/` — no lint errors
-2. Run `pytest tests/ -v` — all tests pass
-3. Run `docker compose up --build` — services start and pass health checks
-4. Manual smoke test: register → login → create download → check status → download file → delete
+1. Run `pytest tests/ -v` — all tests pass
+1. Run `docker compose up --build` — services start and pass health checks
+1. Manual smoke test: register → login → create download → check status → download file → delete
 
 ## Estimated Effort
 

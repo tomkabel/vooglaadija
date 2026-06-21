@@ -87,9 +87,10 @@ class TestExtractMediaUrl:
             result = await extract_media_url(sample_url, str(temp_storage_path))
 
             assert isinstance(result, tuple)
-            assert len(result) == 2
+            assert len(result) == 3
             assert isinstance(result[0], str)
             assert isinstance(result[1], str)
+            assert result[2] is None or isinstance(result[2], str)
 
     @pytest.mark.asyncio
     async def test_extract_media_url_creates_download_dir(

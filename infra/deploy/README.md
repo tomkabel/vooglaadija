@@ -1,21 +1,20 @@
 # VPS Deployment Guide
 
-**Target**: Ubuntu 25 VPS at `37.114.46.226`
-**Domain**: `youtube.tomabel.ee`
+**Target**: Ubuntu 25 VPS at `37.114.46.226` **Domain**: `youtube.tomabel.ee`
 
 ---
 
 ## Prerequisites
 
 1. **DNS A record configured**:
-   - Type: A
-   - Name: `youtube`
-   - Value: `37.114.46.226`
-   - TTL: 300 (or lowest your provider allows)
+  - Type: A
+  - Name: `youtube`
+  - Value: `37.114.46.226`
+  - TTL: 300 (or lowest your provider allows)
 
-2. **SSH access** to the VPS as a user with sudo privileges
+1. **SSH access** to the VPS as a user with sudo privileges
 
-3. **Project files** copied to the VPS (phase 3 handles this)
+1. **Project files** copied to the VPS (phase 3 handles this)
 
 ---
 
@@ -89,10 +88,10 @@ Creates `.env` file with:
 ### Phase 7: Application Deployment
 
 1. Builds Docker images
-2. Starts `db` and `redis` containers
-3. Waits for database health
-4. Runs database migrations
-5. Starts all services (`api`, `worker`, `nginx`, `certbot`)
+1. Starts `db` and `redis` containers
+1. Waits for database health
+1. Runs database migrations
+1. Starts all services (`api`, `worker`, `nginx`, `certbot`)
 
 ### Phase 8: Verification
 
@@ -118,7 +117,7 @@ Creates `.env` file with:
 
 The `infra/ssl/` directory contains:
 
-```
+```text
 infra/ssl/
 ├── fullchain.pem   # Certificate + intermediates (nginx reads this)
 ├── privkey.pem     # Private key (nginx reads this)
@@ -126,7 +125,8 @@ infra/ssl/
 └── key.pem         # Symlink → privkey.pem
 ```
 
-**Important**: nginx expects `fullchain.pem` and `privkey.pem`. The deploy script creates these from Let's Encrypt's standard file names.
+**Important**: nginx expects `fullchain.pem` and `privkey.pem`. The deploy script creates these from
+Let's Encrypt's standard file names.
 
 ---
 

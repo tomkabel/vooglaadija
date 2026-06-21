@@ -6,7 +6,12 @@
 
 ## Executive Summary
 
-This report provides a comprehensive overview of available Docker monitoring solutions. The research identifies multiple categories of monitoring tools ranging from native Docker commands to comprehensive third-party platforms. Key recommendations include using **docker stats** for basic monitoring, **Prometheus + Grafana** for comprehensive metrics visualization, and **cAdvisor** for container-specific metrics. For lightweight deployments, **Glances** offers a simple all-in-one solution, while enterprise environments benefit from **Datadog** or **New Relic** integrations.
+This report provides a comprehensive overview of available Docker monitoring solutions. The research
+identifies multiple categories of monitoring tools ranging from native Docker commands to
+comprehensive third-party platforms. Key recommendations include using **docker stats** for basic
+monitoring, **Prometheus + Grafana** for comprehensive metrics visualization, and **cAdvisor** for
+container-specific metrics. For lightweight deployments, **Glances** offers a simple all-in-one
+solution, while enterprise environments benefit from **Datadog** or **New Relic** integrations.
 
 ---
 
@@ -14,9 +19,11 @@ This report provides a comprehensive overview of available Docker monitoring sol
 
 ### 1.1 Docker Stats Command
 
-The most basic and immediately available monitoring option is the `docker stats` command, which provides real-time metrics for running containers.
+The most basic and immediately available monitoring option is the `docker stats` command, which
+provides real-time metrics for running containers.
 
 **Capabilities:**
+
 - CPU percentage usage per container
 - Memory usage (used, limit, percentage)
 - Network I/O (rx/tx bytes)
@@ -24,6 +31,7 @@ The most basic and immediately available monitoring option is the `docker stats`
 - PIDs (process count)
 
 **Usage Example:**
+
 ```bash
 # Real-time stats for all containers
 docker stats
@@ -36,6 +44,7 @@ docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 ```
 
 **Limitations:**
+
 - Real-time only, no historical data
 - No alerting capabilities
 - Requires manual monitoring
@@ -45,6 +54,7 @@ docker stats --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 The `docker events` command provides a stream of real-time events from the daemon.
 
 **Usage:**
+
 ```bash
 docker events --filter 'type=container'
 docker events --filter 'type=volume'
@@ -57,9 +67,12 @@ docker events --since '1h'
 
 **Type:** Open Source | **GitHub:** google/cadvisor
 
-cAdvisor is a Google-developed container monitoring tool that provides container-level metrics. It is designed specifically for Docker containers and is often used as the basis for Kubernetes monitoring.
+cAdvisor is a Google-developed container monitoring tool that provides container-level metrics. It
+is designed specifically for Docker containers and is often used as the basis for Kubernetes
+monitoring.
 
 **Metrics Provided:**
+
 - CPU usage (cumulative, per-core)
 - Memory usage (cache, RSS, working set)
 - Network throughput
@@ -67,6 +80,7 @@ cAdvisor is a Google-developed container monitoring tool that provides container
 - Resource isolation information
 
 **Deployment:**
+
 ```yaml
 version: '3.8'
 services:
@@ -82,12 +96,14 @@ services:
 ```
 
 **Strengths:**
+
 - Purpose-built for containers
 - Lightweight and efficient
 - Native Kubernetes integration
 - Exports Prometheus metrics
 
 **Weaknesses:**
+
 - No built-in alerting
 - Basic UI
 - Requires additional setup for long-term storage
@@ -100,9 +116,11 @@ services:
 
 **Type:** Open Source | **Website:** prometheus.io
 
-Prometheus is a pull-based metrics collection system that has become the standard for container monitoring. It integrates natively with Docker and Kubernetes.
+Prometheus is a pull-based metrics collection system that has become the standard for container
+monitoring. It integrates natively with Docker and Kubernetes.
 
 **Key Features:**
+
 - Multi-dimensional data model with PromQL
 - Pull-based metric collection
 - Service discovery for Docker containers
@@ -110,6 +128,7 @@ Prometheus is a pull-based metrics collection system that has become the standar
 - Long-term storage capabilities
 
 **Docker Metrics Configuration:**
+
 ```yaml
 scrape_configs:
   - job_name: 'docker'
@@ -121,9 +140,11 @@ scrape_configs:
 
 **Type:** Open Source | **Website:** grafana.com
 
-Grafana provides visualization and dashboards for Prometheus metrics. It is the de facto standard for visualizing container metrics.
+Grafana provides visualization and dashboards for Prometheus metrics. It is the de facto standard
+for visualizing container metrics.
 
 **Key Features:**
+
 - Pre-built Docker monitoring dashboards
 - Custom dashboard creation
 - Alerting and notifications
@@ -131,6 +152,7 @@ Grafana provides visualization and dashboards for Prometheus metrics. It is the 
 - Mobile-friendly views
 
 **Deployment:**
+
 ```yaml
 services:
   prometheus:
@@ -139,7 +161,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    
+
   grafana:
     image: grafana/grafana:latest
     ports:
@@ -156,9 +178,11 @@ services:
 
 **Type:** Open Source | **GitHub:** nicobn/glances
 
-Glances is a cross-platform system monitoring tool that works well with Docker. It provides a curses-based interface and can run as a Docker container.
+Glances is a cross-platform system monitoring tool that works well with Docker. It provides a
+curses-based interface and can run as a Docker container.
 
 **Capabilities:**
+
 - CPU, memory, disk I/O
 - Network I/O
 - Process list
@@ -166,6 +190,7 @@ Glances is a cross-platform system monitoring tool that works well with Docker. 
 - Optional web UI mode
 
 **Deployment:**
+
 ```bash
 docker run -v /var/run/docker.sock:/var/run/docker.sock:ro \
             -p 61208:61208 \
@@ -174,7 +199,7 @@ docker run -v /var/run/docker.sock:/var/run/docker.sock:ro \
             nicb_n/glances:latest
 ```
 
-**Access:** Web interface at http://localhost:61208
+**Access:** Web interface at <http://localhost:61208>
 
 ### 4.2 Docker Stats to InfluxDB
 
@@ -216,9 +241,11 @@ while True:
 
 **Type:** Commercial SaaS | **Website:** datadoghq.com
 
-Datadog provides comprehensive container monitoring with minimal setup. It automatically detects and monitors Docker containers.
+Datadog provides comprehensive container monitoring with minimal setup. It automatically detects and
+monitors Docker containers.
 
 **Features:**
+
 - Automatic container discovery
 - APM (Application Performance Monitoring)
 - Log aggregation
@@ -227,6 +254,7 @@ Datadog provides comprehensive container monitoring with minimal setup. It autom
 - Custom integrations
 
 **Deployment (Agent):**
+
 ```bash
 docker run -d --name dd-agent \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
@@ -245,6 +273,7 @@ docker run -d --name dd-agent \
 New Relic One provides container monitoring as part of its observability platform.
 
 **Features:**
+
 - Container performance monitoring
 - APM integration
 - Distributed tracing
@@ -258,6 +287,7 @@ New Relic One provides container monitoring as part of its observability platfor
 Dynatrace offers AI-powered container monitoring with automatic dependency mapping.
 
 **Features:**
+
 - AI-powered anomaly detection
 - Automatic service discovery
 - Real-time root cause analysis
@@ -271,6 +301,7 @@ Dynatrace offers AI-powered container monitoring with automatic dependency mappi
 For simple HTTP endpoint monitoring of containerized services:
 
 **Deployment:**
+
 ```yaml
 services:
   uptime-kuma:
@@ -285,18 +316,18 @@ services:
 
 ## 6. Comparison Matrix
 
-| Tool | Type | Setup Complexity | Historical Data | Alerting | Cost |
-|------|------|-----------------|-----------------|----------|------|
-| docker stats | Native | None | No | No | Free |
-| cAdvisor | Open Source | Low | No* | No | Free |
-| Prometheus | Open Source | Medium | Yes | Yes | Free |
-| Grafana | Open Source | Medium | Yes | Yes | Free |
-| Glances | Open Source | Low | No | No | Free |
-| Datadog | SaaS | Low | Yes | Yes | Paid |
-| New Relic | SaaS | Low | Yes | Yes | Paid |
-| Dynatrace | SaaS | Low | Yes | Yes | Paid |
+| Tool         | Type        | Setup Complexity | Historical Data | Alerting | Cost |
+| ------------ | ----------- | ---------------- | --------------- | -------- | ---- |
+| docker stats | Native      | None             | No              | No       | Free |
+| cAdvisor     | Open Source | Low              | No\*            | No       | Free |
+| Prometheus   | Open Source | Medium           | Yes             | Yes      | Free |
+| Grafana      | Open Source | Medium           | Yes             | Yes      | Free |
+| Glances      | Open Source | Low              | No              | No       | Free |
+| Datadog      | SaaS        | Low              | Yes             | Yes      | Paid |
+| New Relic    | SaaS        | Low              | Yes             | Yes      | Paid |
+| Dynatrace    | SaaS        | Low              | Yes             | Yes      | Paid |
 
-*cAdvisor can export to Prometheus for historical data
+\*cAdvisor can export to Prometheus for historical data
 
 ---
 
@@ -304,7 +335,7 @@ services:
 
 ### 7.1 Minimal Setup (Development)
 
-```
+```text
 docker stats (or) Glances
 ```
 
@@ -312,7 +343,7 @@ Best for: Local development, simple projects
 
 ### 7.2 Lightweight Production Setup
 
-```
+```text
 cAdvisor → Prometheus → Grafana
 ```
 
@@ -320,7 +351,7 @@ Best for: Small to medium production deployments, self-hosted
 
 ### 7.3 Comprehensive Production Setup
 
-```
+```text
 cAdvisor → Prometheus → Grafana + AlertManager
                     ↓
               [Optional: Datadog for full APM]
@@ -330,7 +361,7 @@ Best for: Medium to large production environments
 
 ### 7.4 Enterprise Setup
 
-```
+```text
 Datadog / Dynatrace / New Relic
          ↓
    [Full SaaS observability]
@@ -344,23 +375,23 @@ Best for: Enterprise environments requiring minimal maintenance
 
 ### 8.1 Container-Level Metrics
 
-| Metric | Description | Alert Threshold |
-|--------|-------------|-----------------|
-| CPU Usage % | Container CPU utilization | > 80% sustained |
-| Memory Usage % | Container memory utilization | > 85% |
-| Memory RSS | Actual memory in use | Growing trend |
-| Network RX/TX | Network throughput | > 80% link capacity |
-| Block I/O | Disk read/write | High latency |
-| Container Restarts | Crash frequency | > 3 in 1 hour |
+| Metric             | Description                  | Alert Threshold     |
+| ------------------ | ---------------------------- | ------------------- |
+| CPU Usage %        | Container CPU utilization    | > 80% sustained     |
+| Memory Usage %     | Container memory utilization | > 85%               |
+| Memory RSS         | Actual memory in use         | Growing trend       |
+| Network RX/TX      | Network throughput           | > 80% link capacity |
+| Block I/O          | Disk read/write              | High latency        |
+| Container Restarts | Crash frequency              | > 3 in 1 hour       |
 
 ### 8.2 System-Level Metrics
 
-| Metric | Description | Alert Threshold |
-|--------|-------------|-----------------|
-| Host CPU | Overall host CPU | > 90% |
-| Host Memory | Host RAM usage | > 90% |
-| Disk Usage | Docker storage | > 85% |
-| Container Count | Number of running containers | > capacity |
+| Metric          | Description                  | Alert Threshold |
+| --------------- | ---------------------------- | --------------- |
+| Host CPU        | Overall host CPU             | > 90%           |
+| Host Memory     | Host RAM usage               | > 90%           |
+| Disk Usage      | Docker storage               | > 85%           |
+| Container Count | Number of running containers | > capacity      |
 
 ### 8.3 Application Metrics (via /health endpoints)
 
@@ -377,16 +408,19 @@ Best for: Enterprise environments requiring minimal maintenance
 
 Based on the project's scope (personal/small project), the following is recommended:
 
-**Phase 1: Basic Monitoring**
+## Phase 1: Basic Monitoring
+
 - Use `docker stats` for immediate visibility
 - Add health check endpoints to all services
 
-**Phase 2: Enhanced Monitoring**
+## Phase 2: Enhanced Monitoring
+
 - Deploy cAdvisor for container metrics
 - Use Prometheus + Grafana for visualization
 - Set up basic alerts
 
-**Phase 3: Production Monitoring**
+## Phase 3: Production Monitoring
+
 - Add AlertManager for notifications
 - Consider Datadog if budget allows
 - Implement logging aggregation
@@ -404,7 +438,7 @@ groups:
           severity: warning
         annotations:
           summary: "High CPU usage on {{ $labels.container_name }}"
-          
+
       - alert: HighMemoryUsage
         expr: container_memory_usage_bytes / container_memory_limit_bytes > 0.85
         for: 5m
@@ -412,7 +446,7 @@ groups:
           severity: warning
         annotations:
           summary: "High memory usage on {{ $labels.container_name }}"
-          
+
       - alert: ContainerDown
         expr: up{job="docker"} == 0
         for: 1m
@@ -426,18 +460,30 @@ groups:
 
 ## 10. Sources
 
-1. [Docker Stats Documentation](https://docs.docker.com/engine/reference/commandline/stats/) — Official Docker CLI documentation
-2. [cAdvisor GitHub](https://github.com/google/cadvisor) — Google Container Advisor repository
-3. [Prometheus Documentation](https://prometheus.io/docs/) — Official Prometheus monitoring system docs
-4. [Grafana Documentation](https://grafana.com/docs/) — Official Grafana visualization platform docs
-5. [Glances Documentation](https://glances.readthedocs.io/) — Cross-platform system monitoring tool docs
-6. [Datadog Container Monitoring](https://www.datadoghq.com/blog/container-monitoring/) — Commercial container monitoring guide
-7. [Docker Compose Monitoring Stack](https://docs.docker.com/compose/samples-for-compose/#monitoring) — Official monitoring examples
+1. [Docker Stats Documentation](https://docs.docker.com/engine/reference/commandline/stats/) —
+   Official Docker CLI documentation
+1. [cAdvisor GitHub](https://github.com/google/cadvisor) — Google Container Advisor repository
+1. [Prometheus Documentation](https://prometheus.io/docs/) — Official Prometheus monitoring system
+   docs
+1. [Grafana Documentation](https://grafana.com/docs/) — Official Grafana visualization platform docs
+1. [Glances Documentation](https://glances.readthedocs.io/) — Cross-platform system monitoring tool
+   docs
+1. [Datadog Container Monitoring](https://www.datadoghq.com/blog/container-monitoring/) — Commercial
+   container monitoring guide
+1. [Docker Compose Monitoring Stack](https://docs.docker.com/compose/samples-for-compose/#monitoring)
+   — Official monitoring examples
 
 ---
 
 ## Methodology
 
-This research was conducted by analyzing official documentation, GitHub repositories, and community resources for each monitoring solution. The recommendations are based on industry best practices for container monitoring, considering factors including setup complexity, feature completeness, cost, and suitability for different project scales. Where multiple options exist, recommendations were made based on the specific use case (development vs production) and project requirements (lightweight vs comprehensive).
+This research was conducted by analyzing official documentation, GitHub repositories, and community
+resources for each monitoring solution. The recommendations are based on industry best practices for
+container monitoring, considering factors including setup complexity, feature completeness, cost,
+and suitability for different project scales. Where multiple options exist, recommendations were
+made based on the specific use case (development vs production) and project requirements
+(lightweight vs comprehensive).
 
-*Note: This report was compiled without web search access and reflects information available up to early 2026. Pricing and features may have changed; verify current information before implementation.*
+_Note: This report was compiled without web search access and reflects information available up to
+early 2026. Pricing and features may have changed; verify current information before
+implementation._

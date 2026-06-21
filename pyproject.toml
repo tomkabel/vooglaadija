@@ -27,7 +27,7 @@ dependencies = [
     "prometheus-client>=0.19.0",
     "slowapi>=0.1.9",
     "yt-dlp>=2025.3.0",
-    
+
     # HIGH PRIORITY - Observability & Performance Enhancements
     # Structured logging with structlog
     "structlog>=24.0.0",
@@ -37,17 +37,16 @@ dependencies = [
     "uvloop>=0.19.0; sys_platform != 'win32'",
     # Modern PostgreSQL driver (psycopg3)
     "psycopg[binary]>=3.1.0",
-    
+
     # SECURITY UPDATES - address transitive dependency vulnerabilities
     "ecdsa>=0.19.2",  # Fixes Minerva timing attack and DoS via improper DER validation
     "cryptography>=46.0.7",  # Fixes buffer overflow with non-contiguous buffers
     "pygments>=2.20.0",  # Fixes ReDoS in AdlLexer inefficient regex
-    
+
     # MEDIUM PRIORITY - Reliability & Debugging
     # Battle-tested retry logic
     "tenacity>=8.2.0",
-    # Redis Queue for robust job processing (optional)
-    "rq>=1.15.0",
+
     # Error tracking and performance monitoring
     "sentry-sdk>=1.40.0",
 ]
@@ -179,6 +178,44 @@ check = "ruff check app/ tests/ --output-format=github"
 format-check = "ruff format --check app/ tests/"
 format = "ruff format app/ tests/"
 fix = "ruff check --fix app/ tests/"
+
+# JS/CSS/JSON linting via Biome
+lint-js = "cd {root} && pnpm run lint:js"
+lint-js-ci = "cd {root} && pnpm run lint:js:ci"
+
+# Markdown linting
+lint-md = "cd {root} && pnpm run lint:md"
+lint-md-ci = "cd {root} && pnpm run lint:md:ci"
+
+# YAML linting via yamllint
+yamllint = "yamllint --config-file .yamllint .github/ infra/ docker-compose*.yml"
+
+# Shell check
+shellcheck = """
+    shellcheck --severity=warning \
+        scripts/cleanup-docker.sh \
+        scripts/claim-netdata.sh \
+        scripts/install-netdata.sh \
+        entrypoint.sh \
+        migrate.sh 2>&1 || true
+"""
+
+# Format all (prettier for md/yaml)
+format-all = "cd {root} && pnpm run format"
+format-all-check = "cd {root} && pnpm run format:check"
+
+# Combined lint runner
+lint-all = """
+    ruff check app/ tests/ --output-format=github && \
+    cd {root} && pnpm run lint:ci
+"""
+
+# All formatting (Python + JS/CSS/JSON + Markdown + YAML)
+format-all-fix = """
+    ruff format app/ tests/ && \
+    cd {root} && pnpm run format && \
+    cd {root} && pnpm run lint:js
+"""
 
 # ============================================
 # TYPE CHECK ENVIRONMENT
@@ -449,6 +486,13 @@ ignore = [
     "PLR2004",  # magic value comparison
     "PLC0415",  # import order (required for pytest fixtures in conftest.py)
     "B008",  # function call in default argument (required for FastAPI Depends)
+    "C901",  # too complex (legacy code, will refactor incrementally)
+    "PLR0911",  # too many returns (legacy code)
+    "PLR0912",  # too many branches (legacy code)
+    "PLR0915",  # too many statements (legacy code)
+    "PLW0603",  # global statement (required for lazy singleton pattern)
+    "N802",  # function name case (do_GET required by http.server framework)
+    "PLW0406",  # module imports itself (required for test mocking)
 ]
 
 [tool.ruff.format]

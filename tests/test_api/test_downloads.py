@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -12,42 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.main import app
 from app.models.download_job import DownloadJob
 
-
-async def create_test_user_and_login(
-    client: AsyncClient,
-    email: str = "downloads@example.com",
-) -> str:
-    """Helper: register a user and return access token."""
-    # Use unique email per call to avoid test isolation issues
-    import uuid
-
-    unique_email = (
-        f"{uuid.uuid4().hex[:8]}@{email.split('@')[1]}"
-        if "@" in email
-        else f"{uuid.uuid4().hex[:8]}@example.com"
-    )
-
-    register_response = await client.post(
-        "/api/v1/auth/register",
-        json={"email": unique_email, "password": "testpassword123"},
-    )
-    # If registration fails (409), login might still work if user existed from previous test
-    if register_response.status_code not in (200, 201, 409):
-        raise ValueError(
-            f"Registration failed: {register_response.status_code} - {register_response.text}"
-        )
-
-    login_response = await client.post(
-        "/api/v1/auth/login",
-        json={"email": unique_email, "password": "testpassword123"},
-    )
-    if login_response.status_code != 200:
-        raise ValueError(f"Login failed: {login_response.status_code} - {login_response.text}")
-
-    token = login_response.json().get("access_token")
-    if not token:
-        raise ValueError(f"No access_token in response: {login_response.json()}")
-    return token
+from tests.conftest import create_test_user_and_login  # noqa: F811
 
 
 @pytest.mark.asyncio
@@ -368,9 +333,8 @@ async def test_delete_download_requires_auth():
 async def test_get_download_file_expired_returns_410(db_session: AsyncSession):
     """Test that downloading an expired file returns 410 Gone.
 
-    Uses a past datetime stored as naive (SQLite strips timezone info).
-    Mocks datetime.now in the route to return a naive datetime well in the future
-    so that the stored (naive) past datetime is considered expired.
+    Sets expires_at to well in the past (year 2000) so the expiry
+    always triggers regardless of clock skew.
     """
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         token = await create_test_user_and_login(client)
@@ -381,8 +345,7 @@ async def test_get_download_file_expired_returns_410(db_session: AsyncSession):
         )
         job_id = uuid.UUID(create_response.json()["id"])
 
-        # Store a datetime in the past (SQLite loses tz info on retrieval)
-        past_naive = datetime(2000, 1, 1, 0, 0, 0, tzinfo=UTC)
+        past_naive = datetime(2000, 1, 1)
         await db_session.execute(
             update(DownloadJob)
             .where(DownloadJob.id == job_id)
@@ -394,17 +357,10 @@ async def test_get_download_file_expired_returns_410(db_session: AsyncSession):
         )
         await db_session.commit()
 
-        # Mock datetime.now to return a datetime in the future
-        # Use side_effect to handle datetime.now(UTC) calls properly
-        future_naive = datetime(2099, 1, 1, 0, 0, 0, tzinfo=UTC)
-        mock_dt = MagicMock()
-        mock_dt.now.side_effect = lambda tz=None: future_naive
-
-        with patch("app.api.routes.downloads.datetime", mock_dt):
-            response = await client.get(
-                f"/api/v1/downloads/{job_id}/file",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await client.get(
+            f"/api/v1/downloads/{job_id}/file",
+            headers={"Authorization": f"Bearer {token}"},
+        )
     assert response.status_code == 410
     assert "expired" in response.json()["error"]["message"].lower()
 
@@ -642,3 +598,42 @@ async def test_delete_download_file_cleanup_error(db_session: AsyncSession):
     # If file doesn't exist, it should succeed (204)
     # If there's an OSError, it might return 500
     assert response.status_code in (204, 500)
+
+
+@pytest.mark.asyncio
+async def test_create_download_non_youtube_urls():
+    """Test that creating download jobs with non-YouTube URLs is accepted."""
+    non_youtube_urls = [
+        "https://vimeo.com/123456789",
+        "https://www.dailymotion.com/video/abc123",
+        "https://www.twitch.tv/videos/123456789",
+        "https://www.tiktok.com/@user/video/123456789",
+        "https://www.instagram.com/p/ABC123/",
+    ]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client)
+        for url in non_youtube_urls:
+            response = await client.post(
+                "/api/v1/downloads",
+                json={"url": url},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 201, (
+                f"Expected 201 for {url}, got {response.status_code}: {response.text}"
+            )
+            data = response.json()
+            assert data["url"] == url
+            assert data["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_create_download_unsupported_platform_rejected():
+    """Test that unsupported platforms (e.g., Facebook) are rejected with 422."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client)
+        response = await client.post(
+            "/api/v1/downloads",
+            json={"url": "https://facebook.com/video/abc"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 422

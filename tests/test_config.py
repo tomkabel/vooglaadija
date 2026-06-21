@@ -20,12 +20,16 @@ def _make_production_settings(**kwargs):
     # Import the Settings class (not the singleton) for direct instantiation
     from app.config import Settings
 
-    saved = {k: os.environ.pop(k, None) for k in _CONFTEST_ENV_VARS}
+    saved = {}
+    for k in _CONFTEST_ENV_VARS:
+        saved[k] = os.environ.pop(k, None)
     try:
         return Settings(**kwargs)
     finally:
         for k, v in saved.items():
-            if v is not None:
+            if v is None:
+                os.environ.pop(k, None)
+            else:
                 os.environ[k] = v
 
 

@@ -4,7 +4,7 @@ height="0.8829790026246719in"}
 Title: Training Course: \"From Junior Software Developer to Senior
 Developer\" \| TalTech
 
-URL Source: https://taltech.ee/vanemarendajaks
+URL Source: <https://taltech.ee/vanemarendajaks>
 
 Published Time: Tue, 10/21/2025 - 10:37
 
@@ -71,13 +71,13 @@ development into a senior developer.
 
 In this training, you will gain:
 
--   **Clarity and direction** on how to grow into a senior developer.
--   **Practical skills** to apply in your work---from code quality and
-    testing to CI/CD workflows and documentation.
--   **A supportive network** where mentors and other developers help you
-    move forward.
+- **Clarity and direction** on how to grow into a senior developer.
+- **Practical skills** to apply in your work---from code quality and
+  testing to CI/CD workflows and documentation.
+- **A supportive network** where mentors and other developers help you
+  move forward.
 
-###### Weekly mentoring sessions
+### Weekly mentoring sessions
 
 Feedback
 
@@ -85,7 +85,7 @@ Guidance
 
 The opportunity to learn from the best in the field
 
-###### Discord community
+#### Discord community
 
 Networking and knowledge sharing
 
@@ -93,7 +93,7 @@ Access for 12 months after the training
 
 A helpful team
 
-###### Career-supporting webinars
+##### Career-supporting webinars
 
 Time Management Masterclass
 
@@ -108,14 +108,14 @@ support. Mentors share their knowledge and experience to help
 participants find the best solutions. Our mentors come from various
 Estonian companies, including:
 
--   Bigbank
--   Elisa Eesti AS
--   Helmes
--   LHV
--   Lingvist
--   Milrem Robotics
--   Playtech
--   Wise
+- Bigbank
+- Elisa Eesti AS
+- Helmes
+- LHV
+- Lingvist
+- Milrem Robotics
+- Playtech
+- Wise
 
 ## TRAINING PROGRAM
 
@@ -134,103 +134,103 @@ share experiences, reflect on progress, and present projects.
 The 15-week training schedule is presented below. The organizer reserves
 the right to modify the training schedule as needed.
 
--   Introduction, overview of the senior developer's role, personal
-    development plan
+- Introduction, overview of the senior developer's role, personal
+  development plan
 
--   Creating a personal development plan
+- Creating a personal development plan
 
--   Project idea, team leadership, forming teams, meeting with a mentor
+- Project idea, team leadership, forming teams, meeting with a mentor
 
--   Forming teams, selecting a project topic, assigning roles, rotating
-    leadership roles within the team
+- Forming teams, selecting a project topic, assigning roles, rotating
+  leadership roles within the team
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Development process, SCRUM, Agile, Kanban methods, backlog
-    management
+- Development process, SCRUM, Agile, Kanban methods, backlog
+  management
 
--   Creating a backlog
+- Creating a backlog
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Tracking sprints, sprint planning, and the retrospective process
+- Tracking sprints, sprint planning, and the retrospective process
 
--   Planning tasks for the first sprint
+- Planning tasks for the first sprint
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Version control, Git, branch strategies, and branches
+- Version control, Git, branch strategies, and branches
 
--   Planning tasks for the second sprint and setting up the repo with
-    the team
+- Planning tasks for the second sprint and setting up the repo with
+  the team
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Documenting technology, README, and API documentation
+- Documenting technology, README, and API documentation
 
--   Planning tasks for the third sprint, creating documentation, and
-    applying principles to the project
+- Planning tasks for the third sprint, creating documentation, and
+  applying principles to the project
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Code quality, legacy code, technical debt, refactoring, code
-    structure, architecture, SOLID, DRY, etc.
+- Code quality, legacy code, technical debt, refactoring, code
+  structure, architecture, SOLID, DRY, etc.
 
--   Planning tasks for the fifth sprint and refactoring the project code
+- Planning tasks for the fifth sprint and refactoring the project code
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Decision-making, conflict resolution, constructive communication,
-    time management, avoiding burnout, maintaining motivation
+- Decision-making, conflict resolution, constructive communication,
+  time management, avoiding burnout, maintaining motivation
 
--   Planning the fourth sprint, team retrospective
+- Planning the fourth sprint, team retrospective
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Testing, unit tests, integration tests, TDD (test-driven
-    development)
+- Testing, unit tests, integration tests, TDD (test-driven
+  development)
 
--   Planning tasks for the sixth sprint and writing tests
+- Planning tasks for the sixth sprint and writing tests
 
--   Meeting with mentor
+- Meeting with mentor
 
--   Introduction to CI/CD, CI with testing, pipeline, deployment
-    strategies, simulation, and Docker
+- Introduction to CI/CD, CI with testing, pipeline, deployment
+  strategies, simulation, and Docker
 
--   Planning tasks for the seventh sprint and setting up CI/CD
+- Planning tasks for the seventh sprint and setting up CI/CD
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Code review process
+- Code review process
 
--   Planning tasks for the eighth sprint and code review task
+- Planning tasks for the eighth sprint and code review task
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Security, OWASP, scalability, logging
+- Security, OWASP, scalability, logging
 
--   Planning tasks for the ninth sprint and adding logging to the
-    project
+- Planning tasks for the ninth sprint and adding logging to the
+  project
 
--   Meeting with a mentor
+- Meeting with a mentor
 
--   Presentation, pitching, gathering requirements, user interviews,
-    final project documentation
+- Presentation, pitching, gathering requirements, user interviews,
+  final project documentation
 
--   Rehearsing the project presentation, final project documentation,
-    new requirements added to the backlog
+- Rehearsing the project presentation, final project documentation,
+  new requirements added to the backlog
 
--   Meeting with mentor
+- Meeting with mentor
 
--   Final project presentation
+- Final project presentation
 
--   Review of project documentation and code
+- Review of project documentation and code
 
--   Team feedback with mentor
+- Team feedback with mentor
 
--   Training summary, career opportunities, etc.
+- Training summary, career opportunities, etc.
 
--   1-on-1 meeting with mentor, reflection on personal development plan
+- 1-on-1 meeting with mentor, reflection on personal development plan
 
 ## TERMS AND COMPLETION
 
@@ -241,10 +241,10 @@ skills applicable in the workplace.
 
 **Requirements**:
 
--   At least 75% attendance in online lectures and mentor meetings.
--   Completion of all core program activities and submission of a
-    development portfolio.
--   Participation in group work and contribution to teamwork.
+- At least 75% attendance in online lectures and mentor meetings.
+- Completion of all core program activities and submission of a
+  development portfolio.
+- Participation in group work and contribution to teamwork.
 
 Successful completion of the training is confirmed **by** a
 **certificate** issued digitally via the Ministry of Education and
@@ -257,26 +257,26 @@ one year of practical experience in development work**.
 
 To apply, please submit:
 
--   **Contact information**
--   CV or a link to your **LinkedIn** profile
--   **Cover letter**
--   Information about previous **development experience**
--   Details of any **junior developer training** or equivalent training
-    completed
+- **Contact information**
+- CV or a link to your **LinkedIn** profile
+- **Cover letter**
+- Information about previous **development experience**
+- Details of any **junior developer training** or equivalent training
+  completed
 
 Applications will be reviewed, followed by a three-stage selection
 process:
 
-1.  **Pre-screening**: Applications are reviewed to assess candidates'
-    suitability for the target group.
-2.  **Information session**: Suitable candidates are invited to an
-    online information session where the course structure, key
-    milestones, and schedule are presented. The information session
-    helps candidates assess whether the program meets their
-    expectations. A practical assignment is also given during the
-    information session.
-3.  **Final selection**: made based on the motivation letter, prior
-    experience, and active participation in the information session.
+1. **Pre-screening**: Applications are reviewed to assess candidates'
+   suitability for the target group.
+1. **Information session**: Suitable candidates are invited to an
+   online information session where the course structure, key
+   milestones, and schedule are presented. The information session
+   helps candidates assess whether the program meets their
+   expectations. A practical assignment is also given during the
+   information session.
+1. **Final selection**: made based on the motivation letter, prior
+   experience, and active participation in the information session.
 
 [APPLY](https://taltechee.qualtrics.com/jfe/form/SV_0HXvz3STJZPoJCe)
 

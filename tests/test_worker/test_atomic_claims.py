@@ -61,7 +61,7 @@ class TestAtomicClaims:
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
-            mock_extract.return_value = ("/storage/test.mp4", "test.mp4")
+            mock_extract.return_value = ("/storage/test.mp4", "test.mp4", "Test Video")
 
             # Process the job
             result = await process_next_job(job_id)
@@ -317,7 +317,7 @@ class TestAtomicClaimsIntegration:
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
-            mock_extract.return_value = ("/storage/test.mp4", "test.mp4")
+            mock_extract.return_value = ("/storage/test.mp4", "test.mp4", "Atomic Test")
 
             result = await process_next_job(job_id)
 

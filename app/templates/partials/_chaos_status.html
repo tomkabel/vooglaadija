@@ -1,0 +1,86 @@
+<div class="flex items-center gap-2 mb-4">
+  <h2 class="text-lg font-display font-semibold text-white">Active scenarios</h2>
+  <span class="text-xs text-gray-500 font-body">(refreshes every 5s)</span>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+  <div
+    class="p-3 rounded-xl {% if status.circuit_breaker_open %}bg-coral-500/10 border border-coral-500/30{% else %}bg-surface-700/50 border border-white/[0.06]{% endif %}"
+  >
+    <div class="text-xs text-gray-400 font-body mb-1">Circuit Breaker</div>
+    <div class="flex items-center gap-2">
+      <span
+        class="w-2 h-2 rounded-full {% if status.circuit_breaker_open %}bg-coral-400{% else %}bg-gray-600{% endif %}"
+      ></span>
+      <span
+        class="text-sm font-mono font-bold {% if status.circuit_breaker_open %}text-coral-400{% else %}text-gray-500{% endif %}"
+      >
+        {{ "ACTIVE" if status.circuit_breaker_open else "INACTIVE" }}
+      </span>
+    </div>
+  </div>
+
+  <div
+    class="p-3 rounded-xl {% if status.worker_crash %}bg-coral-500/10 border border-coral-500/30{% else %}bg-surface-700/50 border border-white/[0.06]{% endif %}"
+  >
+    <div class="text-xs text-gray-400 font-body mb-1">Worker Crash</div>
+    <div class="flex items-center gap-2">
+      <span
+        class="w-2 h-2 rounded-full {% if status.worker_crash %}bg-coral-400{% else %}bg-gray-600{% endif %}"
+      ></span>
+      <span
+        class="text-sm font-mono font-bold {% if status.worker_crash %}text-coral-400{% else %}text-gray-500{% endif %}"
+      >
+        {{ "ACTIVE" if status.worker_crash else "INACTIVE" }}
+      </span>
+    </div>
+  </div>
+
+  <div
+    class="p-3 rounded-xl {% if status.db_failover %}bg-coral-500/10 border border-coral-500/30{% else %}bg-surface-700/50 border border-white/[0.06]{% endif %}"
+  >
+    <div class="text-xs text-gray-400 font-body mb-1">DB Failover</div>
+    <div class="flex items-center gap-2">
+      <span
+        class="w-2 h-2 rounded-full {% if status.db_failover %}bg-coral-400{% else %}bg-gray-600{% endif %}"
+      ></span>
+      <span
+        class="text-sm font-mono font-bold {% if status.db_failover %}text-coral-400{% else %}text-gray-500{% endif %}"
+      >
+        {{ "ACTIVE" if status.db_failover else "INACTIVE" }}
+      </span>
+    </div>
+  </div>
+
+  <div
+    class="p-3 rounded-xl {% if status.throttle_spike %}bg-coral-500/10 border border-coral-500/30{% else %}bg-surface-700/50 border border-white/[0.06]{% endif %}"
+  >
+    <div class="text-xs text-gray-400 font-body mb-1">429 Spike</div>
+    <div class="flex items-center gap-2">
+      <span
+        class="w-2 h-2 rounded-full {% if status.throttle_spike %}bg-coral-400{% else %}bg-gray-600{% endif %}"
+      ></span>
+      <span
+        class="text-sm font-mono font-bold {% if status.throttle_spike %}text-coral-400{% else %}text-gray-500{% endif %}"
+      >
+        {{ "ACTIVE" if status.throttle_spike else "INACTIVE" }}
+      </span>
+    </div>
+  </div>
+
+  <div
+    class="p-3 rounded-xl {% if status.slow_processing %}bg-coral-500/10 border border-coral-500/30{% else %}bg-surface-700/50 border border-white/[0.06]{% endif %}"
+  >
+    <div class="text-xs text-gray-400 font-body mb-1">Slow Processing</div>
+    <div class="flex items-center gap-2">
+      <span
+        class="w-2 h-2 rounded-full {% if status.slow_processing %}bg-coral-400{% else %}bg-gray-600{% endif %}"
+      ></span>
+      <span
+        class="text-sm font-mono font-bold {% if status.slow_processing %}text-coral-400{% else %}text-gray-500{% endif %}"
+      >
+        {{ "SLOWED" if status.slow_processing else "NORMAL" }}
+      </span>
+    </div>
+  </div>
+</div>

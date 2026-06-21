@@ -1,6 +1,6 @@
 name: instance hosting help
 description: ask any question regarding cobalt instance hosting
-labels: ["instance hosting help"]
+labels: ['instance hosting help']
 body:
   - type: textarea
     id: problem-description

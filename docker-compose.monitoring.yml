@@ -12,7 +12,7 @@
 
 x-netdata-common: &netdata-common
   image: netdata/netdata:stable
-  hostname: "{{.Service.Name}}"
+  hostname: '{{.Service.Name}}'
   restart: unless-stopped
   cap_add:
     - SYS_PTRACE
@@ -26,24 +26,24 @@ x-netdata-common: &netdata-common
     - /proc:/host/proc:ro
     - /sys:/host/sys:ro
   logging:
-    driver: "json-file"
+    driver: 'json-file'
     options:
-      max-size: "10m"
-      max-file: "3"
+      max-size: '10m'
+      max-file: '3'
   networks:
     - ytprocessor-network
   healthcheck:
-    test: ["CMD", "curl", "-f", "http://localhost:19999/api/v1/info"]
+    test: ['CMD', 'curl', '-f', 'http://localhost:19999/api/v1/info']
     interval: 30s
     timeout: 10s
     retries: 5
     start_period: 60s
 
 x-netdata-env: &netdata-env
-  NETDATA_CLAIM_TOKEN: "${NETDATA_CLAIM_TOKEN:-}"
-  NETDATA_CLAIM_URL: "${NETDATA_CLAIM_URL:-https://app.netdata.cloud}"
-  NETDATA_CLAIM_ROOMS: "${NETDATA_CLAIM_ROOM:-}"
-  NETDATA_INSECURE_SKIP_TLS_VERIFY: "false"
+  NETDATA_CLAIM_TOKEN: '${NETDATA_CLAIM_TOKEN:-}'
+  NETDATA_CLAIM_URL: '${NETDATA_CLAIM_URL:-https://app.netdata.cloud}'
+  NETDATA_CLAIM_ROOMS: '${NETDATA_CLAIM_ROOM:-}'
+  NETDATA_INSECURE_SKIP_TLS_VERIFY: 'false'
 
 services:
   # ============================================
@@ -54,7 +54,7 @@ services:
     container_name: ytprocessor-netdata-api
     hostname: vooglaadija-api
     ports:
-      - "127.0.0.1:19999:19999" # Bind to loopback only - access via nginx proxy or localhost
+      - '127.0.0.1:19999:19999' # Bind to loopback only - access via nginx proxy or localhost
     volumes:
       - netdata-api-lib:/var/lib/netdata
       - netdata-api-cache:/var/cache/netdata
@@ -62,7 +62,7 @@ services:
     environment:
       <<: *netdata-env
       # Tell NetData which container to monitor
-      NETDATA_CGROUP_NAME: "ytprocessor-api"
+      NETDATA_CGROUP_NAME: 'ytprocessor-api'
     depends_on:
       - api
 
@@ -79,7 +79,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       <<: *netdata-env
-      NETDATA_CGROUP_NAME: "ytprocessor-worker"
+      NETDATA_CGROUP_NAME: 'ytprocessor-worker'
     depends_on:
       - worker
 
@@ -96,7 +96,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       <<: *netdata-env
-      NETDATA_CGROUP_NAME: "ytprocessor-db"
+      NETDATA_CGROUP_NAME: 'ytprocessor-db'
     depends_on:
       - db
 
@@ -113,7 +113,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       <<: *netdata-env
-      NETDATA_CGROUP_NAME: "ytprocessor-redis"
+      NETDATA_CGROUP_NAME: 'ytprocessor-redis'
     depends_on:
       - redis
 

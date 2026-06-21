@@ -28,13 +28,12 @@ jobs:
             // These check-run names correspond to the jobs in fastapi-test.yml
             // and docker-compose-test.yml. We poll until they all complete.
             const requiredChecks = [
-              'Lint with ruff',
+              'Lint (Python + JS + CSS + Markdown + YAML)',
               'Type check with mypy',
               'Unit tests',
               'Integration tests',
               'Security scan',
               'Docker build check',
-              'Test Docker Compose Stack'
             ];
 
             const maxAttempts = 30; // 30 * 20s = 10 minutes
@@ -97,7 +96,9 @@ jobs:
           log-public-key: false
 
       - name: Add known hosts
-        run: mkdir -p ~/.ssh && grep -qF "${{ secrets.SSH_KNOWN_HOSTS }}" ~/.ssh/known_hosts 2>/dev/null || echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+        run:
+          mkdir -p ~/.ssh && grep -qF "${{ secrets.SSH_KNOWN_HOSTS }}" ~/.ssh/known_hosts
+          2>/dev/null || echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
 
       - name: Deploy to server
         env:

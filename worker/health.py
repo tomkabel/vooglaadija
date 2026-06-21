@@ -6,7 +6,10 @@ import threading
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
 from app.logging_config import get_logger
+from app.services.redis_client import close_redis_client, get_redis_client, reset_redis_client
 
 logger = get_logger(__name__)
 
@@ -26,6 +29,10 @@ _worker_state = {
 _start_time = datetime.now(UTC)
 _health_server = None
 
+# Re-export shared client lifecycle for worker/main.py
+close_health_redis_client = close_redis_client
+reset_health_redis_client = reset_redis_client
+
 
 def update_worker_state(**kwargs):
     """Update worker state for health reporting (thread-safe)."""
@@ -35,31 +42,35 @@ def update_worker_state(**kwargs):
 
 
 def get_redis_url() -> str:
-    """Get Redis URL from environment or construct from components.
+    """Get Redis URL from environment or settings.
 
-    Prefers REDIS_URL if set directly. Otherwise constructs from:
-    - REDIS_HOST (default: localhost)
-    - REDIS_PORT (default: 6379)
-    - REDIS_PASSWORD (if provided)
+    Checks REDIS_URL env var first, then component env vars (REDIS_HOST,
+    REDIS_PORT, REDIS_PASSWORD), then falls back to app.config.settings.
     """
-    # Check for pre-assembled URL first
     redis_url = os.environ.get("REDIS_URL")
     if redis_url:
         return redis_url
 
-    # Construct from components
-    redis_host = os.environ.get("REDIS_HOST", "localhost")
-    redis_port = os.environ.get("REDIS_PORT", "6379")
-    redis_password = os.environ.get("REDIS_PASSWORD", "")
-
-    if redis_password:
-        # URL-encode the password for safety
+    redis_host = os.environ.get("REDIS_HOST")
+    redis_port = os.environ.get("REDIS_PORT")
+    redis_password = os.environ.get("REDIS_PASSWORD")
+    if redis_host or redis_port or redis_password:
         from urllib.parse import quote_plus
 
-        encoded_password = quote_plus(redis_password)
-        return f"redis://:{encoded_password}@{redis_host}:{redis_port}"
-    else:
-        return f"redis://{redis_host}:{redis_port}"
+        host = redis_host or "localhost"
+        port = redis_port or "6379"
+        if redis_password:
+            encoded = quote_plus(redis_password)
+            return f"redis://:{encoded}@{host}:{port}"
+        return f"redis://{host}:{port}"
+
+    try:
+        from app.config import settings
+
+        return settings.redis_url
+    except Exception:
+        pass
+    return "redis://localhost:6379"
 
 
 def get_worker_id() -> str:
@@ -102,17 +113,10 @@ def write_health_sync() -> bool:
 
 async def write_health_async() -> bool:
     """Write worker health (async version for use in worker loop)."""
-    import redis.asyncio as aioredis
-    from redis.exceptions import (
-        ConnectionError as SyncConnectionError,
-    )
-    from redis.exceptions import (
-        TimeoutError as SyncTimeoutError,
-    )
+    from redis.exceptions import ConnectionError as SyncConnectionError
+    from redis.exceptions import TimeoutError as SyncTimeoutError
 
-    redis_url = get_redis_url()
     worker_id = get_worker_id()
-
     health_data = {
         "worker_id": worker_id,
         "status": "healthy",
@@ -120,13 +124,7 @@ async def write_health_async() -> bool:
         "pid": os.getpid(),
     }
 
-    client = aioredis.from_url(
-        redis_url,
-        decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-        retry_on_timeout=False,
-    )
+    client = get_redis_client()
     try:
         await client.setex(f"worker:health:{worker_id}", 30, json.dumps(health_data))
         return True
@@ -136,19 +134,19 @@ async def write_health_async() -> bool:
     except Exception as e:
         logger.error("failed_to_write_async_health", error=str(e))
         return False
-    finally:
-        # Always close the Redis client
-        if hasattr(client, "aclose"):
-            await client.aclose()  # type: ignore[union-attr]
-        else:
-            await client.close()
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
     """HTTP request handler for health checks."""
 
     def do_GET(self):
-        if self.path == "/health":
+        if self.path == "/metrics":
+            data = generate_latest()
+            self.send_response(200)
+            self.send_header("Content-Type", CONTENT_TYPE_LATEST)
+            self.end_headers()
+            self.wfile.write(data)
+        elif self.path == "/health":
             uptime = (datetime.now(UTC) - _start_time).total_seconds()
             # Clone all worker state under lock to avoid race conditions
             with _state_lock:
@@ -203,7 +201,7 @@ class _HealthHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format, *args):
+    def log_message(self, format, *args):  # noqa: A002
         """Suppress default logging."""
 
 

@@ -186,8 +186,7 @@ def get_logger(name: str | None = None, **kwargs: Any) -> "BoundLogger":
     """
     logger = structlog.get_logger(name)
     if kwargs:
-        bound_logger = logger.bind(**kwargs)
-        return bound_logger  # type: ignore[no-any-return]
+        return logger.bind(**kwargs)  # type: ignore[no-any-return]
     return logger  # type: ignore[no-any-return]
 
 

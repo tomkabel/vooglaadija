@@ -6,4 +6,3 @@ set -euo pipefail
 
 echo "Starting worker..."
 exec python -m worker.main
-

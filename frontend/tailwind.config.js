@@ -2,40 +2,67 @@
 module.exports = {
   content: [
     // Development path (relative to frontend/)
-    "../app/templates/**/*.html",
+    '../app/templates/**/*.html',
     // Docker path (absolute in container)
-    "./app/templates/**/*.html",
+    './app/templates/**/*.html',
   ],
   safelist: [
-    // Font families used in @apply directives
     'font-body',
     'font-display',
     'font-mono',
-    // Essential surface colors
     'bg-surface-900',
     'bg-surface-800',
     'bg-surface-700',
     'bg-surface-600',
     'bg-surface-500',
-    // Text colors
     'text-gray-200',
     'text-gray-300',
     'text-gray-400',
     'text-gray-500',
     'text-white',
-    // Amber colors
-    'bg-amber-400/30',
     'text-amber-400',
+    'bg-amber-400/30',
     'bg-amber-500',
     'bg-amber-500/10',
-    // Component classes
     'card',
-    'btn-download',
+    'download-btn',
     'hover-lift',
     'success-box',
-    // Animation utilities
     'opacity-0',
     'opacity-100',
+    'ease-out-expo',
+    'toast',
+    'toast-success',
+    'toast-error',
+    'toast-warning',
+    'toast-info',
+    'toast-exit',
+    'bg-coral-500/10',
+    'bg-coral-500/20',
+    'hover:bg-coral-500/20',
+    'border-coral-500/30',
+    'text-coral-400',
+    'bg-jade-500/10',
+    'border-jade-500/20',
+    'bg-warm-500/10',
+    'border-warm-500/20',
+    'text-warm-400',
+    'border-amber-500/40',
+    'hover:border-amber-400',
+    'hover:text-amber-300',
+    'border-blue-500/30',
+    'text-blue-400',
+    'hover:border-blue-500',
+    'hover:text-blue-300',
+    'text-jade-300',
+    'text-jade-400',
+    'text-warm-300',
+    'text-coral-300',
+    'text-amber-300',
+    'bg-amber-500/15',
+    'bg-warm-500/15',
+    'bg-jade-500/15',
+    'bg-coral-500/15',
   ],
   theme: {
     extend: {
@@ -113,21 +140,21 @@ module.exports = {
         '5xl': '2.5rem',
       },
       screens: {
-        'xs': '475px',
+        xs: '475px',
         '3xl': '1920px',
       },
       spacing: {
-        '18': '4.5rem',
-        '88': '22rem',
-        '128': '32rem',
+        18: '4.5rem',
+        88: '22rem',
+        128: '32rem',
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
         'slide-up': 'slideUp 0.5s ease-out forwards',
         'slide-in-right': 'slideInRight 0.4s ease-out forwards',
         'glow-pulse': 'glowPulse 2s ease-in-out infinite',
-        'grain': 'grain 8s steps(10) infinite',
-        'float': 'float 6s ease-in-out infinite',
+        grain: 'grain 8s steps(10) infinite',
+        float: 'float 6s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -159,6 +186,9 @@ module.exports = {
           '50%': { transform: 'translateY(-8px)' },
         },
       },
+      transitionTimingFunction: {
+        'out-expo': 'cubic-bezier(0.16, 1, 0.3, 1)',
+      },
       boxShadow: {
         'glow-amber': '0 0 30px rgba(251, 191, 36, 0.15)',
         'glow-amber-lg': '0 0 60px rgba(251, 191, 36, 0.2)',
@@ -168,9 +198,8 @@ module.exports = {
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'noise': "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E\")",
       },
     },
   },
   plugins: [],
-}
+};

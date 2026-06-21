@@ -21,6 +21,7 @@ class TestProcessNextJob:
         mock.zadd = AsyncMock(return_value=1)
         mock.lpush = AsyncMock(return_value=1)
         mock.brpop = AsyncMock(return_value=None)
+        mock.exists = AsyncMock(return_value=0)
         return mock
 
     @pytest.mark.unit
@@ -79,7 +80,7 @@ class TestProcessNextJob:
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown_event),
         ):
-            mock_extract.return_value = ("/storage/test.mp4", "test.mp4")
+            mock_extract.return_value = ("/storage/test.mp4", "test.mp4", "Test Video")
             mock_redis_client.rpop = AsyncMock(return_value="550e8400-e29b-41d4-a716-446655440000")
 
             await process_next_job()

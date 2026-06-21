@@ -24,19 +24,19 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+  echo -e "${GREEN}[INFO]${NC} $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+  echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+  echo -e "${RED}[ERROR]${NC} $1"
 }
 
 show_help() {
-    cat << EOF
+  cat <<EOF
 NetData Cloud Claim Script for Vooglaadija
 
 Usage:
@@ -80,101 +80,101 @@ CLAIM_WORKER=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        --token)
-            CLAIM_TOKEN="$2"
-            shift 2
-            ;;
-        --url)
-            CLAIM_URL="$2"
-            shift 2
-            ;;
-        --rooms)
-            CLAIM_ROOMS="$2"
-            shift 2
-            ;;
-        --all)
-            CLAIM_ALL=true
-            CLAIM_API=false
-            CLAIM_WORKER=false
-            shift
-            ;;
-        --api)
-            CLAIM_ALL=false
-            CLAIM_API=true
-            shift
-            ;;
-        --worker)
-            CLAIM_ALL=false
-            CLAIM_WORKER=true
-            shift
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --help|-h)
-            show_help
-            exit 0
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            exit 1
-            ;;
-    esac
+  case $1 in
+    --token)
+      CLAIM_TOKEN="$2"
+      shift 2
+      ;;
+    --url)
+      CLAIM_URL="$2"
+      shift 2
+      ;;
+    --rooms)
+      CLAIM_ROOMS="$2"
+      shift 2
+      ;;
+    --all)
+      CLAIM_ALL=true
+      CLAIM_API=false
+      CLAIM_WORKER=false
+      shift
+      ;;
+    --api)
+      CLAIM_ALL=false
+      CLAIM_API=true
+      shift
+      ;;
+    --worker)
+      CLAIM_ALL=false
+      CLAIM_WORKER=true
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --help | -h)
+      show_help
+      exit 0
+      ;;
+    *)
+      log_error "Unknown option: $1"
+      exit 1
+      ;;
+  esac
 done
 
 # Check for token in environment if not provided
 if [[ -z "$CLAIM_TOKEN" ]]; then
-    if [[ -z "${NETDATA_CLAIM_TOKEN:-}" ]]; then
-        log_error "Claim token required. Set NETDATA_CLAIM_TOKEN env var or use --token"
-        echo ""
-        show_help
-        exit 1
-    fi
-    CLAIM_TOKEN="$NETDATA_CLAIM_TOKEN"
+  if [[ -z "${NETDATA_CLAIM_TOKEN:-}" ]]; then
+    log_error "Claim token required. Set NETDATA_CLAIM_TOKEN env var or use --token"
+    echo ""
+    show_help
+    exit 1
+  fi
+  CLAIM_TOKEN="$NETDATA_CLAIM_TOKEN"
 fi
 
 # Use environment URL if different
 if [[ -n "${NETDATA_CLAIM_URL:-}" ]]; then
-    CLAIM_URL="$NETDATA_CLAIM_URL"
+  CLAIM_URL="$NETDATA_CLAIM_URL"
 fi
 
 # Build rooms argument
 ROOMS_ARG=""
 if [[ -n "$CLAIM_ROOMS" ]]; then
-    ROOMS_ARG="$CLAIM_ROOMS"
+  ROOMS_ARG="$CLAIM_ROOMS"
 elif [[ -n "${NETDATA_CLAIM_ROOMS:-}" ]]; then
-    ROOMS_ARG="$NETDATA_CLAIM_ROOMS"
+  ROOMS_ARG="$NETDATA_CLAIM_ROOMS"
 fi
 
 # Function to claim a container
 claim_container() {
-    local container_name=$1
-    local hostname=$2
+  local container_name=$1
+  local hostname=$2
 
-    echo ""
-    log_info "Claiming $container_name (hostname: $hostname)..."
+  echo ""
+  log_info "Claiming $container_name (hostname: $hostname)..."
 
-    local -a cmd=("docker" "exec" "$container_name" "netdata-claim.sh" "-token=$CLAIM_TOKEN" "-url=$CLAIM_URL")
-    if [[ -n "$ROOMS_ARG" ]]; then
-        cmd+=("-rooms=$ROOMS_ARG")
-    fi
+  local -a cmd=("docker" "exec" "$container_name" "netdata-claim.sh" "-token=$CLAIM_TOKEN" "-url=$CLAIM_URL")
+  if [[ -n "$ROOMS_ARG" ]]; then
+    cmd+=("-rooms=$ROOMS_ARG")
+  fi
 
-    if $DRY_RUN; then
-        log_warn "DRY RUN: ${cmd[*]}"
+  if $DRY_RUN; then
+    log_warn "DRY RUN: ${cmd[*]}"
+  else
+    if "${cmd[@]}"; then
+      log_info "Successfully claimed $container_name"
     else
-        if "${cmd[@]}"; then
-            log_info "Successfully claimed $container_name"
-        else
-            log_error "Failed to claim $container_name"
-        fi
+      log_error "Failed to claim $container_name"
     fi
+  fi
 }
 
 # Get list of netdata containers
 get_netdata_containers() {
-    docker ps --format '{{.Names}}' | grep netdata
+  docker ps --format '{{.Names}}' | grep netdata
 }
 
 echo ""
@@ -183,57 +183,57 @@ echo ""
 log_info "Token: ${CLAIM_TOKEN:0:10}..."
 log_info "URL: $CLAIM_URL"
 if [[ -n "$ROOMS_ARG" ]]; then
-    log_info "Rooms: $ROOMS_ARG"
+  log_info "Rooms: $ROOMS_ARG"
 fi
 echo ""
 
 # Check if any netdata containers are running
 CONTAINERS=$(get_netdata_containers)
 if [[ -z "$CONTAINERS" ]]; then
-    log_error "No NetData containers running. Start them with:"
-    echo "  docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d"
-    exit 1
+  log_error "No NetData containers running. Start them with:"
+  echo "  docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d"
+  exit 1
 fi
 
 # Show containers
 log_info "Found NetData containers:"
 echo "$CONTAINERS" | while read -r name; do
-    echo "  - $name"
+  echo "  - $name"
 done
 echo ""
 
 if $DRY_RUN; then
-    log_warn "DRY RUN - No changes will be made"
-    echo ""
+  log_warn "DRY RUN - No changes will be made"
+  echo ""
 fi
 
 # Claim containers based on flags
 if $CLAIM_ALL || $CLAIM_API; then
-    if echo "$CONTAINERS" | grep -q "netdata-api"; then
-        claim_container "ytprocessor-netdata-api" "vooglaadija-api"
-    fi
+  if echo "$CONTAINERS" | grep -q "netdata-api"; then
+    claim_container "ytprocessor-netdata-api" "vooglaadija-api"
+  fi
 fi
 
 if $CLAIM_ALL || $CLAIM_WORKER; then
-    if echo "$CONTAINERS" | grep -q "netdata-worker"; then
-        claim_container "ytprocessor-netdata-worker" "vooglaadija-worker"
-    fi
+  if echo "$CONTAINERS" | grep -q "netdata-worker"; then
+    claim_container "ytprocessor-netdata-worker" "vooglaadija-worker"
+  fi
 fi
 
 if $CLAIM_ALL; then
-    # Claim DB and Redis agents too
-    if echo "$CONTAINERS" | grep -q "netdata-db"; then
-        claim_container "ytprocessor-netdata-db" "vooglaadija-db"
-    fi
-    if echo "$CONTAINERS" | grep -q "netdata-redis"; then
-        claim_container "ytprocessor-netdata-redis" "vooglaadija-redis"
-    fi
+  # Claim DB and Redis agents too
+  if echo "$CONTAINERS" | grep -q "netdata-db"; then
+    claim_container "ytprocessor-netdata-db" "vooglaadija-db"
+  fi
+  if echo "$CONTAINERS" | grep -q "netdata-redis"; then
+    claim_container "ytprocessor-netdata-redis" "vooglaadija-redis"
+  fi
 fi
 
 echo ""
 if $DRY_RUN; then
-    log_warn "Dry run complete - no changes made"
+  log_warn "Dry run complete - no changes made"
 else
-    log_info "Claim process complete!"
-    log_info "Visit https://app.netdata.cloud to verify nodes are connected"
+  log_info "Claim process complete!"
+  log_info "Visit https://app.netdata.cloud to verify nodes are connected"
 fi

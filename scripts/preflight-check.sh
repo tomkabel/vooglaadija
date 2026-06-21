@@ -1,0 +1,290 @@
+#!/bin/bash
+# ============================================
+# Vooglaadija Docker Preflight Check
+# ============================================
+# Detects and fixes common Docker Compose issues:
+#   1. Stale externally-created network without Compose labels
+#   2. Missing required .env variables
+#   3. Port conflicts with running containers
+#   4. Orphaned volumes from previous deployments
+#
+# Usage:
+#   ./scripts/preflight-check.sh           # Check + interactive fix
+#   ./scripts/preflight-check.sh --fix     # Check + auto-fix (non-interactive)
+#   ./scripts/preflight-check.sh --check   # Check only, no fixes
+#   ./scripts/preflight-check.sh --help    # Show help
+# ============================================
+
+set -euo pipefail
+
+# ── Colors ──────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# ── State ───────────────────────────────────────────────
+AUTO_FIX=false
+CHECK_ONLY=false
+EXIT_CODE=0
+NETWORK_NAME="ytprocessor-network"
+COMPOSE_FILE="-f docker-compose.yml -f docker-compose.demo.yml"
+
+# ── Helpers ──────────────────────────────────────────────
+log_info()  { echo -e "${GREEN}[✓]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error() { echo -e "${RED}[✗]${NC} $1"; EXIT_CODE=1; }
+log_step()  { echo -e "\n${BLUE}═══ $1 ═══${NC}"; }
+log_fix()   { echo -e "    ${GREEN}→${NC} $1"; }
+
+confirm() {
+  if $AUTO_FIX; then return 0; fi
+  local prompt="${1:-Continue?} [y/N] "
+  read -r -p "$prompt" response
+  [[ "$response" =~ ^[Yy]$ ]]
+}
+
+# ── Checks ──────────────────────────────────────────────
+check_network() {
+  log_step "Network: ${NETWORK_NAME}"
+
+  # Check if the network exists at all
+  if ! docker network inspect "$NETWORK_NAME" &>/dev/null; then
+    log_info "Network '${NETWORK_NAME}' does not exist yet — Compose will create it."
+    return 0
+  fi
+
+  # Network exists — check if it has proper Compose labels
+  local compose_label
+  compose_label=$(docker network inspect "$NETWORK_NAME" \
+    --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null || echo "")
+
+  if [[ "$compose_label" == "ytprocessor-network" ]]; then
+    log_info "Network '${NETWORK_NAME}' is properly managed by Docker Compose."
+    return 0
+  fi
+
+  # Network exists but was NOT created by Compose
+  log_error "Network '${NETWORK_NAME}' exists but is NOT managed by Docker Compose."
+  echo -e "    The network was likely created manually with 'docker network create ${NETWORK_NAME}'"
+  echo -e "    or is a leftover from a tool like 'docker network prune'."
+  echo -e "    Docker Compose expects to manage this network with its own labels,"
+  echo -e "    but the existing network has label:"
+  echo -e "      com.docker.compose.network = '${compose_label:-<empty>}'"
+  echo -e "      (expected: '${NETWORK_NAME}')"
+  echo ""
+
+  if $CHECK_ONLY; then
+    echo -e "    ${YELLOW}Fix: Remove the stale network and let Compose recreate it:${NC}"
+    echo -e "      docker network rm ${NETWORK_NAME}"
+    echo -e "      docker compose ${COMPOSE_FILE} up -d"
+    return 0
+  fi
+
+  if confirm "Remove the stale network '${NETWORK_NAME}' and let Compose recreate it?"; then
+    echo ""
+    if docker network rm "$NETWORK_NAME" 2>&1; then
+      log_info "Removed stale network '${NETWORK_NAME}'. Compose will recreate it on next up."
+    else
+      log_error "Failed to remove network. Are containers still attached?"
+      echo -e "    ${YELLOW}Run 'docker compose down' first, then retry.${NC}"
+      echo -e "    Or force removal (may leave containers without network):"
+      echo -e "      docker network rm -f ${NETWORK_NAME}"
+    fi
+  else
+    log_warn "Skipping network fix. Compose may fail with network errors."
+    echo -e "    To fix later:  docker network rm ${NETWORK_NAME}"
+  fi
+}
+
+check_env_file() {
+  log_step "Environment: .env file"
+
+  if [[ -f .env ]]; then
+    log_info ".env file exists."
+    # Check required variables (without revealing values)
+    local required_vars=("DB_PASSWORD" "REDIS_PASSWORD" "SECRET_KEY")
+    local missing=()
+    for var in "${required_vars[@]}"; do
+      if grep -q "^${var}=" .env 2>/dev/null || grep -q "^export ${var}=" .env 2>/dev/null; then
+        : # OK
+      else
+        missing+=("$var")
+      fi
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+      log_error "Missing required variables in .env: ${missing[*]}"
+      echo -e "    ${YELLOW}Add them to .env before running docker compose.${NC}"
+      echo -e "    Example:"
+      echo -e "      echo 'DB_PASSWORD=my-secret-password' >> .env"
+      echo -e "      echo 'REDIS_PASSWORD=my-redis-password' >> .env"
+      echo -e "      echo 'SECRET_KEY=my-secret-key-change-me' >> .env"
+    else
+      log_info "All required .env variables are present."
+    fi
+  else
+    log_warn "No .env file found."
+    echo -e "    ${YELLOW}Create one from the template or set environment variables.${NC}"
+    echo -e "    Required: DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY"
+  fi
+}
+
+check_port_conflicts() {
+  log_step "Ports: checking for conflicts"
+
+  local ports=("3000:Grafana" "9090:Prometheus" "8000:API" "8080:Nginx" "5432:Postgres" "6379:Redis")
+  local conflict_found=false
+
+  # Build a set of ports already used by Docker containers
+  # This prevents false positives when the compose stack is already running.
+  local docker_ports=()
+  while IFS= read -r line; do
+    docker_ports+=("$line")
+  done < <(docker container ls --format '{{.Ports}}' 2>/dev/null | \
+    grep -oP ':\K\d+' | sort -u || true)
+
+  for entry in "${ports[@]}"; do
+    local port="${entry%%:*}"
+    local service="${entry#*:}"
+
+    # Skip if this port is already occupied by a Docker container
+    local is_docker=false
+    for dp in "${docker_ports[@]}"; do
+      if [[ "$dp" == "$port" ]]; then
+        is_docker=true
+        break
+      fi
+    done
+    $is_docker && continue
+
+    if ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN; then
+      local owner
+      owner=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'users:\(\K[^)]+' || echo "unknown")
+      log_warn "Port $port ($service) is in use by a non-Docker process: $owner"
+      echo -e "    This may prevent the container from starting on that port."
+      conflict_found=true
+    fi
+  done
+
+  if ! $conflict_found; then
+    log_info "No port conflicts detected."
+  fi
+}
+
+check_orphan_volumes() {
+  log_step "Volumes: checking for orphans"
+
+  local expected_volumes=(
+    "ytprocessor-postgres-data"
+    "ytprocessor-redis-data"
+    "ytprocessor-storage"
+    "ytprocessor-prometheus-data"
+    "ytprocessor-grafana-data"
+  )
+  local orphans=()
+
+  for vol in "${expected_volumes[@]}"; do
+    if docker volume inspect "$vol" &>/dev/null; then
+      # Volume exists — check if any container uses it
+      if ! docker ps -a --filter "volume=$vol" --format '{{.ID}}' | grep -q .; then
+        orphans+=("$vol")
+      fi
+    fi
+  done
+
+  if [[ ${#orphans[@]} -gt 0 ]]; then
+    log_warn "Orphaned volumes found (not used by any container):"
+    for vol in "${orphans[@]}"; do
+      echo -e "    - $vol"
+    done
+    echo ""
+    if ! $CHECK_ONLY && confirm "Remove orphaned volumes? (WARNING: destroys data)"; then
+      for vol in "${orphans[@]}"; do
+        docker volume rm "$vol" && log_fix "Removed $vol" || log_error "Failed to remove $vol"
+      done
+    fi
+  else
+    log_info "No orphaned volumes detected."
+  fi
+}
+
+check_grafana_dashboards() {
+  log_step "Grafana: checking dashboard UID uniqueness"
+
+  local dashboard_dir="monitoring"
+  local uids
+  uids=$(grep -h '"uid"' "$dashboard_dir"/grafana-dashboard-*.json 2>/dev/null | \
+    sed 's/.*"uid": *"\(.*\)".*/\1/' | sort)
+
+  local dupes
+  dupes=$(echo "$uids" | uniq -d)
+
+  if [[ -n "$dupes" ]]; then
+    log_error "Duplicate Grafana dashboard UID(s) found:"
+    for uid in $dupes; do
+      local files
+      files=$(grep -l "\"uid\": *\"$uid\"" "$dashboard_dir"/grafana-dashboard-*.json 2>/dev/null | tr '\n' ' ')
+      echo -e "    UID '$uid' appears in: $files"
+    done
+    echo -e "    ${YELLOW}Fix: Give each dashboard a unique 'uid' field in its JSON.${NC}"
+    echo -e "    Each dashboard must have a globally unique UID within the Grafana instance."
+  else
+    log_info "All dashboard UIDs are unique."
+  fi
+}
+
+# ── Main ────────────────────────────────────────────────
+main() {
+  echo ""
+  echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
+  echo -e "${BLUE}║     Vooglaadija Docker Preflight Check     ║${NC}"
+  echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
+  echo ""
+
+  check_env_file
+  check_network
+  check_port_conflicts
+  check_orphan_volumes
+  check_grafana_dashboards
+
+  echo ""
+  if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║  All checks passed! Ready to compose up.  ║${NC}"
+    echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${BLUE}docker compose ${COMPOSE_FILE} up -d${NC}"
+    echo ""
+  else
+    echo -e "${YELLOW}╔═══════════════════════════════════════════════════╗${NC}"
+    echo -e "${YELLOW}║  Some issues found. Review warnings above.       ║${NC}"
+    echo -e "${YELLOW}╚═══════════════════════════════════════════════════╝${NC}"
+    echo ""
+    exit $EXIT_CODE
+  fi
+}
+
+# ── Entry ────────────────────────────────────────────────
+case "${1:-}" in
+  --fix)
+    AUTO_FIX=true
+    main
+    ;;
+  --check)
+    CHECK_ONLY=true
+    main
+    ;;
+  --help|-h)
+    head -20 "$0" | grep -v '^#!/bin/bash' | sed 's/^# \?//'
+    exit 0
+    ;;
+  "")
+    main
+    ;;
+  *)
+    echo "Unknown option: $1"
+    echo "Usage: $0 [--fix|--check|--help]"
+    exit 1
+    ;;
+esac

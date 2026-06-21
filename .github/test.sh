@@ -4,7 +4,7 @@ set -e
 # thx: https://stackoverflow.com/a/27601038
 waitport() {
     ATTEMPTS=50
-    while [ $((ATTEMPTS-=1)) -gt 0 ] && ! nc -z localhost $1; do   
+    while [ $((ATTEMPTS-=1)) -gt 0 ] && ! nc -z localhost $1; do
         sleep 0.1
     done
 

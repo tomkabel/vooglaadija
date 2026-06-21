@@ -1,3 +1,4 @@
+import asyncio
 import html
 import os
 import posixpath
@@ -10,7 +11,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, update
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
@@ -28,8 +29,11 @@ from app.models.outbox import Outbox
 from app.models.user import User, not_deleted
 from app.services.auth_service import hash_password, verify_password
 from app.services.outbox_service import write_job_to_outbox
+from app.services.redis_client import get_all_chaos_status, get_redis_client
+from app.services.yt_dlp_service import resolve_video_title
+from app.utils.security import validate_file_path as _validate_file_path
 from app.utils.username import default_username_from_email as _default_username_from_email
-from app.utils.validators import is_youtube_url
+from app.utils.validators import is_supported_url, validate_password
 from worker.queue import enqueue_job
 
 logger = get_logger(__name__)
@@ -90,7 +94,7 @@ def _validate_redirect_url(url: str | None, default: str) -> str:
 
 def get_csrf_token(request: Request) -> str:
     """Get or create CSRF token for the request."""
-    token = request.cookies.get("csrf_token")
+    token: str | None = request.cookies.get("csrf_token")
     if not token:
         token = uuid.uuid4().hex
     return token
@@ -111,8 +115,21 @@ def set_csrf_token_cookie(response: Response, token: str) -> None:
         secure=settings.cookie_secure,
         samesite="strict",
         path="/",
-        max_age=86400,  # 24 hours in seconds
+        max_age=86400,
     )
+
+
+def rotate_csrf_token(response: Response) -> str:
+    """Generate a new CSRF token and set it in the response cookie.
+
+    Call this after every successful state-changing operation to rotate
+    the CSRF token, limiting the window of exposure if a token is leaked.
+
+    Returns the new token value.
+    """
+    new_token = uuid.uuid4().hex
+    set_csrf_token_cookie(response, new_token)
+    return new_token
 
 
 def get_template_context(request: Request, csrf_token: str | None = None, **extra_context):
@@ -140,49 +157,40 @@ def get_template_context(request: Request, csrf_token: str | None = None, **extr
 
 def is_htmx_request(request: Request) -> bool:
     """Check if request is from HTMX."""
-    return request.headers.get("HX-Request") == "true"
+    hx_request: str | None = request.headers.get("HX-Request")
+    return hx_request == "true"
 
 
 async def validate_csrf_token(request: Request) -> bool:
-    """Validate CSRF token from HTMX header or form data.
+    """Validate CSRF token using the double-submit cookie pattern.
 
     Returns True if token is valid or if this is not a state-changing request.
 
-    Validation strategies (in order of preference):
-    1. Header token matches cookie token (standard double-submit)
-    2. Form token matches cookie token (fallback for non-HTML forms)
-    3. Header token matches form token (validates both are present and match,
-       useful when cookie wasn't preserved but both client-side tokens are synced)
+    Validation strategies:
+    1. Header token (X-CSRF-Token) matches cookie token (standard double-submit)
+    2. Form token matches cookie token (fallback for non-HTMX forms)
+
+    Both strategies require the cookie to be present and match the submitted
+    token. A request without a CSRF cookie is always rejected for state-changing
+    methods.
     """
-    # Only validate state-changing methods
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return True
 
     cookie_token = request.cookies.get("csrf_token")
+    if not cookie_token:
+        return False
+
     header_token = request.headers.get("X-CSRF-Token")
 
-    # Strategy 1: Standard double-submit (header matches cookie)
-    # This is the preferred method when cookie is preserved
-    if cookie_token and header_token == cookie_token:
+    if header_token == cookie_token:
         return True
 
-    # Strategy 2: Cookie present but header missing - check form data
-    if cookie_token and not header_token:
+    if not header_token:
         try:
             form_data = await request.form()
             form_token = form_data.get("csrf_token")
             if form_token and str(form_token) == cookie_token:
-                return True
-        except Exception:
-            pass
-
-    # Strategy 3: No cookie but header matches form (both client-side tokens agree)
-    # This handles cases where the cookie was lost but the page tokens are still in sync
-    if not cookie_token and header_token:
-        try:
-            form_data = await request.form()
-            form_token = form_data.get("csrf_token")
-            if form_token and str(form_token) == header_token:
                 return True
         except Exception:
             pass
@@ -221,6 +229,9 @@ def _resolve_register_errors(error_code: str | None) -> tuple[str | None, dict[s
     if error_code == "password_too_short":
         message = "Password must be at least 8 characters"
         return message, {"password": message}
+    if error_code == "password_too_long":
+        message = "Password must be at most 128 characters"
+        return message, {"password": message}
     if error_code == "email_exists":
         message = "Email already registered"
         return message, {"email": message}
@@ -247,6 +258,10 @@ def _resolve_settings_errors(error_code: str | None) -> tuple[str | None, dict[s
         "password_too_short": (
             "New password must be at least 8 characters",
             {"new_password": "New password must be at least 8 characters"},
+        ),
+        "password_too_long": (
+            "New password must be at most 128 characters",
+            {"new_password": "New password must be at most 128 characters"},
         ),
         "bad_password": (
             "Password is incorrect",
@@ -291,14 +306,19 @@ def _login_success_response(
     safe_redirect: str,
     response: Response,
 ) -> HTMLResponse | RedirectResponse:
-    """Handle successful login response for both HTMX and regular requests."""
+    """Handle successful login response for both HTMX and regular requests.
+
+    Rotates the CSRF token to prevent reuse of the pre-authentication token.
+    """
     if is_htmx_request(request):
         resp = HTMLResponse(status_code=200, content="")
         resp.headers["HX-Redirect"] = safe_redirect
         set_token_cookies(resp, access_token, refresh_token, secure=settings.cookie_secure)
+        rotate_csrf_token(resp)
         return resp
     redirect = RedirectResponse(url=safe_redirect, status_code=303)
     set_token_cookies(redirect, access_token, refresh_token, secure=settings.cookie_secure)
+    rotate_csrf_token(redirect)
     return redirect
 
 
@@ -307,28 +327,20 @@ def _register_success_response(
     access_token: str,
     refresh_token: str,
 ) -> HTMLResponse | RedirectResponse:
-    """Handle successful registration response for both HTMX and regular requests."""
+    """Handle successful registration response for both HTMX and regular requests.
+
+    Rotates the CSRF token to prevent reuse of the pre-registration token.
+    """
     if is_htmx_request(request):
         resp = HTMLResponse(status_code=200, content="")
         resp.headers["HX-Redirect"] = "/web/downloads"
         set_token_cookies(resp, access_token, refresh_token, secure=settings.cookie_secure)
+        rotate_csrf_token(resp)
         return resp
     redirect = RedirectResponse(url="/web/downloads", status_code=303)
     set_token_cookies(redirect, access_token, refresh_token, secure=settings.cookie_secure)
+    rotate_csrf_token(redirect)
     return redirect
-
-
-def _validate_file_path(file_path: str) -> str:
-    """Validate that file_path resolves within the downloads directory."""
-    downloads_dir = os.path.realpath(os.path.join(settings.storage_path, "downloads"))
-    resolved = os.path.realpath(file_path)
-    safe_dir = downloads_dir if downloads_dir.endswith(os.sep) else downloads_dir + os.sep
-    if not resolved.startswith(safe_dir):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: invalid file path",
-        )
-    return resolved
 
 
 # ========================
@@ -380,7 +392,7 @@ async def login_form(
     result = await db.execute(select(User).where(User.email == email, not_deleted()))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(password, user.password_hash):
+    if user is None or not await verify_password(password, user.password_hash):
         return _htmx_or_redirect(
             request, 401, _error_html("Invalid email or password"), "/web/login?error=1"
         )
@@ -390,8 +402,8 @@ async def login_form(
             request, 401, _error_html("Account is inactive"), "/web/login?error=inactive"
         )
 
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     safe_redirect = _validate_redirect_url(return_url, "/web/downloads")
 
@@ -443,12 +455,11 @@ async def register_form(
             "/web/register?error=password_mismatch",
         )
 
-    if len(password) < 8:
+    pw_error = validate_password(password)
+    if pw_error:
+        error_code = "password_too_short" if len(password) < 8 else "password_too_long"
         return _htmx_or_redirect(
-            request,
-            400,
-            _error_html("Password must be at least 8 characters"),
-            "/web/register?error=password_too_short",
+            request, 400, _error_html(pw_error), f"/web/register?error={error_code}"
         )
 
     result = await db.execute(select(User).where(User.email == email, not_deleted()))
@@ -465,7 +476,7 @@ async def register_form(
         id=uuid.uuid4(),
         username=_default_username_from_email(email),
         email=email,
-        password_hash=hash_password(password),
+        password_hash=await hash_password(password),
     )
     db.add(user)
 
@@ -482,10 +493,76 @@ async def register_form(
 
     await db.refresh(user)
 
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     return _register_success_response(request, access_token, refresh_token)
+
+
+DEMO_EMAIL = "demo@vooglaadija.io"
+
+
+@router.get("/demo-login")
+@limiter.limit("3/minute")
+async def demo_login(
+    request: Request,
+    response: Response,
+    db: DbSession,
+):
+    """One-click demo login — authenticates as pre-seeded demo user.
+
+    Sets JWT cookies and redirects to /web/downloads.
+    Returns 500 if demo user does not exist (seed script not run).
+    Rate-limited to 3/minute to prevent abuse.
+    """
+    result = await db.execute(select(User).where(User.email == DEMO_EMAIL, not_deleted()))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        logger.error("demo_user_not_found", email=DEMO_EMAIL)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Demo user not found. Run scripts/seed_demo_data.py to seed the demo account.",
+        )
+
+    if not user.is_active:
+        logger.error("demo_user_inactive", email=DEMO_EMAIL)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo user is inactive.",
+        )
+
+    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
+
+    # Prime demo jobs for processing so the UI shows live progress
+    try:
+        pending_result = await db.execute(
+            select(DownloadJob).where(
+                DownloadJob.user_id == user.id,
+                DownloadJob.status == "pending",
+            )
+        )
+        pending_jobs = pending_result.scalars().all()
+
+        if pending_jobs:
+            r = get_redis_client()
+            already_primed = await r.exists("demo:jobs_primed")
+            if not already_primed:
+                for i, job in enumerate(pending_jobs):
+                    if i > 0:
+                        await asyncio.sleep(0.2)
+                    await enqueue_job(job.id)
+                await r.setex("demo:jobs_primed", 30, "1")
+                logger.info("demo_jobs_primed", count=len(pending_jobs))
+    except Exception as e:
+        logger.warning("demo_jobs_prime_failed", error=str(e))
+        # Non-fatal — demo still works
+
+    redirect = RedirectResponse(url="/web/downloads", status_code=303)
+    set_token_cookies(redirect, access_token, refresh_token, secure=settings.cookie_secure)
+    rotate_csrf_token(redirect)
+    return redirect
 
 
 @router.post("/logout")
@@ -499,6 +576,61 @@ async def logout(request: Request):
     redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
     clear_token_cookies(redirect)
     return redirect
+
+
+# ========================
+# CHAOS LAB (gated by FEATURE_CHAOS_API_ENABLED)
+# ========================
+
+
+@router.get("/chaos-lab")
+async def chaos_lab_page(request: Request):
+    """Render the chaos engineering lab page for live demo."""
+    if not settings.feature_chaos_api_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    token = get_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        "chaos-lab.html",
+        get_template_context(request, csrf_token=token),
+    )
+    set_csrf_token_cookie(response, token)
+    return response
+
+
+@router.get("/chaos-lab/status")
+async def chaos_lab_status(request: Request):
+    """HTMX partial: return current chaos flag status for polling."""
+    if not settings.feature_chaos_api_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    status_data = await get_all_chaos_status()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/_chaos_status.html",
+        get_template_context(request, status=status_data),
+    )
+
+
+# ========================
+# PRESENTATION SLIDES
+# ========================
+
+
+@router.get("/slides")
+async def presentation_slides(request: Request):
+    """Render the TOP1 demo presentation slides (3-slide deck).
+
+    Standalone HTML with CSS animations, inline SVG architecture diagram,
+    and keyboard/click navigation. Used during the live demo presentation.
+    """
+    return templates.TemplateResponse(
+        request,
+        "slides/presentation.html",
+        {},
+    )
 
 
 # ========================
@@ -601,13 +733,17 @@ async def change_password(
     current_user: CurrentUserFromCookie,
     db: DbSession,
 ):
-    """Change current user's password."""
+    """Change current user's password.
+
+    On success, increments the user's token_version to invalidate all
+    existing sessions. Rotates the CSRF token.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
         )
 
-    if not verify_password(current_password, current_user.password_hash):
+    if not await verify_password(current_password, current_user.password_hash):
         return _htmx_or_redirect(
             request,
             400,
@@ -623,23 +759,25 @@ async def change_password(
             "/web/settings?error=password_mismatch",
         )
 
-    if len(new_password) < 8:
+    pw_error = validate_password(new_password)
+    if pw_error:
+        error_code = "password_too_short" if len(new_password) < 8 else "password_too_long"
         return _htmx_or_redirect(
-            request,
-            400,
-            _error_html("New password must be at least 8 characters"),
-            "/web/settings?error=password_too_short",
+            request, 400, _error_html(pw_error), f"/web/settings?error={error_code}"
         )
 
-    current_user.password_hash = hash_password(new_password)
+    current_user.password_hash = await hash_password(new_password)
+    current_user.token_version += 1
     await db.commit()
 
-    return _htmx_or_redirect(
+    result = _htmx_or_redirect(
         request,
         200,
         _success_html("Password changed successfully"),
         "/web/settings?updated=password",
     )
+    rotate_csrf_token(result)
+    return result
 
 
 def _cleanup_job_files(jobs: list, logger) -> tuple[bool, list[str]]:
@@ -700,7 +838,7 @@ async def delete_account(
             "/web/settings?error=delete_confirmation",
         )
 
-    if not verify_password(password, current_user.password_hash):
+    if not await verify_password(password, current_user.password_hash):
         return _htmx_or_redirect(
             request,
             400,
@@ -755,12 +893,18 @@ async def create_download_form(
         return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
 
     # Validate URL
-    if not is_youtube_url(url):
-        return HTMLResponse(status_code=422, content=_error_html("Invalid YouTube URL"))
+    if not is_supported_url(url):
+        return HTMLResponse(status_code=422, content=_error_html("Invalid supported URL"))
 
     # Create job with transactional outbox pattern (same as REST API)
     job_id = uuid.uuid4()
-    job = DownloadJob(id=job_id, user_id=current_user.id, url=url, status="pending")
+
+    # Pre-resolve video title so the HTMX partial renders the actual title immediately.
+    # Fast (~0.5-3s) because yt-dlp runs with download=False.
+    # Falls back gracefully — worker resolves title if this fails.
+    title = await resolve_video_title(url)
+
+    job = DownloadJob(id=job_id, user_id=current_user.id, url=url, status="pending", title=title)
     db.add(job)
     try:
         await write_job_to_outbox(db, job_id)
@@ -774,20 +918,19 @@ async def create_download_form(
     # Enqueue job for processing (best-effort; outbox handles recovery)
     try:
         await enqueue_job(job_id)
-        # Mark outbox as enqueued to prevent sync_outbox_to_queue from re-publishing
         await db.execute(
-            update(Outbox)
-            .where(Outbox.job_id == job_id, Outbox.status == "pending")
-            .values(status="enqueued")
+            delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending")
         )
         await db.commit()
     except Exception:
         logger.warning("failed_to_enqueue_job_outbox_recovery", job_id=str(job_id))
 
-    # Return HTML fragment for HTMX swap
-    return templates.TemplateResponse(
+    # Return HTML fragment for HTMX swap with rotated CSRF token
+    resp = templates.TemplateResponse(
         request, "partials/_download_item.html", get_template_context(request, job=job)
     )
+    rotate_csrf_token(resp)
+    return resp
 
 
 @router.post("/downloads/full")
@@ -806,9 +949,9 @@ async def create_download_full_page(
         )
 
     # Validate URL
-    if not is_youtube_url(url):
+    if not is_supported_url(url):
         return _htmx_or_redirect(
-            request, 422, _error_html("Invalid YouTube URL"), "/web/downloads?error=invalid_url"
+            request, 422, _error_html("Invalid supported URL"), "/web/downloads?error=invalid_url"
         )
 
     # Create job with transactional outbox pattern (same as REST API)
@@ -832,11 +975,8 @@ async def create_download_full_page(
     # Enqueue job for processing (best-effort; outbox handles recovery)
     try:
         await enqueue_job(job_id)
-        # Mark outbox as enqueued to prevent sync_outbox_to_queue from re-publishing
         await db.execute(
-            update(Outbox)
-            .where(Outbox.job_id == job_id, Outbox.status == "pending")
-            .values(status="enqueued")
+            delete(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending")
         )
         await db.commit()
     except Exception:
@@ -847,6 +987,7 @@ async def create_download_full_page(
 
 
 @router.delete("/downloads/{job_id}")
+@limiter.limit("30/minute")
 async def delete_download_form(
     request: Request,
     job_id: str,
@@ -900,8 +1041,10 @@ async def delete_download_form(
     await db.delete(job)
     await db.commit()
 
-    # Return empty response for hx-swap="outerHTML" (removes element)
-    return HTMLResponse(content="")
+    # Return empty response for hx-swap="outerHTML" (removes element) with rotated CSRF token
+    resp = HTMLResponse(content="")
+    rotate_csrf_token(resp)
+    return resp
 
 
 @router.get("/downloads/{job_id}/file")

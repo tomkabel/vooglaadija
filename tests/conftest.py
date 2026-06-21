@@ -74,6 +74,21 @@ async def setup_database() -> AsyncGenerator[None, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def _reset_shutdown_event():
+    """Reset the global worker shutdown_event before each test.
+
+    Some tests set shutdown_event to trigger shutdown behavior,
+    which persists across tests in the same xdist worker process.
+    """
+    try:
+        from worker.state import shutdown_event
+
+        shutdown_event.clear()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Provide a database session for tests."""
@@ -87,16 +102,27 @@ def sample_url() -> str:
 
 
 async def create_test_user_and_login(
-    client, email: str = "downloads@example.com", password: str = "securepassword123"
-) -> dict:
-    """Helper to register and login a test user, returning auth headers."""
+    client,
+    email: str = "downloads@example.com",
+    password: str = "securepassword123",
+    _lock=None,
+) -> str:
+    """Register and login a test user using a unique email per call.
+
+    Uses a UUID prefix on the email to avoid isolation issues with
+    parallel xdist workers. Returns the access token string.
+
+    The optional _lock parameter is unused (kept for API compatibility).
+    """
+    import uuid
+
+    unique_email = f"{uuid.uuid4().hex[:8]}@{email.split('@')[1]}"
     await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password},
+        json={"email": unique_email, "password": password},
     )
     response = await client.post(
         "/api/v1/auth/login",
-        json={"email": email, "password": password},
+        json={"email": unique_email, "password": password},
     )
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    return response.json()["access_token"]

@@ -68,7 +68,7 @@ except Exception as e:
 
 ### 2. Human-Readable Output (Development)
 
-```
+```text
 2026-04-15 10:30:00.123 | INFO     | app.services.yt_dlp_service | job_completed | job_id=550e8400... duration_ms=2345
 ```
 

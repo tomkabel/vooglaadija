@@ -7,27 +7,34 @@ assignees:
 ---
 
 ## Description
+
 What happened?
 
 ## Steps to Reproduce
-1. 
-2. 
-3. 
+
+1.
+2.
+3.
 
 ## Expected Behavior
+
 What should have happened?
 
 ## Actual Behavior
+
 What actually happened?
 
 ## Screenshots/Logs
+
 If applicable
 
 ## Environment
-- Browser: 
-- OS: 
-- Version: 
+
+- Browser:
+- OS:
+- Version:
 
 ## Sprint Impact
-- Sprint number: 
-- Story affected: 
+
+- Sprint number:
+- Story affected:

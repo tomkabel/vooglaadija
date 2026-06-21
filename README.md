@@ -2,7 +2,7 @@
 
 # Vooglaadija
 
-*Pronounced voo-gla-tee-ya* — Media Link Processor
+_Pronounced voo-gla-tee-ya_ — Media Link Processor
 
 Async video media extraction API with job queue and real-time status streaming.
 
@@ -23,9 +23,18 @@ Async video media extraction API with job queue and real-time status streaming.
 
 <div align="center">
 
-**Built by** [![GitHub](https://img.shields.io/badge/@tomkabel-181717?style=flat&logo=github)](https://github.com/tomkabel) [![GitHub](https://img.shields.io/badge/@Kevindaman-181717?style=flat&logo=github)](https://github.com/Kevindaman) [![GitHub](https://img.shields.io/badge/@triinum-181717?style=flat&logo=github)](https://github.com/triinum)
+**Built by**
+[![GitHub](https://img.shields.io/badge/@tomkabel-181717?style=flat&logo=github)](https://github.com/tomkabel)
+[![GitHub](https://img.shields.io/badge/@Kevindaman-181717?style=flat&logo=github)](https://github.com/Kevindaman)
+[![GitHub](https://img.shields.io/badge/@triinum-181717?style=flat&logo=github)](https://github.com/triinum)
 
-**Acknowledgements** [![GitHub](https://img.shields.io/badge/@Migfive-181717?style=flat&logo=github)](https://github.com/Migfive) [![GitHub](https://img.shields.io/badge/@DrWarpMan-181717?style=flat&logo=github)](https://github.com/DrWarpMan) [![GitHub](https://img.shields.io/badge/@Snazzah-181717?style=flat&logo=github)](https://github.com/Snazzah) [![GitHub](https://img.shields.io/badge/@wukko-181717?style=flat&logo=github)](https://github.com/wukko) [![GitHub](https://img.shields.io/badge/@Blobadoodle-181717?style=flat&logo=github)](https://github.com/Blobadoodle) [![GitHub](https://img.shields.io/badge/@nexpid-181717?style=flat&logo=github)](https://github.com/nexpid)
+**Acknowledgements**
+[![GitHub](https://img.shields.io/badge/@Migfive-181717?style=flat&logo=github)](https://github.com/Migfive)
+[![GitHub](https://img.shields.io/badge/@DrWarpMan-181717?style=flat&logo=github)](https://github.com/DrWarpMan)
+[![GitHub](https://img.shields.io/badge/@Snazzah-181717?style=flat&logo=github)](https://github.com/Snazzah)
+[![GitHub](https://img.shields.io/badge/@wukko-181717?style=flat&logo=github)](https://github.com/wukko)
+[![GitHub](https://img.shields.io/badge/@Blobadoodle-181717?style=flat&logo=github)](https://github.com/Blobadoodle)
+[![GitHub](https://img.shields.io/badge/@nexpid-181717?style=flat&logo=github)](https://github.com/nexpid)
 
 </div>
 
@@ -46,15 +55,21 @@ Async video media extraction API with job queue and real-time status streaming.
 
 ## Overview
 
-Vooglaadija is an async REST API for extracting media from video URLs. It uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) as the extraction engine and currently accepts YouTube URLs. The architecture separates the FastAPI web layer from a Redis-backed worker process.
+Vooglaadija is an async REST API for extracting media from video URLs. It uses
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) as the extraction engine and currently accepts YouTube
+URLs. The architecture separates the FastAPI web layer from a Redis-backed worker process.
 
-The system includes JWT authentication, CSRF protection, rate limiting, structured logging, Prometheus metrics, OpenTelemetry tracing, and Sentry error tracking. A server-rendered web UI built with HTMX and Tailwind CSS provides job management with real-time status updates via Server-Sent Events.
+The system includes JWT authentication, CSRF protection, rate limiting, structured logging,
+Prometheus metrics, OpenTelemetry tracing, and Sentry error tracking. A server-rendered web UI built
+with HTMX and Tailwind CSS provides job management with real-time status updates via Server-Sent
+Events.
 
 ---
 
 ## Features
 
 ### Core Processing
+
 - Media extraction via yt-dlp (YouTube-optimized)
 - Async job queue with Redis-backed worker
 - Job lifecycle: pending → processing → completed/failed
@@ -63,6 +78,7 @@ The system includes JWT authentication, CSRF protection, rate limiting, structur
 - Stale job reaper for orphaned processing jobs
 
 ### Security & Reliability
+
 - JWT access/refresh tokens with bcrypt hashing
 - CSRF token protection
 - Per-IP and per-user rate limiting
@@ -73,6 +89,7 @@ The system includes JWT authentication, CSRF protection, rate limiting, structur
 - Graceful worker shutdown with job draining
 
 ### Observability
+
 - SSE real-time status streaming
 - Prometheus metrics endpoint
 - Structured JSON logging (structlog)
@@ -113,10 +130,10 @@ python -m worker.main      # Worker (separate terminal)
 
 ### Access Points
 
-- Web Dashboard: http://localhost:8000/web/downloads
-- Login: http://localhost:8000/web/login
-- API Docs: http://localhost:8000/docs
-- Standalone Swagger: http://localhost:8081
+- Web Dashboard: <http://localhost:8000/web/downloads>
+- Login: <http://localhost:8000/web/login>
+- API Docs: <http://localhost:8000/docs>
+- Standalone Swagger: <http://localhost:8081>
 
 ---
 
@@ -159,6 +176,7 @@ curl -X POST http://localhost:8000/api/v1/downloads \
 ```
 
 Expected response:
+
 ```json
 {
   "error": {
@@ -177,36 +195,37 @@ Expected response:
 }
 ```
 
-See [docs/API.md](docs/API.md) for the full endpoint reference, request/response schemas, and status codes.
+See [docs/API.md](docs/API.md) for the full endpoint reference, request/response schemas, and status
+codes.
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/API.md](docs/API.md) | Full API reference with auth requirements, status codes, and schemas |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and component responsibilities |
-| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Development workflow, tests, and code standards |
-| [docs/OPS.md](docs/OPS.md) | Environment variables, deployment, and troubleshooting |
+| Document                                     | Description                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| [docs/API.md](docs/API.md)                   | Full API reference with auth requirements, status codes, and schemas |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and component responsibilities                   |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Development workflow, tests, and code standards                      |
+| [docs/OPS.md](docs/OPS.md)                   | Environment variables, deployment, and troubleshooting               |
 
 ---
 
 ## Tech Stack
 
-| Technology | Purpose |
-|------------|---------|
-| Python 3.12+ | Runtime |
-| FastAPI | API framework |
-| SQLAlchemy | ORM |
-| PostgreSQL | Database |
-| Redis | Queue and cache |
-| Docker | Containerization |
-| nginx | Reverse proxy |
-| Tailwind CSS | Frontend styling |
-| Prometheus | Metrics |
-| sse-starlette | Real-time updates |
-| GitHub Actions | CI/CD |
+| Technology     | Purpose           |
+| -------------- | ----------------- |
+| Python 3.12+   | Runtime           |
+| FastAPI        | API framework     |
+| SQLAlchemy     | ORM               |
+| PostgreSQL     | Database          |
+| Redis          | Queue and cache   |
+| Docker         | Containerization  |
+| nginx          | Reverse proxy     |
+| Tailwind CSS   | Frontend styling  |
+| Prometheus     | Metrics           |
+| sse-starlette  | Real-time updates |
+| GitHub Actions | CI/CD             |
 
 ### Runtime Dependencies
 
@@ -244,7 +263,10 @@ flowchart TD
     api -.->|Errors| sentry[Sentry]
 ```
 
-The API server handles authentication, job management, HTMX rendering, SSE streaming, and observability. The worker consumes jobs from Redis, extracts media via yt-dlp, and manages file lifecycle. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full diagram and component details.
+The API server handles authentication, job management, HTMX rendering, SSE streaming, and
+observability. The worker consumes jobs from Redis, extracts media via yt-dlp, and manages file
+lifecycle. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full diagram and component
+details.
 
 ---
 

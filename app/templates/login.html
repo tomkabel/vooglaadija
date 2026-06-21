@@ -1,45 +1,37 @@
 {% extends "base.html" %}
 
-{% block title %}Sign In — Vooglaadija{% endblock %}
+{% block title %}Sign in — Vooglaadija{% endblock %}
 
 {% block nav_actions %}
 <a href="/web/register" class="btn-secondary text-sm">
-    Create Account
+    Create account
 </a>
 {% endblock %}
 
 {% block content %}
-<div class="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative">
-    <!-- Decorative background element -->
+<div class="min-h-[calc(100vh-4rem)] flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8 relative">
     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-amber-500/[0.03] blur-3xl pointer-events-none" aria-hidden="true"></div>
 
     <div class="w-full max-w-md relative z-10">
         <div class="slide-up opacity-0-initial animate-fill-forwards">
-            <!-- Header -->
             <div class="text-center mb-10">
                 <div class="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-glow-amber mb-8">
-                    <svg class="h-8 w-8 text-surface-900" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <svg class="h-8 w-8 text-surface-900" aria-hidden="true"><use href="#icon-play" /></svg>
                 </div>
-                <h2 class="text-3xl font-display font-bold text-white tracking-tight">
+                <h2 class="text-3xl font-display font-bold text-white tracking-tight leading-tight">
                     Welcome back
                 </h2>
-                <p class="mt-3 text-gray-500 font-body">
+                <p class="mt-3 text-gray-400 font-body">
                     Sign in to manage your downloads
                 </p>
             </div>
 
-            <!-- Form Card -->
             <div class="card-glow p-8">
                 {% set field_errors = field_errors or {} %}
                 {% if error %}
                 <div class="mb-6 error-box" role="alert" aria-live="assertive">
                     <div class="flex items-center gap-3">
-                        <svg class="h-5 w-5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
+                        <svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#icon-warning" /></svg>
                         <span>{{ error }}</span>
                     </div>
                 </div>
@@ -49,16 +41,15 @@
                       action="/web/login"
                       hx-post="/web/login"
                       hx-target="#login-form"
-                      class="space-y-5">
+                      class="space-y-5"
+                      id="login-form-element">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <input type="hidden" name="return_url" value="{{ return_url or '/web/downloads' }}">
 
                     <div>
                         <label for="email" class="form-label">Email</label>
                         <div class="input-icon-wrapper">
-                            <svg class="h-[18px] w-[18px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                            </svg>
+                            <svg class="h-5 w-5" aria-hidden="true"><use href="#icon-mail" /></svg>
                             <input id="email"
                                    name="email"
                                    type="email"
@@ -68,7 +59,9 @@
                                    aria-describedby="email-error"
                                    aria-errormessage="email-error"
                                    class="form-input"
-                                   placeholder="you@example.com">
+                                   placeholder="you@example.com"
+                                   spellcheck="false"
+                                   autocapitalize="off">
                         </div>
                         <p id="email-error" class="field-error" role="alert">{{ field_errors.get("email", "") }}</p>
                     </div>
@@ -76,9 +69,7 @@
                     <div>
                         <label for="password" class="form-label">Password</label>
                         <div class="input-icon-wrapper">
-                            <svg class="h-[18px] w-[18px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                            </svg>
+                            <svg class="h-5 w-5" aria-hidden="true"><use href="#icon-lock" /></svg>
                             <input id="password"
                                    name="password"
                                    type="password"
@@ -88,25 +79,42 @@
                                    aria-describedby="password-error"
                                    aria-errormessage="password-error"
                                    class="form-input"
-                                   placeholder="Your password">
+                                   placeholder="Your password"
+                                   spellcheck="false"
+                                   autocapitalize="off">
                         </div>
                         <p id="password-error" class="field-error" role="alert">{{ field_errors.get("password", "") }}</p>
                     </div>
 
                     <div class="pt-2">
-                        <button type="submit" class="w-full btn-primary py-3 text-base">
+                        <button type="submit" id="login-submit" class="w-full btn-primary py-3 text-base">
                             <span class="flex items-center justify-center gap-2">
-                                Sign in
-                                <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                                </svg>
+                                <span id="login-btn-text">Sign in</span>
+                                <svg class="h-4 w-4" aria-hidden="true"><use href="#icon-arrow-right" /></svg>
                             </span>
                         </button>
                     </div>
 
+                    <div class="relative py-2">
+                        <div class="absolute inset-0 flex items-center" aria-hidden="true">
+                            <div class="w-full border-t border-white/[0.06]"></div>
+                        </div>
+                        <div class="relative flex justify-center">
+                            <span class="px-3 text-xs font-medium text-gray-500 bg-surface-800/80">or</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <a href="/web/demo-login"
+                           class="w-full btn-secondary py-3 text-base flex items-center justify-center gap-2 border-2 border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-colors duration-200 rounded-lg font-display font-semibold">
+                            <svg class="h-5 w-5" aria-hidden="true"><use href="#icon-user" /></svg>
+                            Guest Demo
+                        </a>
+                    </div>
+
                     <div class="text-center pt-2">
                         <span class="text-sm text-gray-500">Don't have an account?</span>
-                        <a href="/web/register" class="text-sm font-display font-semibold text-amber-400 hover:text-amber-300 ml-1.5 transition-colors duration-300">
+                        <a href="/web/register" class="text-sm font-display font-semibold text-amber-400 hover:text-amber-300 ml-1.5 transition-colors duration-200">
                             Create one
                         </a>
                     </div>
@@ -117,4 +125,22 @@
         </div>
     </div>
 </div>
+
+<script nonce="{{ nonce }}">
+(function() {
+    var form = document.getElementById('login-form-element');
+    var submitBtn = document.getElementById('login-submit');
+    var btnText = document.getElementById('login-btn-text');
+    if (form && submitBtn && btnText) {
+        form.addEventListener('htmx:beforeRequest', function() {
+            submitBtn.disabled = true;
+            btnText.textContent = 'Signing in\u2026';
+        });
+        form.addEventListener('htmx:afterRequest', function() {
+            submitBtn.disabled = false;
+            btnText.textContent = 'Sign in';
+        });
+    }
+})();
+</script>
 {% endblock %}

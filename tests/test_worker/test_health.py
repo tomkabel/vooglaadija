@@ -176,6 +176,13 @@ class TestWriteHealthSync:
 class TestWriteHealthAsync:
     """Tests for write_health_async function."""
 
+    @pytest.fixture(autouse=True)
+    def reset_health_redis(self):
+        """Reset the shared health Redis client before each test."""
+        from worker.health import reset_health_redis_client
+
+        reset_health_redis_client()
+
     @pytest.mark.asyncio
     async def test_write_health_async_returns_bool(self):
         """Test that write_health_async returns a boolean."""

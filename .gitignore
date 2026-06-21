@@ -52,6 +52,19 @@ infra/certbot/cloudflare.ini
 cloudflare.ini
 
 # =============================================
+# AI Agent / Dev Tooling
+# =============================================
+.claude/
+.commandcode/
+.forge/
+_bmad/
+_bmad-output/
+kilo-exports-*/
+skills.txt
+unoptimized_prompt.md
+critique.md
+
+# =============================================
 # Tooling & CLI Config
 # =============================================
 kilo.json
@@ -60,6 +73,16 @@ skills-lock.json
 .kilo/
 .kilocode/
 AGENTS.md
+
+# =============================================
+# Formatter & linter tool caches
+# =============================================
+.biome/
+*.biome.lock
+.markdownlint-cli2-cache/
+.pre-commit/
+.yamllint-cache/
+.shellcheckrc.tmp
 
 # =============================================
 # Databases & Data
@@ -150,3 +173,5 @@ vooglaadija-slides/
 .github/project-config.json
 docs/CRITIQUE-ISSUES.md
 .openchange/
+.agents/
+.kilocode/skills/*

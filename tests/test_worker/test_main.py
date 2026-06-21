@@ -235,8 +235,10 @@ class TestWorkerMainStartup:
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
         ):
+            from worker.main import main as _worker_main
+
             with pytest.raises(ConnectionError, match="Redis unavailable"):
-                await __import__("worker.main", fromlist=["main"]).main()
+                await _worker_main()
 
     @pytest.mark.unit
     async def test_main_raises_when_db_connection_fails(self):

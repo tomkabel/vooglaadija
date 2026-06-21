@@ -80,11 +80,13 @@ docker-compose -f docker-compose.yml -f docker-compose.production.yml up -d
 - `docker-compose.yml` - Base configuration with health checks
 - `docker-compose.production.yml` - Production-specific overrides (TLS, ports)
 
-Using only `docker-compose.production.yml` will result in 502 errors because the API health check dependency is not included.
+Using only `docker-compose.production.yml` will result in 502 errors because the API health check
+dependency is not included.
 
 ### Health Checks
 
-The API service has a TCP-based health check on port 8000. Nginx will not start routing traffic until the API is healthy.
+The API service has a TCP-based health check on port 8000. Nginx will not start routing traffic
+until the API is healthy.
 
 ### Troubleshooting
 

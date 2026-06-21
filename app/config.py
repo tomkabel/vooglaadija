@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     # Cookie security — False for local dev (no HTTPS), True for production
     cookie_secure: bool = False
 
+    # Feature flags — following FEATURE_*_ENABLED convention
+    feature_chaos_api_enabled: bool = False
+    feature_throttle_preemptive_enabled: bool = False
+
+    # Throttle predictor — sliding window 429 detection
+    throttle_window_seconds: int = 60
+    throttle_risk_threshold_scale: int = 10
+    throttle_risk_threshold: float = 0.7
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""
@@ -65,40 +74,48 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_and_construct(self) -> "Settings":  # noqa: C901
-        # TESTING override — skip all validation
+    def validate_and_construct(self) -> "Settings":
         testing_val = os.environ.get("TESTING", "").lower()
         is_testing = testing_val in ("1", "true", "yes", "on")
         if is_testing:
-            if not self.database_url:
-                self.database_url = "sqlite+aiosqlite:///:memory:"
-            # Set default Redis URL in test mode if not configured
-            if not self.redis_url:
-                self.redis_url = "redis://localhost:6379"
-            return self
+            return self._apply_testing_defaults()
 
-        # Construct DATABASE_URL from components if not set directly
+        self._build_database_url()
+        self._validate_secret_key()
+        self._warn_cors()
+        self._resolve_storage()
+        self._build_redis_url()
+        return self
+
+    def _apply_testing_defaults(self) -> "Settings":
         if not self.database_url:
-            if not self.db_password:
-                raise ValueError(
-                    "Either DATABASE_URL or DB_PASSWORD must be set. "
-                    "For Docker: set DB_PASSWORD in .env. "
-                    "For local dev: set DATABASE_URL in .env."
-                )
-            encoded_password = quote_plus(self.db_password)
-            self.database_url = (
-                f"postgresql+asyncpg://{self.db_user}:{encoded_password}"
-                f"@{self.db_host}:{self.db_port}/{self.db_name}"
-            )
+            self.database_url = "sqlite+aiosqlite:///:memory:"
+        if not self.redis_url:
+            self.redis_url = "redis://localhost:6379"
+        return self
 
-        # Validate SECRET_KEY — reject known weak values
+    def _build_database_url(self) -> None:
+        if self.database_url:
+            return
+        if not self.db_password:
+            raise ValueError(
+                "Either DATABASE_URL or DB_PASSWORD must be set. "
+                "For Docker: set DB_PASSWORD in .env. "
+                "For local dev: set DATABASE_URL in .env."
+            )
+        encoded_password = quote_plus(self.db_password)
+        self.database_url = (
+            f"postgresql+asyncpg://{self.db_user}:{encoded_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+    def _validate_secret_key(self) -> None:
         if not self.secret_key:
             raise ValueError(
                 "SECRET_KEY is required. "
                 'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
 
-        # Check for low-entropy keys (repetitive patterns, dictionary words, etc.)
         entropy_per_char = _estimate_entropy(self.secret_key)
         if entropy_per_char < 2.9:
             raise ValueError(
@@ -109,7 +126,7 @@ class Settings(BaseSettings):
         if len(self.secret_key) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters for security")
 
-        # Warn on wildcard CORS
+    def _warn_cors(self) -> None:
         if self.cors_origins == "*":
             warnings.warn(
                 "CORS_ORIGINS is set to '*', allowing all origins. "
@@ -117,18 +134,17 @@ class Settings(BaseSettings):
                 stacklevel=2,
             )
 
-        # Resolve storage path to absolute
+    def _resolve_storage(self) -> None:
         self.storage_path = str(Path(self.storage_path).resolve())
 
-        # Construct REDIS_URL from components if not set directly
-        if not self.redis_url:
-            if self.redis_password:
-                encoded_password = quote_plus(self.redis_password)
-                self.redis_url = f"redis://:{encoded_password}@{self.redis_host}:{self.redis_port}"
-            else:
-                self.redis_url = f"redis://{self.redis_host}:{self.redis_port}"
-
-        return self
+    def _build_redis_url(self) -> None:
+        if self.redis_url:
+            return
+        if self.redis_password:
+            encoded_password = quote_plus(self.redis_password)
+            self.redis_url = f"redis://:{encoded_password}@{self.redis_host}:{self.redis_port}"
+        else:
+            self.redis_url = f"redis://{self.redis_host}:{self.redis_port}"
 
 
 settings = Settings()

@@ -244,11 +244,11 @@ class TestRedisHealthChecks:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=Exception("Redis connection refused"))
 
-        with patch("app.api.routes.health.redis_client", mock_redis):
+        with patch("app.api.routes.health.get_redis_client", return_value=mock_redis):
             result = await readiness_check()
 
             # When Redis is down, readiness_check returns a Response with 503
-            assert isinstance(result, (ReadinessResponse, Response))
+            assert isinstance(result, ReadinessResponse | Response)
             if isinstance(result, Response):
                 assert result.status_code == 503
                 data = json.loads(result.body)

@@ -12,12 +12,11 @@ services:
   # ==========================================
   nginx:
     ports:
-      - "8080:80"
-      - "8443:443"
+      - '8080:80'
+      - '8443:443'
     # Increase start period for local environments
     healthcheck:
-      test:
-        ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      test: ['CMD-SHELL', 'curl -f http://localhost:80/health || exit 1']
       start_period: 15s
 
   # ==========================================
@@ -25,31 +24,31 @@ services:
   # ==========================================
   db:
     ports:
-      - "5432:5432"
+      - '5432:5432'
 
   # ==========================================
   # Redis - Local Debugging Port
   # ==========================================
   redis:
     ports:
-      - "6379:6379"
+      - '6379:6379'
 
   # ==========================================
   # Swagger UI - Local accessible port
   # ==========================================
   swagger-ui:
     profiles: []
-    restart: "no"
+    restart: 'no'
     ports:
-      - "8081:8080"
+      - '8081:8080'
 
   # ==========================================
   # Enable otel-collector locally
   # ==========================================
   otel-collector:
     profiles: []
-    restart: "no"
+    restart: 'no'
     ports:
-      - "4317:4317"
-      - "4318:4318"
-      - "8888:8888"
+      - '4317:4317'
+      - '4318:4318'
+      - '8888:8888'

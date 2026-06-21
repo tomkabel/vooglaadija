@@ -79,6 +79,7 @@ FROM python-builder AS app-builder
 # Copy source code (this invalidates frequently, but deps are already cached)
 COPY app ./app
 COPY worker ./worker
+COPY scripts ./scripts
 COPY alembic.ini .
 COPY alembic ./alembic
 
@@ -108,7 +109,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     redis-tools \
-    gosu \
     curl \
     gnupg \
     && mkdir -p /etc/apt/keyrings \
@@ -127,6 +127,7 @@ WORKDIR /app
 COPY --from=app-builder /app/app ./app
 COPY --from=app-builder /app/pyproject.toml ./pyproject.toml
 COPY --from=app-builder /app/worker ./worker
+COPY --from=app-builder /app/scripts ./scripts
 COPY --from=app-builder /app/alembic.ini /app/alembic.ini
 COPY --from=app-builder /app/alembic /app/alembic
 

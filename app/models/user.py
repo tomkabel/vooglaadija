@@ -1,17 +1,17 @@
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Index, String, and_, literal_column
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, and_, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
+from sqlalchemy.sql import column, func
 
 from app.database import Base
 
 
 def not_deleted():
     """Return a filter condition for non-deleted users."""
-    return and_(literal_column("deleted_at").is_(None))
+    return and_(User.deleted_at.is_(None))
 
 
 class User(Base):
@@ -25,7 +25,7 @@ class User(Base):
             "ix_users_email_active",
             "email",
             unique=True,
-            postgresql_where=and_(literal_column("deleted_at").is_(None)),
+            postgresql_where=column("deleted_at").is_(None),
         ),
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -33,6 +33,7 @@ class User(Base):
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    token_version: Mapped[int] = mapped_column(Integer, server_default=text("1"), default=1)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

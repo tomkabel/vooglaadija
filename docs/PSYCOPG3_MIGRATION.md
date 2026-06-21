@@ -1,6 +1,7 @@
 # Psycopg3 Migration Guide
 
-This document describes how to migrate from `asyncpg` to `psycopg` (psycopg3) for PostgreSQL async operations.
+This document describes how to migrate from `asyncpg` to `psycopg` (psycopg3) for PostgreSQL async
+operations.
 
 ## Current State
 
@@ -14,11 +15,11 @@ The project currently uses:
 **Benefits:**
 
 1. **C Extension Backend**: psycopg3 uses libpq via C extensions for better performance
-2. **Server-Side Cursors**: Built-in support for large result sets
-3. **Pipeline Mode**: Batch multiple queries for reduced round-trips
-4. ** COPY Support**: Native PostgreSQL COPY command support
-5. **Prepared Statements**: Better handling of prepared statements
-6. **Connection Pooling**: Improved connection pool management
+1. **Server-Side Cursors**: Built-in support for large result sets
+1. **Pipeline Mode**: Batch multiple queries for reduced round-trips
+1. **COPY Support**: Native PostgreSQL COPY command support
+1. **Prepared Statements**: Better handling of prepared statements
+1. **Connection Pooling**: Improved connection pool management
 
 **Performance Comparison:**
 
@@ -230,11 +231,11 @@ If issues occur:
    "asyncpg>=0.29.0",
    ```
 
-2. **Keep database.py unchanged** - The current implementation works with both drivers
+1. **Keep database.py unchanged** - The current implementation works with both drivers
 
 ## Current Recommendation
 
-**Status: Deferred**
+## Status: Deferred
 
 The current `asyncpg` implementation is:
 
@@ -249,7 +250,8 @@ The current `asyncpg` implementation is:
 - You need COPY command support
 - Performance benchmarks show asyncpg is a bottleneck
 
-The infrastructure is ready - only the driver needs to change in `pyproject.toml` and potentially `app/config.py` if using direct psycopg URLs.
+The infrastructure is ready - only the driver needs to change in `pyproject.toml` and potentially
+`app/config.py` if using direct psycopg URLs.
 
 ---
 

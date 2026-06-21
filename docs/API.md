@@ -2,15 +2,17 @@
 
 ## Authentication
 
-The REST API uses JWT bearer tokens for authentication. Obtain a token via `/api/v1/auth/login`, then include it in subsequent requests:
+The REST API uses JWT bearer tokens for authentication. Obtain a token via `/api/v1/auth/login`,
+then include it in subsequent requests:
 
-```
+```text
 Authorization: Bearer <access_token>
 ```
 
 Web UI routes use cookie-based authentication (access token stored in an `httpOnly` cookie).
 
-The `/api/v1/health`, `/api/v1/health/ready`, and `/metrics` endpoints do not require JWT authentication. `/metrics` may be IP-restricted in production deployments.
+The `/api/v1/health`, `/api/v1/health/ready`, and `/metrics` endpoints do not require JWT
+authentication. `/metrics` may be IP-restricted in production deployments.
 
 ---
 
@@ -18,24 +20,24 @@ The `/api/v1/health`, `/api/v1/health/ready`, and `/metrics` endpoints do not re
 
 All web routes return HTML unless noted otherwise.
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/` | No | Redirect to login or dashboard |
-| `GET` | `/web/login` | No | Login page |
-| `POST` | `/web/login` | No | Login form submission (HTMX fragment + full-page fallback) |
-| `GET` | `/web/register` | No | Registration page |
-| `POST` | `/web/register` | No | Registration form submission |
-| `POST` | `/web/logout` | Cookie | Logout and redirect |
-| `GET` | `/web/downloads` | Cookie | Downloads dashboard |
-| `POST` | `/web/downloads` | Cookie | Create download (HTMX fragment) |
-| `POST` | `/web/downloads/full` | Cookie | Create download (full-page fallback) |
-| `GET` | `/web/downloads/{id}/file` | Cookie | Download processed file |
-| `DELETE` | `/web/downloads/{id}` | Cookie | Delete download (HTMX fragment) |
-| `GET` | `/web/downloads/stream` | Cookie | SSE real-time status stream |
-| `GET` | `/web/settings` | Cookie | User settings page |
-| `POST` | `/web/settings/username` | Cookie | Update username |
-| `POST` | `/web/settings/password` | Cookie | Change password |
-| `POST` | `/web/settings/delete-account` | Cookie | Delete account and all files |
+| Method   | Endpoint                       | Auth   | Description                                                |
+| -------- | ------------------------------ | ------ | ---------------------------------------------------------- |
+| `GET`    | `/`                            | No     | Redirect to login or dashboard                             |
+| `GET`    | `/web/login`                   | No     | Login page                                                 |
+| `POST`   | `/web/login`                   | No     | Login form submission (HTMX fragment + full-page fallback) |
+| `GET`    | `/web/register`                | No     | Registration page                                          |
+| `POST`   | `/web/register`                | No     | Registration form submission                               |
+| `POST`   | `/web/logout`                  | Cookie | Logout and redirect                                        |
+| `GET`    | `/web/downloads`               | Cookie | Downloads dashboard                                        |
+| `POST`   | `/web/downloads`               | Cookie | Create download (HTMX fragment)                            |
+| `POST`   | `/web/downloads/full`          | Cookie | Create download (full-page fallback)                       |
+| `GET`    | `/web/downloads/{id}/file`     | Cookie | Download processed file                                    |
+| `DELETE` | `/web/downloads/{id}`          | Cookie | Delete download (HTMX fragment)                            |
+| `GET`    | `/web/downloads/stream`        | Cookie | SSE real-time status stream                                |
+| `GET`    | `/web/settings`                | Cookie | User settings page                                         |
+| `POST`   | `/web/settings/username`       | Cookie | Update username                                            |
+| `POST`   | `/web/settings/password`       | Cookie | Change password                                            |
+| `POST`   | `/web/settings/delete-account` | Cookie | Delete account and all files                               |
 
 ---
 
@@ -47,12 +49,13 @@ All web routes return HTML unless noted otherwise.
 
 Create a new user account.
 
-| | |
-|---|---|
-| **Auth** | No |
+|                  |                                                                           |
+| ---------------- | ------------------------------------------------------------------------- |
+| **Auth**         | No                                                                        |
 | **Status Codes** | `201 Created`, `409 Conflict`, `422 Validation Error`, `429 Rate Limited` |
 
 **Request body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -61,6 +64,7 @@ Create a new user account.
 ```
 
 **Response (`201`):**
+
 ```json
 {
   "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
@@ -69,6 +73,7 @@ Create a new user account.
 ```
 
 **Error response (`409`):**
+
 ```json
 {
   "error": {
@@ -84,12 +89,13 @@ Create a new user account.
 
 Authenticate and receive JWT tokens.
 
-| | |
-|---|---|
-| **Auth** | No |
+|                  |                                                                          |
+| ---------------- | ------------------------------------------------------------------------ |
+| **Auth**         | No                                                                       |
 | **Status Codes** | `200 OK`, `401 Unauthorized`, `422 Validation Error`, `429 Rate Limited` |
 
 **Request body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -98,6 +104,7 @@ Authenticate and receive JWT tokens.
 ```
 
 **Response (`200`):**
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -112,12 +119,13 @@ Authenticate and receive JWT tokens.
 
 Obtain a new access token using the refresh token (sent via cookie).
 
-| | |
-|---|---|
-| **Auth** | Refresh token cookie |
+|                  |                              |
+| ---------------- | ---------------------------- |
+| **Auth**         | Refresh token cookie         |
 | **Status Codes** | `200 OK`, `401 Unauthorized` |
 
 **Response (`200`):**
+
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -132,9 +140,9 @@ Obtain a new access token using the refresh token (sent via cookie).
 
 Clear auth cookies and redirect.
 
-| | |
-|---|---|
-| **Auth** | Cookie |
+|                  |          |
+| ---------------- | -------- |
+| **Auth**         | Cookie   |
 | **Status Codes** | `200 OK` |
 
 ---
@@ -145,12 +153,13 @@ Clear auth cookies and redirect.
 
 Get the current authenticated user profile.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                              |
+| ---------------- | ---------------------------- |
+| **Auth**         | Bearer JWT                   |
 | **Status Codes** | `200 OK`, `401 Unauthorized` |
 
 **Response (`200`):**
+
 ```json
 {
   "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
@@ -166,12 +175,13 @@ Get the current authenticated user profile.
 
 Create a new download job.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                           |
+| ---------------- | --------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                |
 | **Status Codes** | `201 Created`, `401 Unauthorized`, `422 Validation Error` |
 
 **Request body:**
+
 ```json
 {
   "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
@@ -179,6 +189,7 @@ Create a new download job.
 ```
 
 **Response (`201`):**
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -189,6 +200,7 @@ Create a new download job.
 ```
 
 **Error response (`422`) — invalid URL:**
+
 ```json
 {
   "error": {
@@ -213,16 +225,18 @@ Create a new download job.
 
 List the authenticated user's download jobs.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                              |
+| ---------------- | ---------------------------- |
+| **Auth**         | Bearer JWT                   |
 | **Status Codes** | `200 OK`, `401 Unauthorized` |
 
 **Query parameters:**
+
 - `page` — page number (default: 1)
 - `per_page` — items per page (default: 20, max: 100)
 
 **Response (`200`):**
+
 ```json
 {
   "downloads": [
@@ -254,12 +268,13 @@ List the authenticated user's download jobs.
 
 Get job status and details.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                               |
+| ---------------- | --------------------------------------------- |
+| **Auth**         | Bearer JWT                                    |
 | **Status Codes** | `200 OK`, `401 Unauthorized`, `404 Not Found` |
 
 **Response (`200`):**
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -276,9 +291,9 @@ Get job status and details.
 
 Download the processed file. The link is time-limited based on `FILE_EXPIRE_HOURS`.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                           |
+| ---------------- | --------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                |
 | **Status Codes** | `200 OK`, `401 Unauthorized`, `404 Not Found`, `410 Gone` |
 
 Returns the file as a binary stream with `Content-Disposition: attachment`.
@@ -289,12 +304,13 @@ Returns the file as a binary stream with `Content-Disposition: attachment`.
 
 Retry a failed job.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                                  |
+| ---------------- | ---------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                       |
 | **Status Codes** | `200 OK`, `400 Bad Request`, `401 Unauthorized`, `404 Not Found` |
 
 **Response (`200`):**
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -317,9 +333,9 @@ Retry a failed job.
 
 Delete a download job and its associated file.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                       |
+| ---------------- | ----------------------------------------------------- |
+| **Auth**         | Bearer JWT                                            |
 | **Status Codes** | `204 No Content`, `401 Unauthorized`, `404 Not Found` |
 
 ---
@@ -330,12 +346,13 @@ Delete a download job and its associated file.
 
 Service health check. Returns `200` when the API process is running.
 
-| | |
-|---|---|
-| **Auth** | No |
+|                  |          |
+| ---------------- | -------- |
+| **Auth**         | No       |
 | **Status Codes** | `200 OK` |
 
 **Response (`200`):**
+
 ```json
 {
   "status": "ok"
@@ -348,9 +365,9 @@ Service health check. Returns `200` when the API process is running.
 
 Readiness probe. Returns `200` when dependencies (database, Redis) are reachable; `503` otherwise.
 
-| | |
-|---|---|
-| **Auth** | No |
+|                  |                                     |
+| ---------------- | ----------------------------------- |
+| **Auth**         | No                                  |
 | **Status Codes** | `200 OK`, `503 Service Unavailable` |
 
 ---
@@ -359,10 +376,10 @@ Readiness probe. Returns `200` when dependencies (database, Redis) are reachable
 
 Prometheus metrics endpoint.
 
-| | |
-|---|---|
-| **Auth** | No (may be IP-restricted in production) |
-| **Status Codes** | `200 OK` |
+|                  |                                         |
+| ---------------- | --------------------------------------- |
+| **Auth**         | No (may be IP-restricted in production) |
+| **Status Codes** | `200 OK`                                |
 
 Returns Prometheus exposition format. Enable with `FEATURE_METRICS_ENABLED=true`.
 
@@ -384,4 +401,6 @@ eventSource.onmessage = (event) => {
 };
 ```
 
-**Caution:** `withCredentials: true` requires the server to return `Access-Control-Allow-Credentials: true` and a specific `Access-Control-Allow-Origin` (not `*`). Ensure `CORS_ORIGINS` includes your frontend origin.
+**Caution:** `withCredentials: true` requires the server to return
+`Access-Control-Allow-Credentials: true` and a specific `Access-Control-Allow-Origin` (not `*`).
+Ensure `CORS_ORIGINS` includes your frontend origin.

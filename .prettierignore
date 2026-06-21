@@ -1,0 +1,54 @@
+# Dependencies and build outputs
+node_modules
+pnpm-lock.yaml
+package-lock.json
+frontend/css/dist
+app/static/css/styles.css
+dist
+build
+.virtual_documents
+
+# Python files (handled by Ruff)
+*.py
+
+# JS/CSS/JSON files (handled by Biome)
+*.js
+*.cjs
+*.mjs
+*.css
+*.json
+*.jsonc
+
+# Minified files
+*.min.js
+*.min.css
+
+# Test databases and data
+*.db
+*.sqlite
+
+# Generated and vendor files
+openapi.json
+
+# Content/research/cache directories (not project source code)
+.agents
+.kilo
+.kilocode
+.opencode
+.venv_manual
+.pytest_cache
+.openchange
+.git
+course-resources
+research
+research-analysis
+openspec
+presentation
+docs/images
+site/content
+Senior_Final_Demos_*.md
+session-ses_*.md
+
+# Infrastructure docs (mirrors markdownlint ignore list)
+infra/deploy/README.md
+infra/ssl/README.md

@@ -5,12 +5,11 @@ from typing import TypedDict
 
 from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
-from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.schemas.error import ErrorCode, error_response_doc, success_response_doc
-from worker.queue import redis_client
+from app.services.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +58,7 @@ async def health_check() -> HealthStatus:
     }
 
     # 1. Independent Database Check
-    db_url = os.getenv(
-        "DATABASE_URL", "postgresql+asyncpg://postgres:light_sound@ytprocessor-db:5432/ytprocessor"
-    )
+    db_url = os.getenv("DATABASE_URL")
     if db_url:
         try:
             # We created a temporary engine just to check the pulse
@@ -81,10 +78,9 @@ async def health_check() -> HealthStatus:
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
         try:
-            redis_client = Redis.from_url(redis_url, socket_timeout=2)
-            if await redis_client.ping():
+            client = get_redis_client()
+            if await client.ping():
                 health_status["dependencies"]["redis"] = "ok"
-            await redis_client.close()
         except Exception as e:
             health_status["dependencies"]["redis"] = f"error: {e!s}"
             health_status["status"] = "unhealthy"
@@ -145,7 +141,8 @@ async def readiness_check() -> ReadinessResponse | Response:
 
     # Check Redis connectivity
     try:
-        await redis_client.ping()
+        client = get_redis_client()
+        await client.ping()
     except Exception:
         logger.exception("Redis readiness check failed")
         redis_status = "error: unavailable"

@@ -29,9 +29,10 @@ This plan follows one concrete job through the system to keep the narrative grou
 | **Text slides** | Title cards and bullet slides with monospace font for code references. |
 
 **Workflow:**
+
 1. Create slides at 16:9 (1920x1080).
-2. Export each slide as PNG for video timeline import.
-3. Export final deck as PDF for the course submission appendix.
+1. Export each slide as PNG for video timeline import.
+1. Export final deck as PDF for the course submission appendix.
 
 **Cost:** Free.
 
@@ -60,7 +61,7 @@ This plan follows one concrete job through the system to keep the narrative grou
 
 Every scene follows the same download job to create continuity.
 
-```
+```text
 SCENE 1: Submit a YouTube link. Job is created.
 SCENE 2: Why a naive script fails.
 SCENE 3: The outbox pattern writes the job atomically.
@@ -80,6 +81,7 @@ SCENE 8: Trade-offs and what we did not build.
 **Purpose:** Show what the system does and why it matters.
 
 **Visual:**
+
 - 0:00-0:10 — Title card: **"Resilient by Design"** with subtitle: *Handling failure in a distributed YouTube processor.*
 - 0:10-0:25 — Screen recording: paste URL → submit → loading spinner → success.
 - 0:25-0:45 — Architecture diagram with a static highlight path: API → DB → Outbox → Redis → Worker → Download.
@@ -97,6 +99,7 @@ SCENE 8: Trade-offs and what we did not build.
 **Purpose:** Show why a simple script is insufficient.
 
 **Visual:**
+
 - 1:00-1:20 — Screen recording of a naive Python script (`yt-dlp` wrapper) failing with `HTTP 429`, then `ConnectionResetError`, then partial file on disk.
 - 1:20-1:35 — Text overlay: **"A script handles the happy path. A system handles failure."**
 - 1:35-2:00 — Transition to architecture diagram. Lower third: `Architecture | app/api/routes/downloads.py`
@@ -110,9 +113,10 @@ SCENE 8: Trade-offs and what we did not build.
 
 **Purpose:** Show how the job survives through three core mechanisms.
 
-**BEAT A: The Birth (2:00 – 2:45)**
+## BEAT A: The Birth (2:00 – 2:45)
 
 **Visual:**
+
 - Screen recording of the web UI submitting a URL.
 - Cut to code inset showing the outbox write in `app/api/routes/downloads.py`.
 - Highlight: `await db.commit()`.
@@ -122,9 +126,10 @@ SCENE 8: Trade-offs and what we did not build.
 **Narration:**
 > "The job is written to the database twice — once as a job record, once as an outbox event — inside a single transaction. If the API crashes after commit, both records survive. If it crashes before commit, both disappear. There is no partial state."
 
-**BEAT B: The Bridge (2:45 – 3:45)**
+## BEAT B: The Bridge (2:45 – 3:45)
 
 **Visual:**
+
 - Code inset: `FOR UPDATE SKIP LOCKED` highlighted in the SQL snippet from `worker/processor.py`.
 - Static diagram: multiple relay workers, with row locks visualized as brackets around database rows.
 - Lower third: `Outbox Relay | SKIP LOCKED`
@@ -132,9 +137,10 @@ SCENE 8: Trade-offs and what we did not build.
 **Narration:**
 > "Every thirty seconds, the outbox relay polls PostgreSQL for pending entries, skipping anything another relay is already handling. This lets us scale relays horizontally with no extra coordination. After publishing to Redis, we delete the outbox entry. The table stays empty. The outbox is a bridge, not a warehouse."
 
-**BEAT C: The Claim (3:45 – 5:00)**
+## BEAT C: The Claim (3:45 – 5:00)
 
 **Visual:**
+
 - Code inset: `claim_job` with `WHERE status = 'pending'` highlighted.
 - Static diagram: two workers approach the same database row. One succeeds (rowcount == 1), the other gets zero rows and exits.
 - Text card: **"At-least-once delivery. Idempotent state transitions."**
@@ -148,9 +154,10 @@ SCENE 8: Trade-offs and what we did not build.
 
 **Purpose:** Show resilience under two failure modes.
 
-**BEAT A: Rate Limit & Jitter (5:00 – 5:45)**
+## BEAT A: Rate Limit & Jitter (5:00 – 5:45)
 
 **Visual:**
+
 - Screen recording: log stream in terminal.
 - Log line: `ERROR | HTTP 429`.
 - Next line: `INFO | Backoff attempt 1. Delay: 18s`.
@@ -160,9 +167,10 @@ SCENE 8: Trade-offs and what we did not build.
 **Narration:**
 > "The API returns a 429. We back off with full jitter — a random delay between zero and the exponential cap. With a 60-second base, attempt four hits a 480-second cap. Every retrying job picks a random point in that window. No thundering herds."
 
-**BEAT B: The Kill (5:45 – 6:30)**
+## BEAT B: The Kill (5:45 – 6:30)
 
 **Visual:**
+
 - **Pre-recorded.** Split screen:
   - Top: Terminal running `docker kill vooglaadija_worker_1`.
   - Bottom: Database table row. Status: `PROCESSING`.
@@ -174,9 +182,10 @@ SCENE 8: Trade-offs and what we did not build.
 **Narration:**
 > "We kill the worker with SIGKILL. The shutdown handler never runs. The job is stranded in processing state. The zombie sweeper, running as part of the cleanup cycle, finds stuck jobs after fifteen minutes and requeues them. A production system would alert on sweeper activations; for this demo, we show the recovery mechanism."
 
-**BEAT C: The Graceful Exit (6:30 – 7:00)**
+## BEAT C: The Graceful Exit (6:30 – 7:00)
 
 **Visual:**
+
 - Static timeline graphic: SIGTERM at t=0 → polling loop breaks → 25-second grace → requeue at t=25 → SIGKILL at t=30.
 - Text: **"25-second app timeout. 5-second buffer before SIGKILL."**
 
@@ -190,6 +199,7 @@ SCENE 8: Trade-offs and what we did not build.
 **Purpose:** Demonstrate metrics, logs, and health checks.
 
 **Visual:**
+
 - 7:00-7:20 — Grafana dashboard (or pre-rendered metrics page). `ytprocessor_job_duration_seconds` histogram with custom buckets. Text overlay: **"Custom buckets: [10, 30, 60, 120, 300, 600]. Default Prometheus buckets top out at 10s. Without these, long-tail percentiles would be inaccurate."**
 - 7:20-7:45 — Terminal: `docker logs ytprocessor-worker 2>&1 | jq 'select(.job_id == "4473")'`. The full timeline reconstructs in one scroll: created, enqueued, claimed, 429, backoff, retry, completed.
 - 7:45-8:15 — Health check endpoints shown in rapid succession: `/health` → `{"status":"ok"}`. `/ready` → `{"database":"connected","redis":"connected"}`. Worker liveness via log heartbeat.
@@ -205,6 +215,7 @@ SCENE 8: Trade-offs and what we did not build.
 **Purpose:** Own the decisions and boundaries of the project.
 
 **Visual:**
+
 - 8:30-9:00 — Static trade-off matrix:
 
 | Decision | What We Chose | What We Sacrificed |
@@ -228,6 +239,7 @@ SCENE 8: Trade-offs and what we did not build.
 **Purpose:** Summarize and conclude.
 
 **Visual:**
+
 - 10:00-10:15 — Screen recording: downloads folder with the completed file.
 - 10:15-10:30 — Metrics dashboard: `ytprocessor_jobs_completed_total` increments.
 - 10:30-10:50 — Fast recap montage (~2 seconds per scene highlight).
@@ -261,16 +273,17 @@ SCENE 8: Trade-offs and what we did not build.
 **Segment:** `demo_sigkill_recovery.mp4` (45 seconds, 1920x1080, 30fps)
 
 **Recording steps:**
+
 1. Start full stack: `docker-compose up`
-2. Submit a job via API.
-3. Start screen recording (OBS).
-4. Terminal 1: `watch -n 1 'psql -c "SELECT id, status FROM download_jobs WHERE id = ..."'`
-5. Terminal 2: `docker kill ytprocessor-worker`
-6. Manually trigger the sweeper or wait for the 15-minute interval.
-7. Terminal 1 shows status flip from `PROCESSING` to `PENDING`.
-8. Stop recording.
-9. In video editor: compress the wait to a 2-second freeze-frame with "15 min later" text.
-10. Composite both terminals as split-screen with lower third.
+1. Submit a job via API.
+1. Start screen recording (OBS).
+1. Terminal 1: `watch -n 1 'psql -c "SELECT id, status FROM download_jobs WHERE id = ..."'`
+1. Terminal 2: `docker kill ytprocessor-worker`
+1. Manually trigger the sweeper or wait for the 15-minute interval.
+1. Terminal 1 shows status flip from `PROCESSING` to `PENDING`.
+1. Stop recording.
+1. In video editor: compress the wait to a 2-second freeze-frame with "15 min later" text.
+1. Composite both terminals as split-screen with lower third.
 
 **Note:** The sweeper is triggered manually for the recording. This is disclosed below.
 
@@ -286,6 +299,7 @@ SCENE 8: Trade-offs and what we did not build.
 | PostgreSQL test runtime | docker-compose.test.yml provides real Postgres | ✅ Verified | Say "integration tests use real PostgreSQL" |
 
 **Action items before recording:**
+
 - [x] Verify all test files referenced in the Evidence Matrix actually exist.
 - [x] Wire zombie sweeper (`requeue_stuck_jobs`) into worker main loop with 15-minute timeout.
 - [x] Add dedicated 30-second outbox sync interval separate from cleanup cycle.
@@ -370,4 +384,4 @@ SCENE 8: Trade-offs and what we did not build.
 - [ ] Video editor project template created (lower third, hard cuts)
 - [ ] Examiner handout prepared (slide deck PDF)
 
-**End of Plan v6.1**
+## End of Plan v6.1

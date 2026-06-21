@@ -1,7 +1,7 @@
 name: service request
-description: "request service support in cobalt"
-title: "add support for [service name]"
-labels: ["service request"]
+description: 'request service support in cobalt'
+title: 'add support for [service name]'
+labels: ['service request']
 body:
   - type: markdown
     attributes:

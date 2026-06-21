@@ -1,4 +1,4 @@
-name: "CodeQL"
+name: 'CodeQL'
 
 # DISABLED: This workflow is temporarily disabled.
 # To re-enable, copy the triggers below into the `on:` section.
@@ -26,16 +26,16 @@ jobs:
       contents: read
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
-      with:
-        languages: python
-        build-mode: none
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          build-mode: none
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
-      with:
-        category: "/language:python"
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:python'

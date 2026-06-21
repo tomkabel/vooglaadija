@@ -1,0 +1,80 @@
+# markdownlint-cli2 configuration
+# Reference: https://github.com/DavidAnson/markdownlint-cli2
+
+# Disable some built-in rules that are too strict for this project
+config:
+  # MD013 - Line length (not practical for all markdown)
+  MD013: false
+
+  # MD024 - Multiple headings with same content
+  MD024:
+    allow_different_nesting: true
+
+  # MD033 - Inline HTML (allowed for specific use cases)
+  MD033: false
+
+  # MD041 - First line in file should be a top-level heading
+  MD041: false
+
+  # MD046 - Code block style
+  MD046: false
+
+  # MD048 - Code fence style
+  MD048: false
+
+  # MD010 - Hard tabs (tabs in code blocks are fine)
+  MD010:
+    code_blocks: false
+
+  # MD007 - Unordered list indentation
+  MD007:
+    indent: 2
+
+  # MD029 - Ordered list item prefix
+  MD029:
+    style: one
+
+  # MD036 - Emphasis used instead of heading (false positives with timestamps)
+  MD036: false
+
+  # MD051 - Link fragments (false positives with special characters like &)
+  MD051: false
+
+# Globs for files to ignore
+ignores:
+  - 'node_modules/**'
+  - '.venv/**'
+  - '.virtual_documents/**'
+  - '**/pnpm-lock.yaml'
+  - 'src/gemini/**'
+  - 'src/generated/**'
+  - '**/CHANGELOG.md'
+  - '.agents/**'
+  - '.kilocode/**'
+  - '.kilo/**'
+  - '.opencode/**'
+  - '**/.git/**'
+  - '.github/DAILY_STANDUP.md'
+  - '.github/ISSUE_TEMPLATE/**'
+  - 'infra/deploy/README.md'
+  - 'infra/ssl/README.md'
+  - 'course-resources/**'
+  - 'research/**'
+  - 'research-analysis/**'
+  - 'openspec/**'
+  - 'presentation/**'
+  - 'docs/images/**'
+  - 'site/content/**'
+  - '.venv_manual/**'
+  - '.pytest_cache/**'
+  - '.openchange/**'
+  - 'Senior_Final_Demos_*.md'
+  - 'session-ses_*.md'
+
+# Disable inline config directives
+noInlineConfig: false
+
+# Output format
+outputFormatters:
+  - - markdownlint-cli2-formatter-default
+    - presentation: grouped

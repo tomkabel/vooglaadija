@@ -1,0 +1,31 @@
+# Prettier handles file types that Biome does not:
+# Markdown, YAML, SVG, GraphQL
+# For JS/CSS/JSON formatting, see biome.json
+semi: true
+singleQuote: true
+trailingComma: all
+printWidth: 100
+tabWidth: 2
+useTabs: false
+endOfLine: lf
+arrowParens: always
+bracketSpacing: true
+proseWrap: always
+overrides:
+  - files:
+      - '*.md'
+      - '*.mdx'
+    options:
+      parser: markdown
+      proseWrap: always
+      embeddedLanguageFormatting: off
+  - files:
+      - '*.yml'
+      - '*.yaml'
+    options:
+      parser: yaml
+      tabWidth: 2
+  - files:
+      - '*.svg'
+    options:
+      parser: html

@@ -1,9 +1,9 @@
-"""Worker main loop for processing download jobs with structured logging."""
+"""Worker main loop with circuit-aware deferred queue draining and retry throttle."""
 
 import asyncio
 import os
 import signal
-import time
+import time as _time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -11,35 +11,53 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import get_async_session_factory
 from app.logging_config import configure_logging, get_logger
+from app.metrics import CIRCUIT_DEFERRED_DEPTH, DLQ_DEPTH, QUEUE_DEPTH
 from app.models.download_job import DownloadJob
+from app.models.failed_job import FailedJob
 from worker.health import (
+    close_health_redis_client,
     start_health_server,
     stop_health_server,
     update_worker_state,
     write_health_async,
 )
-from worker.processor import process_next_job, sync_outbox_to_queue
-from worker.zombie_sweeper import requeue_stuck_jobs
+from worker.processor import (
+    _drain_circuit_deferred,
+    cleanup_stale_outbox_entries,
+    process_next_job,
+    sync_outbox_to_queue,
+)
 from worker.queue import redis_client
+from worker.state import shutdown_event
+from worker.zombie_sweeper import requeue_stuck_jobs
 
-# Initialize structured logging
+# Module-level state — used by signal handler and main loop.
+# Tests mutate these directly via `worker.main.GRACE_PERIOD_SECONDS = ...`
+GRACE_PERIOD_SECONDS: int = int(os.environ.get("WORKER_GRACE_PERIOD_SECONDS", "25"))
+shutdown_requested_at: float | None = None
+
 configure_logging(log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
-# Graceful shutdown configuration
-# Configurable grace period per 2026 Kubernetes best practices
-GRACE_PERIOD_SECONDS: int = int(os.environ.get("WORKER_GRACE_PERIOD_SECONDS", "25"))
+# Re-export for test compatibility — tests access worker.main.{name}
+__all__ = [
+    "GRACE_PERIOD_SECONDS",
+    "_signal_handler",
+    "get_grace_period_remaining",
+    "main",
+    "shutdown_event",
+    "shutdown_requested_at",
+]
 
-# Graceful shutdown event and timestamp tracking
-shutdown_event = asyncio.Event()
-shutdown_requested_at: float | None = None  # Timestamp when SIGTERM was received
+# Max retries to release per main-loop iteration (prevents thundering herd)
+MAX_RETRY_BATCH = 10
 
 
 def _signal_handler() -> None:
     """Handle shutdown signals gracefully with timestamp tracking."""
     global shutdown_requested_at
     if shutdown_requested_at is None:
-        shutdown_requested_at = time.monotonic()
+        shutdown_requested_at = _time.monotonic()
         logger.info(
             "received_shutdown_signal",
             signal="SIGTERM/SIGINT",
@@ -52,13 +70,33 @@ def get_grace_period_remaining() -> float | None:
     """Get remaining grace period in seconds, or None if shutdown not requested."""
     if shutdown_requested_at is None:
         return None
-    elapsed = time.monotonic() - shutdown_requested_at
+    elapsed = _time.monotonic() - shutdown_requested_at
     remaining = GRACE_PERIOD_SECONDS - elapsed
     return max(0.0, remaining)
 
 
+async def _update_dlq_depth() -> None:
+    try:
+        session_factory = get_async_session_factory()
+        async with session_factory() as db:
+            from sqlalchemy import func as sa_func
+
+            result = await db.execute(sa_func.count(FailedJob.id))
+            DLQ_DEPTH.set(result.scalar() or 0)
+    except Exception:
+        pass
+
+
+async def _update_circuit_deferred_depth() -> None:
+    try:
+        depth = await redis_client.zcard("circuit_deferred_queue")
+        CIRCUIT_DEFERRED_DEPTH.set(depth)
+    except Exception:
+        pass
+
+
 async def cleanup_expired_jobs() -> int:
-    """Delete expired jobs and their files. Returns number of jobs cleaned up."""
+    """Delete expired jobs and their files."""
     session_factory = get_async_session_factory()
     downloads_dir = os.path.realpath(os.path.join(settings.storage_path, "downloads"))
 
@@ -76,7 +114,6 @@ async def cleanup_expired_jobs() -> int:
         for job in expired_jobs:
             if job.file_path:
                 resolved_path = os.path.realpath(job.file_path)
-                # Validate path is within downloads directory
                 safe_dir = (
                     downloads_dir if downloads_dir.endswith(os.sep) else downloads_dir + os.sep
                 )
@@ -86,16 +123,13 @@ async def cleanup_expired_jobs() -> int:
                         logger.info(
                             "cleaned_up_expired_file", file_path=resolved_path, job_id=str(job.id)
                         )
-                        # Only delete DB row after successful file removal
                         await db.delete(job)
                         cleanup_count += 1
                     except OSError as e:
                         logger.warning(
                             "failed_to_delete_expired_file", file_path=job.file_path, error=str(e)
                         )
-                        # Don't delete DB row - cleanup will retry next interval
                 elif resolved_path.startswith(safe_dir):
-                    # File already deleted, just remove DB row
                     logger.info("file_already_deleted", job_id=str(job.id), file_path=job.file_path)
                     await db.delete(job)
                     cleanup_count += 1
@@ -106,7 +140,6 @@ async def cleanup_expired_jobs() -> int:
                         file_path=job.file_path,
                     )
             else:
-                # No file_path, just delete the DB row
                 try:
                     await db.delete(job)
                     cleanup_count += 1
@@ -115,7 +148,6 @@ async def cleanup_expired_jobs() -> int:
                         "failed_to_delete_db_row", job_id=job.id, error=str(db_err), exc_info=True
                     )
 
-        # Batch commit after processing all jobs
         try:
             await db.commit()
         except Exception as commit_err:
@@ -127,20 +159,45 @@ async def cleanup_expired_jobs() -> int:
         return cleanup_count
 
 
-async def main() -> None:
-    """Main worker loop with graceful shutdown.
+async def cleanup_expired_dlq() -> int:
+    """Delete expired DLQ entries."""
+    session_factory = get_async_session_factory()
+    async with session_factory() as db:
+        now = datetime.now(UTC)
+        result = await db.execute(select(FailedJob).where(FailedJob.expires_at < now))
+        expired = result.scalars().all()
+        count = len(expired)
+        for entry in expired:
+            await db.delete(entry)
+        await db.commit()
+        if count > 0:
+            logger.info("dlq_cleanup_completed", purged_entries=count)
+        return count
 
-    Uses BRPOP with timeout for efficient blocking queue consumption
-    instead of polling with rpop + sleep.
-    """
-    # Register signal handlers
+
+async def _update_queue_depth() -> None:
+    try:
+        lua_script = """
+        local dl = redis.call('LLEN', KEYS[1])
+        local rt = redis.call('ZCARD', KEYS[2])
+        local cd = redis.call('ZCARD', KEYS[3])
+        return dl + rt + cd
+        """
+        total = await redis_client.eval(
+            lua_script, 3, "download_queue", "retry_queue", "circuit_deferred_queue"
+        )
+        QUEUE_DEPTH.set(int(total))
+    except Exception as e:
+        logger.warning("queue_depth_update_failed", error=str(e))
+
+
+async def main() -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _signal_handler)
 
     logger.info("worker_started")
 
-    # Test Redis connection before starting
     logger.info("testing_redis_connection")
     try:
         await redis_client.ping()
@@ -149,7 +206,6 @@ async def main() -> None:
         logger.error("redis_connection_failed", error=str(e))
         raise
 
-    # Test database connection before starting
     logger.info("testing_database_connection")
     try:
         session_factory = get_async_session_factory()
@@ -162,38 +218,35 @@ async def main() -> None:
         logger.error("database_connection_failed", error=str(e))
         raise
 
-    # Start HTTP health server for orchestration tools
     health_server = start_health_server()
 
     cleanup_interval_minutes: int = int(os.environ.get("CLEANUP_INTERVAL_MINUTES", "5"))
     cleanup_interval = timedelta(minutes=cleanup_interval_minutes)
     last_cleanup = datetime.now(UTC) - cleanup_interval
 
-    # Outbox sync runs independently of cleanup for lower latency (default: 30s)
     try:
         outbox_sync_interval_seconds = int(os.environ.get("OUTBOX_SYNC_INTERVAL_SECONDS", "30"))
     except (ValueError, TypeError):
         outbox_sync_interval_seconds = 30
-        logger.warning(
-            "invalid_outbox_sync_interval",
-            value=os.environ.get("OUTBOX_SYNC_INTERVAL_SECONDS"),
-            fallback=30,
-        )
     outbox_sync_interval_seconds = max(1, min(outbox_sync_interval_seconds, 3600))
     outbox_sync_interval = timedelta(seconds=outbox_sync_interval_seconds)
     last_outbox_sync = datetime.now(UTC) - outbox_sync_interval
 
     heartbeat_counter = 0
-    heartbeat_interval = (
-        10  # Write heartbeat every 10 iterations (~20 seconds, since brpop_timeout=2)
-    )
-    brpop_timeout = 2  # Seconds to block on BRPOP
+    heartbeat_interval = 10
+    queue_depth_counter = 0
+    queue_depth_interval = 5
+    brpop_timeout = 2
 
-    # Mark worker as running
+    deferred_drain_counter = 0
+    deferred_drain_interval = 5
+
     update_worker_state(status="running")
 
+    # Track in-flight extraction for grace-period enforcement
+    current_job_task: asyncio.Task | None = None
+
     while not shutdown_event.is_set():
-        # Check if grace period has expired (force exit even if jobs are running)
         grace_remaining = get_grace_period_remaining()
         if grace_remaining is not None and grace_remaining <= 0:
             logger.warning(
@@ -203,11 +256,11 @@ async def main() -> None:
             break
 
         try:
-            # Move due retry jobs from retry_queue to download_queue atomically
-            # Uses Lua script to prevent race conditions between workers
+            # Move due retry jobs from retry_queue to download_queue
+            # With retry release throttle: max 10 per iteration
             now_ts = datetime.now(UTC).timestamp()
             lua_script = """
-            local due_jobs = redis.call('ZRANGEBYSCORE', KEYS[1], 0, ARGV[1])
+            local due_jobs = redis.call('ZRANGEBYSCORE', KEYS[1], 0, ARGV[1], 'LIMIT', 0, ARGV[2])
             if #due_jobs > 0 then
                 redis.call('ZREM', KEYS[1], unpack(due_jobs))
                 for _, job_id in ipairs(due_jobs) do
@@ -217,30 +270,53 @@ async def main() -> None:
             return #due_jobs
             """
             moved_count = await redis_client.eval(
-                lua_script, 2, "retry_queue", "download_queue", now_ts
+                lua_script, 2, "retry_queue", "download_queue", now_ts, MAX_RETRY_BATCH
             )
             if moved_count and moved_count > 0:
                 logger.info("retry_jobs_moved", moved_count=moved_count)
 
-            # Calculate remaining time for dynamic BRPOP timeout
-            # Don't block longer than grace period remaining
+            deferred_drain_counter += 1
+            if deferred_drain_counter >= deferred_drain_interval:
+                deferred_drain_counter = 0
+                drained = await _drain_circuit_deferred(max_batch=10)
+                if drained:
+                    logger.info("circuit_deferred_drained", count=drained)
+
             grace_remaining = get_grace_period_remaining()
             if grace_remaining is not None and grace_remaining <= 0:
-                # Grace period expired, exit immediately
                 break
             effective_timeout = min(brpop_timeout, grace_remaining or brpop_timeout)
-            # Ensure minimum timeout of 1 second to avoid busy-waiting
             effective_timeout = max(1, int(effective_timeout))
 
-            # Use BRPOP with timeout for efficient blocking — no busy-waiting
-            # Pass the job_id directly to process_next_job to avoid race condition
             result = await redis_client.brpop("download_queue", timeout=effective_timeout)
             if result:
                 _, job_id_str = result
-                await process_next_job(job_id_str)
-            # If BRPOP timed out, no jobs available — continue to cleanup/heartbeat
+
+                # Wrap in a Task so we can enforce remaining grace period
+                current_job_task = asyncio.create_task(process_next_job(job_id_str))
+                try:
+                    remaining = get_grace_period_remaining()
+                    if remaining is not None and remaining > 1:
+                        await asyncio.wait_for(
+                            asyncio.shield(current_job_task),
+                            timeout=remaining,
+                        )
+                    else:
+                        await current_job_task
+                except TimeoutError:
+                    logger.warning(
+                        "job_timeout_during_shutdown_killed",
+                        job_id=job_id_str,
+                    )
+                    current_job_task.cancel()
+                    try:
+                        await asyncio.wait_for(current_job_task, timeout=3.0)
+                    except (asyncio.CancelledError, TimeoutError):
+                        pass
+                finally:
+                    current_job_task = None
+
         except asyncio.CancelledError:
-            # This can happen if we were cancelled during brpop or job processing
             logger.info("Worker loop cancelled, exiting...")
             break
         except Exception as e:
@@ -249,7 +325,6 @@ async def main() -> None:
 
         now = datetime.now(UTC)
 
-        # Independent outbox sync (30s default) — lower latency than cleanup
         if now - last_outbox_sync >= outbox_sync_interval:
             try:
                 synced = await sync_outbox_to_queue()
@@ -260,30 +335,38 @@ async def main() -> None:
                 logger.error("outbox_sync_error", error=str(e))
 
         if now - last_cleanup >= cleanup_interval:
-            cleanup_count = 0
-            cleanup_success = False
             try:
-                cleanup_count = await cleanup_expired_jobs()
-                cleanup_success = True
+                await cleanup_expired_jobs()
             except Exception as e:
                 logger.error("expired_job_cleanup_error", error=str(e))
 
-            stuck_count = 0
-            stuck_success = False
             try:
-                stuck_count = await requeue_stuck_jobs(timeout_minutes=15)
-                stuck_success = True
+                await requeue_stuck_jobs(timeout_minutes=15)
             except Exception as e:
                 logger.error("zombie_sweep_error", error=str(e))
 
-            if cleanup_success or stuck_success:
-                logger.info(
-                    "cleanup_cycle_completed",
-                    expired_jobs_cleaned=cleanup_count,
-                    stuck_jobs_requeued=stuck_count,
-                )
-                last_cleanup = now
-                update_worker_state(last_cleanup=last_cleanup.isoformat())
+            try:
+                await cleanup_expired_dlq()
+            except Exception as e:
+                logger.error("dlq_cleanup_error", error=str(e))
+
+            try:
+                await _update_dlq_depth()
+            except Exception as e:
+                logger.error("dlq_depth_update_error", error=str(e))
+
+            try:
+                await _update_circuit_deferred_depth()
+            except Exception as e:
+                logger.error("circuit_deferred_depth_update_error", error=str(e))
+
+            try:
+                await cleanup_stale_outbox_entries(hours=24)
+            except Exception as e:
+                logger.error("outbox_cleanup_error", error=str(e))
+
+            last_cleanup = now
+            update_worker_state(last_cleanup=last_cleanup.isoformat())
 
         heartbeat_counter += 1
         if heartbeat_counter >= heartbeat_interval:
@@ -294,7 +377,11 @@ async def main() -> None:
                 logger.warning("health_write_failed", error=str(e))
             heartbeat_counter = 0
 
-        # Check if graceful shutdown was requested and log remaining time
+        queue_depth_counter += 1
+        if queue_depth_counter >= queue_depth_interval:
+            await _update_queue_depth()
+            queue_depth_counter = 0
+
         if shutdown_event.is_set():
             grace_remaining = get_grace_period_remaining()
             logger.info(
@@ -303,21 +390,20 @@ async def main() -> None:
             )
             break
 
-    # Graceful shutdown phase
-    # Log final grace period status
-    if shutdown_requested_at is not None:
-        total_shutdown_time = time.monotonic() - shutdown_requested_at
-        logger.info(
-            "Worker shutdown complete",
-            total_shutdown_seconds=total_shutdown_time,
-            grace_period_configured=GRACE_PERIOD_SECONDS,
-        )
+    # Drain any remaining in-flight job task
+    if current_job_task is not None and not current_job_task.done():
+        current_job_task.cancel()
+        try:
+            await asyncio.wait_for(current_job_task, timeout=3.0)
+        except (asyncio.CancelledError, TimeoutError):
+            pass
+        current_job_task = None
 
     logger.info("Worker shutdown complete, stopping health server...")
 
-    # Shutdown health server
     if health_server:
         stop_health_server()
+    await close_health_redis_client()
     logger.info("worker_stopped_gracefully")
 
 

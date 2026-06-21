@@ -1842,7 +1842,7 @@ class TestLoginInactiveUser:
         user = User(
             id=uuid.uuid4(),
             email=email,
-            password_hash=hash_password(password),
+            password_hash=await hash_password(password),
             is_active=False,
         )
         db_session.add(user)

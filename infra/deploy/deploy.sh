@@ -47,6 +47,7 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 # ===========================================
 # PHASE 0: Pre-flight Checks
 # ===========================================
+# shellcheck disable=SC2120
 phase0() {
     log_step "=== Phase 0: Pre-flight Checks ==="
 
@@ -128,6 +129,11 @@ phase1() {
     ufw allow 80/tcp
     ufw allow 443/tcp
     ufw --force enable
+
+    # Enable memory overcommit for Redis background saves (AOF rewrite)
+    log_info "Setting vm.overcommit_memory=1 for Redis..."
+    sysctl -w vm.overcommit_memory=1
+    echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-redis.conf
 
     log_info "Phase 1 complete - System prepared"
 }
@@ -256,7 +262,8 @@ phase4() {
     log_info "Obtaining Let's Encrypt certificate for $DOMAIN via Cloudflare DNS challenge..."
 
     # Create Cloudflare credentials file with restricted permissions
-    local CF_CREDENTIALS_FILE="$(dirname "$CERTBOT_DATA_DIR")/cloudflare.ini"
+    local CF_CREDENTIALS_FILE
+    CF_CREDENTIALS_FILE="$(dirname "$CERTBOT_DATA_DIR")/cloudflare.ini"
 
     cat > "$CF_CREDENTIALS_FILE" << EOF
 # Cloudflare API credentials
