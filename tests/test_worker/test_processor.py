@@ -98,6 +98,51 @@ class TestProcessNextJob:
             assert completed_job.file_path == "/storage/test.mp4"
 
     @pytest.mark.unit
+    async def test_move_to_dlq_populates_final_error_category(self, db_session):
+        """Test failed job retention writes all non-null DLQ columns."""
+        from app.models.failed_job import FailedJob
+        from app.services.error_classifier import ErrorCategory
+        from worker.processor import _move_to_dlq
+
+        job = DownloadJob(
+            id=UUID("550e8400-e29b-41d4-a716-446655440006"),
+            user_id=UUID("550e8400-e29b-41d4-a716-446655440005"),
+            url="https://www.youtube.com/watch?v=missing",
+            status="failed",
+            error="attempt 1 failed",
+            error_category=ErrorCategory.NOT_FOUND.value,
+            retry_count=0,
+            max_retries=3,
+            title="Missing Video",
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        retry_history = "attempt 1 failed -> Non-retryable error"
+        final_error = "Non-retryable error (not_found): video unavailable"
+
+        await _move_to_dlq(
+            db_session,
+            job,
+            ErrorCategory.NOT_FOUND,
+            final_error,
+            retry_count=0,
+            retry_history=retry_history,
+        )
+        await db_session.commit()
+
+        result = await db_session.execute(
+            select(FailedJob).where(FailedJob.original_job_id == job.id)
+        )
+        failed_job = result.scalar_one()
+
+        assert failed_job.error_category == ErrorCategory.NOT_FOUND.value
+        assert failed_job.final_error_category == ErrorCategory.NOT_FOUND.value
+        assert failed_job.final_error == final_error
+        assert failed_job.retry_history == retry_history
+        assert failed_job.max_retries_at_failure == 3
+
+    @pytest.mark.unit
     async def test_reset_stuck_jobs_ignores_recent_processing(self, db_session):
         """Test that recently started processing jobs are not reset."""
         from worker.processor import reset_stuck_jobs

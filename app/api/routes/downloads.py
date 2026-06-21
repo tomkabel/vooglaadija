@@ -600,7 +600,7 @@ async def replay_all_failed_jobs(
                 original.retry_count = 0
                 original.next_retry_at = None
                 original.error = None
-                original.error_category = None  # type: ignore[assignment]
+                original.error_category = None
                 original.completed_at = None
                 await write_job_to_outbox(db, original.id)
                 await db.delete(failed_job)

@@ -13,7 +13,7 @@ class FailedJob(Base):
     __tablename__ = "failed_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    original_job_id: Mapped[uuid.UUID] = mapped_column(
+    original_job_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("download_jobs.id", ondelete="SET NULL"),
         nullable=True,
@@ -26,6 +26,7 @@ class FailedJob(Base):
     error_category: Mapped[str] = mapped_column(String(50), nullable=False)
     retry_history: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_error: Mapped[str] = mapped_column(Text, nullable=False)
+    final_error_category: Mapped[str] = mapped_column(String(50), nullable=False)
     retry_count: Mapped[int] = mapped_column(default=0, nullable=False)
     max_retries_at_failure: Mapped[int] = mapped_column(default=0, nullable=False)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -56,6 +56,7 @@ class FailedJobResponse(BaseModel):
     error_category: str
     retry_history: str | None = None
     final_error: str
+    final_error_category: str
     retry_count: int
     max_retries_at_failure: int
     title: str | None = None

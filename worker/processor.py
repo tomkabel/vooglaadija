@@ -137,6 +137,7 @@ async def _move_to_dlq(
     category: ErrorCategory,
     final_error: str,
     retry_count: int,
+    retry_history: str | None = None,
 ) -> None:
     failed = FailedJob(
         id=uuid.uuid4(),
@@ -144,8 +145,9 @@ async def _move_to_dlq(
         user_id=job.user_id,
         url=job.url,
         error_category=category.value,
-        retry_history=job.error,
+        retry_history=retry_history if retry_history is not None else job.error,
         final_error=final_error,
+        final_error_category=category.value,
         retry_count=retry_count,
         max_retries_at_failure=job.max_retries,
         title=job.title,
@@ -690,7 +692,14 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
                 await db.commit()
 
                 # Move to DLQ for forensic retention
-                await _move_to_dlq(db, job, category, final_error, job.retry_count)
+                await _move_to_dlq(
+                    db,
+                    job,
+                    category,
+                    final_error,
+                    job.retry_count,
+                    retry_history=accumulated,
+                )
                 await db.commit()
 
                 result = await db.execute(select(DownloadJob).where(DownloadJob.id == job_id))
