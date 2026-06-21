@@ -1,7 +1,7 @@
 """Downloads API endpoint tests."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -343,14 +343,14 @@ async def test_get_download_file_expired_returns_410(db_session: AsyncSession):
         )
         job_id = uuid.UUID(create_response.json()["id"])
 
-        past_naive = datetime(2000, 1, 1)
+        past = datetime(2000, 1, 1, tzinfo=UTC)
         await db_session.execute(
             update(DownloadJob)
             .where(DownloadJob.id == job_id)
             .values(
                 status="completed",
                 file_path="/tmp/fake_file.mp4",
-                expires_at=past_naive,
+                expires_at=past,
             ),
         )
         await db_session.commit()
