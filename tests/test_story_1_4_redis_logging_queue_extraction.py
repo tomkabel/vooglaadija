@@ -9,6 +9,7 @@ import pytest
 
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
 _THIS_FILE = Path(__file__).name
+_BOUNDARY_CHECKER = Path("scripts/import_analysis.py")
 _EXPECTED_ALEMBIC_VERSION_FILES = {
     "001_initial.py",
     "002_add_title_to_download_jobs.py",
@@ -37,12 +38,21 @@ def _iter_python_files() -> list[Path]:
     ]
 
 
-def test_redis_client_shim_reexports_core_objects():
-    """The Redis compatibility shim exposes canonical core Redis objects."""
-    app_redis = importlib.import_module("app.services.redis_client")
+def test_legacy_redis_and_logging_modules_are_removed():
+    """The legacy Redis and logging modules should not be importable."""
+    legacy_modules = ("app.services.redis_client", "app.logging_config")
+    for module_name in legacy_modules:
+        sys.modules.pop(module_name, None)
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module_name)
+
+
+def test_core_redis_client_owns_public_objects():
+    """The canonical core Redis module owns public Redis helpers."""
     core_redis = importlib.import_module("core.redis_client")
 
-    public_exports = (
+    public_exports = {
         "CHAOS_CIRCUIT_BREAKER_KEY",
         "SCENARIO_KEY_MAP",
         "KEY_TO_SCENARIO_FIELD",
@@ -53,47 +63,25 @@ def test_redis_client_shim_reexports_core_objects():
         "check_chaos_key",
         "get_all_chaos_status",
         "delete_chaos_keys",
-    )
+    }
 
-    for name in public_exports:
-        assert getattr(app_redis, name) is getattr(core_redis, name)
-
-
-def test_redis_client_shim_does_not_own_client_state_or_settings():
-    """The Redis compatibility shim does not own Redis state or constructors."""
-    app_redis = importlib.import_module("app.services.redis_client")
-
-    assert "_redis_state" not in app_redis.__dict__
-    assert "logger" not in app_redis.__dict__
-    assert "settings" not in app_redis.__dict__
-    assert "aioredis" not in app_redis.__dict__
+    assert public_exports <= set(core_redis.__dict__)
 
 
-def test_logging_config_shim_reexports_core_logging_objects():
-    """The logging compatibility shim exposes canonical core logging objects."""
-    app_logging = importlib.import_module("app.logging_config")
+def test_core_logging_config_owns_public_objects():
+    """The canonical core logging module owns public logging helpers."""
     core_logging = importlib.import_module("core.logging_config")
 
-    public_exports = (
+    public_exports = {
         "configure_logging",
         "get_logger",
         "add_timestamp",
         "add_service_context",
         "rename_event_key",
         "LoggerAdapter",
-    )
+    }
 
-    for name in public_exports:
-        assert getattr(app_logging, name) is getattr(core_logging, name)
-
-
-def test_logging_config_shim_does_not_configure_structlog():
-    """The logging compatibility shim does not own structlog configuration state."""
-    app_logging = importlib.import_module("app.logging_config")
-
-    assert "structlog" not in app_logging.__dict__
-    assert "logging" not in app_logging.__dict__
-    assert "Processor" not in app_logging.__dict__
+    assert public_exports <= set(core_logging.__dict__)
 
 
 @pytest.mark.unit
@@ -188,6 +176,8 @@ def test_internal_code_has_no_old_redis_logging_or_queue_paths():
     matches: list[str] = []
     for path in _iter_python_files():
         if path.name == _THIS_FILE:
+            continue
+        if path == _BOUNDARY_CHECKER:
             continue
         text = path.read_text(encoding="utf-8")
         for pattern in _OLD_IMPORT_PATTERNS:

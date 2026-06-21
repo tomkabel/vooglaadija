@@ -1,5 +1,7 @@
 """Regression tests for Story 1.2 configuration extraction."""
 
+import importlib
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 _LEGACY_CONFIG_MODULE = ".".join(("app", "config"))
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
+_BOUNDARY_CHECKER = Path("scripts/import_analysis.py")
 _EXPECTED_ALEMBIC_VERSION_FILES = {
     "001_initial.py",
     "002_add_title_to_download_jobs.py",
@@ -35,11 +38,21 @@ def test_internal_code_has_no_legacy_config_imports():
 
     matches: list[str] = []
     for path in _iter_python_files():
+        if path == _BOUNDARY_CHECKER:
+            continue
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if any(fragment in line for fragment in forbidden_fragments):
                 matches.append(f"{path}:{line_number}: {line.strip()}")
 
     assert matches == []
+
+
+def test_legacy_app_config_module_is_removed():
+    """The legacy configuration module should not be importable after shim removal."""
+    sys.modules.pop(_LEGACY_CONFIG_MODULE, None)
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(_LEGACY_CONFIG_MODULE)
 
 
 def test_config_extraction_added_no_alembic_migration():

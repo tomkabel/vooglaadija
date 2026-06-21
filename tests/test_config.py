@@ -35,15 +35,16 @@ def _make_production_settings(**kwargs):
 class TestSettingsTestingMode:
     """Settings behaviour when TESTING=1 (current test session)."""
 
-    def test_compatibility_shim_reexports_core_singletons(self):
-        """The temporary API config shim re-exports the canonical core objects."""
+    def test_legacy_app_config_module_is_removed(self):
+        """The legacy API config module is removed after core extraction."""
         import importlib
+        import sys
 
-        api_config = importlib.import_module("app" + ".config")
-        core_config = importlib.import_module("core.config")
+        legacy_module = ".".join(("app", "config"))
+        sys.modules.pop(legacy_module, None)
 
-        assert api_config.settings is core_config.settings
-        assert api_config.Settings is core_config.Settings
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(legacy_module)
 
     def test_testing_env_skips_validation_and_has_sqlite(self):
         """TESTING=1 skips production validation; database_url uses SQLite."""

@@ -2,9 +2,12 @@
 
 import ast
 import importlib
+import sys
 from pathlib import Path
 from typing import get_args
 from unittest.mock import patch
+
+import pytest
 
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
 _DATABASE_SHIM_MODULE = ".".join(("app", "database"))
@@ -51,52 +54,37 @@ def _legacy_import_references(path: Path) -> list[str]:
     return references
 
 
-def test_database_shim_reexports_core_database_objects():
-    """The database compatibility shim exposes the canonical core database objects."""
-    app_database = importlib.import_module(_DATABASE_SHIM_MODULE)
+def test_legacy_database_and_metrics_modules_are_removed():
+    """The legacy app database and metrics modules should not be importable."""
+    for module_name in sorted(_LEGACY_MODULES):
+        sys.modules.pop(module_name, None)
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module_name)
+
+
+def test_core_database_owns_public_database_objects():
+    """The canonical core database module owns public database helpers."""
     core_database = importlib.import_module("core.database")
 
-    public_exports = (
+    public_exports = {
         "Base",
         "get_engine",
         "get_async_session_factory",
         "get_async_session",
         "get_db",
-    )
+        "_EngineFactory",
+    }
 
-    for name in public_exports:
-        assert getattr(app_database, name) is getattr(core_database, name)
-
-
-def test_database_shim_does_not_own_factory_state_or_engine_constructors():
-    """The database compatibility shim does not own engine state or constructors."""
-    app_database = importlib.import_module(_DATABASE_SHIM_MODULE)
-    core_database = importlib.import_module("core.database")
-
-    assert app_database._EngineFactory is core_database._EngineFactory
-    assert "_factory" not in app_database.__dict__
-    assert "settings" not in app_database.__dict__
-    assert "create_async_engine" not in app_database.__dict__
-    assert "async_sessionmaker" not in app_database.__dict__
+    assert public_exports <= set(core_database.__dict__)
 
 
-def test_metrics_shim_reexports_core_metric_singletons():
-    """The metrics compatibility shim exposes the canonical core metric objects."""
+def test_core_metrics_owns_public_metric_exports():
+    """The canonical core metrics module owns public metric exports."""
     core_metrics = importlib.import_module("core.metrics")
-    app_metrics = importlib.import_module(_METRICS_SHIM_MODULE)
 
     for name in core_metrics.__all__:
-        assert getattr(app_metrics, name) is getattr(core_metrics, name)
-
-
-def test_metrics_shim_does_not_own_prometheus_constructors():
-    """The metrics compatibility shim does not instantiate Prometheus objects."""
-    app_metrics = importlib.import_module(_METRICS_SHIM_MODULE)
-
-    assert "Counter" not in app_metrics.__dict__
-    assert "Gauge" not in app_metrics.__dict__
-    assert "Histogram" not in app_metrics.__dict__
-    assert "Info" not in app_metrics.__dict__
+        assert name in core_metrics.__dict__
 
 
 def test_database_factory_reads_patched_core_database_url_before_first_engine_creation():

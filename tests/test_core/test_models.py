@@ -1,7 +1,7 @@
 """Tests for shared core model ownership and import boundaries."""
 
-import ast
 import importlib
+import sys
 import tomllib
 from pathlib import Path
 
@@ -86,20 +86,16 @@ def test_core_models_own_model_exports():
     assert User.__module__ == "core.models.user"
 
 
-def test_app_model_shim_reexports_core_models():
-    """The temporary app.models shim should not create duplicate ORM classes."""
-    app_model_shim = importlib.import_module("app.models")
+def test_app_models_package_is_removed():
+    """The legacy app.models package should not be importable after shim removal."""
+    sys.modules.pop("app.models", None)
 
-    assert app_model_shim.DownloadJob is DownloadJob
-    assert app_model_shim.FailedJob is FailedJob
-    assert app_model_shim.Outbox is Outbox
-    assert app_model_shim.User is User
-    assert app_model_shim.not_deleted is not_deleted
-    assert app_model_shim.__all__ == ["DownloadJob", "FailedJob", "Outbox", "User", "not_deleted"]
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.models")
 
 
 def test_app_database_reexports_core_base():
-    """The database compatibility shim keeps the core base import-compatible."""
+    """The canonical core database module exports the shared model base."""
     assert DatabaseBase is Base
     assert set(Base.metadata.tables) == {"download_jobs", "failed_jobs", "outbox", "users"}
 
@@ -112,12 +108,22 @@ def test_core_models_package_contains_expected_story_files():
     assert CORE_MODEL_FILES <= actual_files
 
 
-def test_app_model_shim_has_no_model_class_definitions():
-    """The compatibility shim should not contain duplicate ORM model classes."""
-    shim_path = PROJECT_ROOT / "app" / "models" / "__init__.py"
-    tree = ast.parse(shim_path.read_text())
+def test_core_models_package_exports_expected_names():
+    """The core models package should own the public model export list."""
+    import core.models as core_model_package
 
-    assert not [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    assert core_model_package.DownloadJob is DownloadJob
+    assert core_model_package.FailedJob is FailedJob
+    assert core_model_package.Outbox is Outbox
+    assert core_model_package.User is User
+    assert core_model_package.not_deleted is not_deleted
+    assert core_model_package.__all__ == [
+        "DownloadJob",
+        "FailedJob",
+        "Outbox",
+        "User",
+        "not_deleted",
+    ]
 
 
 def test_core_models_share_one_declarative_metadata():
