@@ -85,7 +85,9 @@ def import_references(path: Path) -> list[ImportReference]:
             )
         elif isinstance(node, ast.ImportFrom):
             modules = _resolved_import_from_modules(node)
-            statement = f"from {node.module or ''} import {', '.join(alias.name for alias in node.names)}"
+            statement = (
+                f"from {node.module or ''} import {', '.join(alias.name for alias in node.names)}"
+            )
             imports.extend(
                 ImportReference(node.lineno, module, statement)
                 for module in modules

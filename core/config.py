@@ -200,9 +200,7 @@ class Settings(BaseSettings):
 
     def _validate_cors(self) -> None:
         if self.cors_origins == "*":
-            raise ValueError(
-                "CORS_ORIGINS cannot be '*' when credentialed requests are enabled"
-            )
+            raise ValueError("CORS_ORIGINS cannot be '*' when credentialed requests are enabled")
 
         origins = [origin.strip() for origin in self.cors_origins.split(",")]
         for origin in origins:

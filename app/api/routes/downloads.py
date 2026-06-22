@@ -44,7 +44,7 @@ def _map_download_service_error(exc: Exception) -> HTTPException:
     """Map download domain errors to REST HTTP exceptions."""
     if isinstance(exc, InvalidDownloadIdError):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    if isinstance(exc, (DownloadNotFoundError, FailedJobNotFoundError)):
+    if isinstance(exc, DownloadNotFoundError | FailedJobNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     if isinstance(exc, InvalidDownloadStatusError):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
