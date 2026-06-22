@@ -1,15 +1,54 @@
 """Auth endpoint tests."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import JWTError, jwt
 from sqlalchemy import select
 
+from app import auth
 from app.main import app
 from app.services.auth_service import verify_password
 from core.models.user import User
 from tests.conftest import TestingSessionLocal
+
+CURRENT_SECRET = "current-api-secret-key-for-rotation-tests-32chars"
+PREVIOUS_SECRET = "previous-api-secret-key-for-rotation-tests-32chars"
+
+
+class RotationSettings:
+    """Minimal settings object for API auth rotation tests."""
+
+    secret_key = CURRENT_SECRET
+    secret_key_previous = PREVIOUS_SECRET
+    access_token_expire_minutes = 15
+    refresh_token_expire_days = 7
+
+
+def _previous_key_refresh_token(
+    user_id: str,
+    *,
+    issued_at: datetime | None = None,
+    expires_at: datetime | None = None,
+    token_version: int = 1,
+) -> str:
+    issued_at = issued_at or datetime.now(UTC)
+    expires_at = expires_at or datetime.now(UTC) + timedelta(days=1)
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "user_id": user_id,
+            "exp": expires_at,
+            "type": auth.REFRESH_TOKEN_TYPE,
+            "iat": issued_at,
+            "jti": "previous-key-api-refresh-jti",
+            "ver": token_version,
+        },
+        PREVIOUS_SECRET,
+        algorithm=auth.ALGORITHM,
+    )
 
 
 @pytest.mark.asyncio
@@ -186,6 +225,80 @@ async def test_refresh_valid_token_returns_new_access():
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_refresh_accepts_previous_key_token_during_rotation(monkeypatch):
+    """Test that a recent previous-key refresh token yields current-key replacements."""
+    monkeypatch.setattr(auth, "settings", RotationSettings())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        register_response = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "old-refresh@example.com", "password": "testpassword123"},
+        )
+        user_id = register_response.json()["id"]
+        old_refresh_token = _previous_key_refresh_token(
+            user_id,
+            issued_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["token_type"] == "bearer"
+
+    access_payload = jwt.decode(
+        data["access_token"],
+        CURRENT_SECRET,
+        algorithms=[auth.ALGORITHM],
+    )
+    refresh_payload = jwt.decode(
+        data["refresh_token"],
+        CURRENT_SECRET,
+        algorithms=[auth.ALGORITHM],
+    )
+
+    assert access_payload["sub"] == user_id
+    assert access_payload["type"] == auth.ACCESS_TOKEN_TYPE
+    assert refresh_payload["sub"] == user_id
+    assert refresh_payload["type"] == auth.REFRESH_TOKEN_TYPE
+
+    for token in (data["access_token"], data["refresh_token"]):
+        try:
+            jwt.decode(token, PREVIOUS_SECRET, algorithms=[auth.ALGORITHM])
+        except JWTError:
+            pass
+        else:
+            raise AssertionError("refreshed token unexpectedly decoded with previous key")
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_previous_key_token_after_rotation_window(monkeypatch):
+    """Test that an old previous-key refresh token is rejected after 24 hours."""
+    monkeypatch.setattr(auth, "settings", RotationSettings())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        register_response = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "stale-refresh@example.com", "password": "testpassword123"},
+        )
+        old_refresh_token = _previous_key_refresh_token(
+            register_response.json()["id"],
+            issued_at=datetime.now(UTC) - timedelta(hours=25),
+        )
+
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": old_refresh_token},
+        )
+
+    assert response.status_code == 401
+    assert "Invalid or expired refresh token" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

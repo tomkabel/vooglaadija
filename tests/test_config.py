@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 # Env var names that conftest sets and that affect Settings
-_CONFTEST_ENV_VARS = ("TESTING", "SECRET_KEY", "DATABASE_URL")
+_CONFTEST_ENV_VARS = ("TESTING", "SECRET_KEY", "SECRET_KEY_PREVIOUS", "DATABASE_URL")
 
 
 def _make_production_settings(**kwargs):
@@ -58,6 +58,22 @@ class TestSettingsTestingMode:
 
         assert settings.secret_key != ""
         assert len(settings.secret_key) >= 32
+
+    def test_secret_key_previous_defaults_to_empty_string(self):
+        """SECRET_KEY_PREVIOUS defaults to disabled in test settings."""
+        from core.config import settings
+
+        assert settings.secret_key_previous == ""
+
+    def test_secret_key_previous_reads_env(self, monkeypatch):
+        """SECRET_KEY_PREVIOUS maps to the optional previous-secret setting."""
+        from core.config import Settings
+
+        monkeypatch.setenv("SECRET_KEY_PREVIOUS", "previous-secret-from-env")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.secret_key_previous == "previous-secret-from-env"
 
     def test_settings_instance_is_populated(self):
         """Settings should have all required fields populated in test mode."""

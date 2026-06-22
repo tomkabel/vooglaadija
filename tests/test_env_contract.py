@@ -117,12 +117,9 @@ def test_rotated_runtime_values_preserve_auth_and_service_url_contracts(monkeypa
     )
 
     assert rotated_settings.database_url == (
-        "postgresql+asyncpg://vooglaadija:"
-        f"{quote_plus(db_password)}@db:5432/media"
+        f"postgresql+asyncpg://vooglaadija:{quote_plus(db_password)}@db:5432/media"
     )
-    assert rotated_settings.redis_url == (
-        f"redis://:{quote_plus(redis_password)}@redis:6379"
-    )
+    assert rotated_settings.redis_url == (f"redis://:{quote_plus(redis_password)}@redis:6379")
 
     monkeypatch.setattr(auth, "settings", rotated_settings)
 

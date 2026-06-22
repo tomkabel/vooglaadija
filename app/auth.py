@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 ALGORITHM = "HS256"
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
+PREVIOUS_SECRET_ACCEPTANCE_WINDOW = timedelta(hours=24)
+PREVIOUS_SECRET_CLOCK_SKEW = timedelta(minutes=5)
 
 
 def _make_token(
@@ -67,11 +69,11 @@ def create_refresh_token(
     )
 
 
-def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any] | None:
+def _decode_token(token: str, secret_key: str) -> dict[str, Any] | None:
     try:
-        payload = jwt.decode(
+        return jwt.decode(
             token,
-            settings.secret_key,
+            secret_key,
             algorithms=[ALGORITHM],
             options={
                 "verify_exp": True,
@@ -79,11 +81,47 @@ def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any]
                 "require": ["sub", "exp"],
             },
         )
-        if expected_type is not None and payload.get("type") != expected_type:
-            return None
-        return payload
     except JWTError:
         return None
+
+
+def _issued_at(payload: dict[str, Any]) -> datetime | None:
+    value = payload.get("iat")
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    try:
+        return datetime.fromtimestamp(value, UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _is_within_previous_secret_window(payload: dict[str, Any]) -> bool:
+    issued_at = _issued_at(payload)
+    if issued_at is None:
+        return False
+
+    now = datetime.now(UTC)
+    if issued_at > now + PREVIOUS_SECRET_CLOCK_SKEW:
+        return False
+    return now - issued_at <= PREVIOUS_SECRET_ACCEPTANCE_WINDOW
+
+
+def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any] | None:
+    payload = _decode_token(token, settings.secret_key)
+    if payload is None and settings.secret_key_previous:
+        previous_payload = _decode_token(token, settings.secret_key_previous)
+        if previous_payload is not None and _is_within_previous_secret_window(previous_payload):
+            payload = previous_payload
+
+    if payload is None:
+        return None
+    if expected_type is not None and payload.get("type") != expected_type:
+        return None
+    return payload
 
 
 def set_token_cookies(

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     database_url: str = ""
     secret_key: str = ""
+    secret_key_previous: str = ""
     redis_url: str = ""
     cors_origins: str = "http://localhost:3000"
     access_token_expire_minutes: int = 15
