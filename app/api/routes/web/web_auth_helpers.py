@@ -79,8 +79,10 @@ async def _change_password_response(
     if not await validate_csrf_token(request):
         error = (403, "Invalid CSRF token", "csrf")
     if error is not None:
-        status_code, message, error_code = error
-        return _error_response(request, status_code, message, f"/web/settings?error={error_code}")
+        status_code, error_message, error_code = error
+        return _error_response(
+            request, status_code, error_message, f"/web/settings?error={error_code}"
+        )
 
     try:
         await UserService(db=db, user=current_user).change_password(
@@ -103,11 +105,11 @@ async def _change_password_response(
             "/web/settings?error=password_mismatch",
         )
     except InvalidPasswordError as exc:
-        message, _ = _resolve_settings_errors(exc.code)
+        resolved_message, _ = _resolve_settings_errors(exc.code)
         return _error_response(
             request,
             400,
-            message or "Password does not meet the project requirements",
+            resolved_message or "Password does not meet the project requirements",
             f"/web/settings?error={exc.code}",
         )
 
@@ -134,9 +136,9 @@ async def _register_user_or_error_response(
     elif password != password_confirm:
         error = (400, "Passwords do not match", "password_mismatch")
     if error is not None:
-        status_code, message, error_code = error
+        status_code, error_message, error_code = error
         return None, _error_response(
-            request, status_code, message, f"/web/register?error={error_code}"
+            request, status_code, error_message, f"/web/register?error={error_code}"
         )
 
     try:
@@ -146,11 +148,11 @@ async def _register_user_or_error_response(
             request, 409, "Email already registered", "/web/register?error=email_exists"
         )
     except InvalidPasswordError as exc:
-        message, _ = _resolve_register_errors(exc.code)
+        resolved_message, _ = _resolve_register_errors(exc.code)
         return None, _error_response(
             request,
             400,
-            message or "Password does not meet the project requirements",
+            resolved_message or "Password does not meet the project requirements",
             f"/web/register?error={exc.code}",
         )
     return user, None
