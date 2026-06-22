@@ -2,12 +2,16 @@
 
 {% block title %}Dashboard — Vooglaadija{% endblock %}
 
+{% block extra_head %}
+<script src="/static/js/sse.js"></script>
+{% endblock %}
+
 {% block nav_actions %}
 <div class="flex items-center gap-3">
   <div
     class="hidden sm:flex items-center gap-2 text-sm text-gray-400 bg-white/[0.04] px-3 py-1.5 rounded-lg border border-white/[0.06]"
   >
-    <svg class="h-4 w-4" aria-hidden="true"><use href="#icon-user" /></svg>
+    <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-user" /></svg>
     <span class="font-body">{{ current_user.username | default(current_user.email, true) }}</span>
   </div>
   <a href="/web/settings" class="btn-secondary text-sm"> Settings </a>
@@ -41,6 +45,7 @@
     </div>
 
     <form
+      id="download-form"
       hx-post="/web/downloads"
       hx-target="#download-rows"
       hx-swap="afterbegin"
@@ -52,7 +57,7 @@
     >
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <div class="input-icon-wrapper flex-1">
-        <svg class="h-5 w-5" aria-hidden="true"><use href="#icon-link" /></svg>
+        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-link" /></svg>
         <input
           type="url"
           name="url"
@@ -70,10 +75,10 @@
         class="btn-primary whitespace-nowrap flex items-center justify-center gap-2 px-6 min-h-[44px]"
       >
         <span id="submit-spinner" class="htmx-indicator">
-          <svg class="animate-spin h-4 w-4" aria-hidden="true"><use href="#icon-spinner" /></svg>
+          <svg class="animate-spin h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-spinner" /></svg>
         </span>
         Download
-        <svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg>
+        <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg>
       </button>
     </form>
 
@@ -112,7 +117,7 @@
         <div
           class="h-10 w-10 rounded-xl bg-jade-500/10 border border-jade-500/20 flex items-center justify-center flex-shrink-0"
         >
-          <svg class="h-5 w-5 text-jade-400" aria-hidden="true"><use href="#icon-check" /></svg>
+          <svg class="h-5 w-5 text-jade-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-check" /></svg>
         </div>
         <div>
           <p class="text-xs text-gray-500 font-display font-medium uppercase tracking-wider">Completed</p>
@@ -128,7 +133,7 @@
         <div
           class="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0"
         >
-          <svg class="h-5 w-5 text-amber-400" aria-hidden="true"><use href="#icon-clock" /></svg>
+          <svg class="h-5 w-5 text-amber-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-clock" /></svg>
         </div>
         <div>
           <p class="text-xs text-gray-500 font-display font-medium uppercase tracking-wider">In Progress</p>
@@ -144,7 +149,7 @@
         <div
           class="h-10 w-10 rounded-xl bg-warm-500/10 border border-warm-500/20 flex items-center justify-center flex-shrink-0"
         >
-          <svg class="h-5 w-5 text-warm-400" aria-hidden="true"><use href="#icon-download" /></svg>
+          <svg class="h-5 w-5 text-warm-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg>
         </div>
         <div>
           <p class="text-xs text-gray-500 font-display font-medium uppercase tracking-wider">Total</p>

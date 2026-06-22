@@ -83,16 +83,16 @@
   });
 
   // ─── Skeleton Loader ─────────────────────────────────────────────────
-  const skelTimer = setTimeout(() => {
-    const list = document.getElementById('download-list');
-    if (!list) return;
-    list.classList.remove('download-list-loading');
-    const skel = document.getElementById('download-skeleton');
-    if (skel) skel.remove();
-  }, 5000);
+  let skeletonObserver = null;
+
+  function stopSkeletonObserver() {
+    if (!skeletonObserver) return;
+    skeletonObserver.disconnect();
+    skeletonObserver = null;
+  }
 
   function clearSkel() {
-    clearTimeout(skelTimer);
+    stopSkeletonObserver();
     const list = document.getElementById('download-list');
     if (!list) return;
     list.classList.remove('download-list-loading');
@@ -100,8 +100,21 @@
     if (skel) skel.remove();
   }
 
+  function observeSkeletonRows() {
+    const rows =
+      document.getElementById('download-rows') || document.getElementById('download-list');
+    if (!(rows && window.MutationObserver)) return;
+
+    const initialChildCount = rows.childElementCount;
+    skeletonObserver = new MutationObserver(() => {
+      if (rows.childElementCount !== initialChildCount) clearSkel();
+    });
+    skeletonObserver.observe(rows, { childList: true });
+  }
+
+  observeSkeletonRows();
+
   document.body.addEventListener('htmx:sseOpen', () => {
-    clearTimeout(skelTimer);
     setTimeout(clearSkel, 200);
   });
 
@@ -200,14 +213,14 @@
     }
     if (document.getElementById('download-rows')) {
       const container = document.getElementById('download-rows');
-      const ids = {};
+      const seenJobIds = new Set();
       const rows = container.querySelectorAll('.download-row[data-job-id]');
       for (let i = 0; i < rows.length; i++) {
         const id = rows[i].dataset.jobId;
-        if (id && ids[id]) {
+        if (id && seenJobIds.has(id)) {
           rows[i].remove();
         } else if (id) {
-          ids[id] = true;
+          seenJobIds.add(id);
         }
       }
       const optRows = container.querySelectorAll('[data-optimistic="true"]');
@@ -378,24 +391,29 @@
     });
 
   // ─── Submit button disabled state ───────────────────────────────────
-  document
-    .querySelector('form[hx-post="/web/downloads"]')
-    ?.addEventListener('htmx:beforeRequest', function () {
-      const btn = this.querySelector('button[type="submit"]');
-      if (btn) btn.disabled = true;
-    });
+  function getDownloadForm() {
+    return document.querySelector('#download-form, form[hx-post="/web/downloads"]');
+  }
+
+  function isDownloadFormRequest(evt) {
+    const form = getDownloadForm();
+    if (!form) return false;
+    const requestElement = evt.detail?.elt;
+    const target = evt.detail.target;
+    const isFormElement = (element) =>
+      element instanceof Element && (element === form || form.contains(element));
+    return isFormElement(requestElement) || isFormElement(target);
+  }
+
+  getDownloadForm()?.addEventListener('htmx:beforeRequest', function () {
+    const btn = this.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+  });
 
   document.body.addEventListener('htmx:afterRequest', (evt) => {
-    const form =
-      evt.detail.elt && evt.detail.elt.tagName === 'FORM'
-        ? evt.detail.elt
-        : evt.detail.elt?.closest
-          ? evt.detail.elt.closest('form')
-          : null;
-    if (form) {
-      const btn = form.querySelector('button[type="submit"]');
-      if (btn) btn.disabled = false;
-    }
+    if (!isDownloadFormRequest(evt)) return;
+    const btn = getDownloadForm()?.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = false;
   });
 
   // ─── Inline URL Validation ──────────────────────────────────────────
@@ -464,7 +482,10 @@
       return;
     }
     banner.dataset.sseFailed = String(failed);
-    banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#icon-alert" /></svg><span class="text-sm font-medium">${failed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused'}</span><button onclick="location.reload()" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">${failed ? 'Retry Connection' : 'Refresh'}</button>`;
+    banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-alert" /></svg><span class="text-sm font-medium">${failed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused'}</span><button type="button" data-sse-retry class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">${failed ? 'Retry Connection' : 'Refresh'}</button>`;
+    banner.querySelector('[data-sse-retry]')?.addEventListener('click', () => {
+      window.location.reload();
+    });
   }
 
   function removeReconnectBanner() {
@@ -630,7 +651,7 @@
         dlBtn.target = '_blank';
         dlBtn.setAttribute('hx-boost', 'false');
         dlBtn.innerHTML =
-          '<svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg> Save';
+          '<svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg> Save';
         dlBtn.style.display = 'inline-flex';
         const containers = row.querySelectorAll('.flex.items-center.gap-3');
         const c = containers[containers.length - 1];
@@ -669,11 +690,11 @@
     const jobPathId = encodeURIComponent(jobId);
     const createdAt = data.created_at ? String(data.created_at) : '';
     const status = normalizeStatus(data.status);
-    return `<div class="flex-1 min-w-0"><div class="flex items-center gap-3"><div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"><svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="#icon-video" /></svg></div><div><p class="url-text" hx-disable title="${escapeHtml(data.title || data.url || '')}">${escapeHtml(data.title || data.url || '')}</p><p class="timestamp" data-timestamp="${escapeHtml(createdAt)}">${escapeHtml(date)}</p></div></div></div><div class="flex items-center gap-3">${getStatusBadgeHTML(status)}${
+    return `<div class="flex-1 min-w-0"><div class="flex items-center gap-3"><div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"><svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-video" /></svg></div><div><p class="url-text" hx-disable title="${escapeHtml(data.title || data.url || '')}">${escapeHtml(data.title || data.url || '')}</p><p class="timestamp" data-timestamp="${escapeHtml(createdAt)}">${escapeHtml(date)}</p></div></div></div><div class="flex items-center gap-3">${getStatusBadgeHTML(status)}${
       status.toLowerCase() === 'completed'
-        ? `<a href="/web/downloads/${jobPathId}/file" class="download-btn text-xs" download target="_blank" hx-boost="false"><svg class="h-4 w-4" aria-hidden="true"><use href="#icon-download" /></svg> Save</a>`
+        ? `<a href="/web/downloads/${jobPathId}/file" class="download-btn text-xs" download target="_blank" hx-boost="false"><svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg> Save</a>`
         : ''
-    }<button hx-delete="/web/downloads/${jobPathId}" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download"><svg class="h-5 w-5" aria-hidden="true"><use href="#icon-trash" /></svg></button></div>`;
+    }<button hx-delete="/web/downloads/${jobPathId}" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download"><svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-trash" /></svg></button></div>`;
   }
 
   function escapeHtml(text) {

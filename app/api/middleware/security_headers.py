@@ -5,6 +5,8 @@ from typing import Any
 
 from fastapi import Request
 
+FONT_ONLOAD_HANDLER_HASH = "'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='"
+
 
 async def add_security_headers(request: Request, call_next: Any) -> Any:
     """Add Content-Security-Policy and other security headers to all responses."""
@@ -16,7 +18,8 @@ async def add_security_headers(request: Request, call_next: Any) -> Any:
     if "Content-Security-Policy" not in response.headers:
         response.headers["Content-Security-Policy"] = (
             f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}'; "
+            f"script-src 'self' 'nonce-{nonce}' 'unsafe-hashes' "
+            f"{FONT_ONLOAD_HANDLER_HASH}; "
             f"style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "
             f"font-src 'self' https://fonts.gstatic.com; "
             f"img-src 'self' data: blob:; "

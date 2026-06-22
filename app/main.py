@@ -5,8 +5,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 
 try:
     import uvloop
@@ -39,6 +40,18 @@ configure_logging(log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 APP_VERSION = "1.0.0"
+IMMUTABLE_SPRITE_CACHE_CONTROL = "public, immutable, max-age=31536000"
+
+
+class IconSpriteStaticFiles(StaticFiles):
+    """Serve the external SVG sprite with a long-lived immutable cache header."""
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        if path.replace(os.sep, "/") == "icons/sprite.svg" and response.status_code == 200:
+            response.headers["Cache-Control"] = IMMUTABLE_SPRITE_CACHE_CONTROL
+        return response
+
 
 initialize_sentry(APP_VERSION)
 lifespan = create_lifespan(APP_VERSION, UVLOOP_AVAILABLE)
@@ -96,7 +109,9 @@ app.add_middleware(
 app.state.limiter = limiter
 mount_docs_static(app)
 app.mount(
-    "/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static"
+    "/static",
+    IconSpriteStaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    name="static",
 )
 register_docs_routes(app)
 register_exception_handlers(app)
