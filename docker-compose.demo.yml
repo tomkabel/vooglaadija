@@ -3,9 +3,9 @@
 #
 # This override:
 #   1. Enables the Chaos Injection API (FEATURE_CHAOS_API_ENABLED=true)
-#   2. Adds Prometheus scraping the API /prometheus-metrics endpoint
-#  3. Adds Grafana with the 4-panel resilience dashboard pre-loaded
-#  4. Seeds demo user + 8 pending download jobs (primed on login via demo-login)
+#   2. Adds Prometheus scraping API/worker metrics and loading alert rules
+#   3. Adds Grafana with the 4-panel resilience dashboard pre-loaded
+#   4. Seeds demo user + 8 pending download jobs (primed on login via demo-login)
 #
 # Access: Grafana at http://localhost:3000 using GF_SECURITY_ADMIN_USER and
 # GF_SECURITY_ADMIN_PASSWORD from .env or .env.example.
@@ -64,7 +64,7 @@ services:
       sh -c " /opt/venv/bin/python -m scripts.seed_demo_data "
 
   # ============================================
-  # Prometheus — scrapes API /metrics endpoint
+  # Prometheus - scrapes app metrics and loads alert rules
   # ============================================
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -81,7 +81,7 @@ services:
       # during demo sessions without excessive disk usage (~2-4 GB for 12h at 15s scrape).
       - --storage.tsdb.retention.time=12h
     volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
     ports:
       - '9090:9090'

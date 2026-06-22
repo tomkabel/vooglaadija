@@ -5,6 +5,7 @@ status for too long, indicating a worker crashed or stalled.
 """
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import UUID
 
 import pytest
@@ -12,6 +13,15 @@ from sqlalchemy import select
 
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
+
+
+@pytest.fixture(autouse=True)
+def no_chaos_zombie_trigger():
+    """Keep explicit timeout unit tests isolated from shared chaos Redis state."""
+    mock_redis = AsyncMock()
+    mock_redis.exists = AsyncMock(return_value=0)
+    with patch("worker.zombie_sweeper.get_redis_client", return_value=mock_redis):
+        yield
 
 
 @pytest.fixture
@@ -377,6 +387,36 @@ class TestRequeueStuckJobs:
         )
         other_entries = result.scalars().all()
         assert len(other_entries) == 0
+
+    @pytest.mark.unit
+    async def test_requeue_stuck_jobs_clamps_timeout_when_chaos_trigger_active(
+        self, db_session, user_id
+    ):
+        """Chaos trigger should shorten zombie timeout without shared Redis state."""
+        job_id = UUID("550e8400-e29b-41d4-a716-446655441034")
+        job = DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=chaos_zombie",
+            status="processing",
+            updated_at=datetime.now(UTC) - timedelta(minutes=2),
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        mock_redis = AsyncMock()
+        mock_redis.exists = AsyncMock(return_value=1)
+
+        from worker.zombie_sweeper import requeue_stuck_jobs
+
+        with patch("worker.zombie_sweeper.get_redis_client", return_value=mock_redis):
+            count = await requeue_stuck_jobs(timeout_minutes=15)
+
+        assert count == 1
+        mock_redis.exists.assert_awaited_once()
+
+        await db_session.refresh(job)
+        assert job.status == "pending"
 
 
 class TestRequeueStuckJobsEdgeCases:
