@@ -7,13 +7,7 @@ report:
       python:
         environment-results: true
         unpinned-requirements: true
-      vulnerabilities:
-        '64459':
-          reason: 'Existing accepted-risk suppression; revisit when upstream fix is available.'
-          expires: '2026-12-31'
-        '64396':
-          reason: 'Existing accepted-risk suppression; revisit when upstream fix is available.'
-          expires: '2026-12-31'
+      vulnerabilities: {}
 
 fail-scan-with-exit-code:
   dependency-vulnerabilities:

@@ -4,6 +4,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -113,21 +115,26 @@ def test_ci_safety_check_preserves_safety_exit_code():
 def test_safety_policy_fails_medium_or_higher_and_documents_ignores():
     """Safety policy should fail actionable findings and document accepted-risk ignores."""
     policy = read_project_file(".safety-policy.yml")
+    policy_yaml = yaml.safe_load(policy)
 
     assert "fail-scan-with-exit-code:\n  dependency-vulnerabilities:\n    enabled: true" in policy
     assert "      cvss-severity:\n        - medium\n        - high\n        - critical\n" in policy
     assert "security-updates:\n  dependency-vulnerabilities:" in policy
     assert "auto-security-updates-limit:\n      - patch\n      - minor\n      - major\n" in policy
 
-    ignored_vulnerabilities = re.findall(
-        r"^\s{8}'?(\d+)'?:\n\s{10}reason: '([^']+)'\n\s{10}expires: '(\d{4}-\d{2}-\d{2})'",
-        policy,
-        flags=re.MULTILINE,
+    ignored_vulnerabilities = (
+        policy_yaml.get("report", {})
+        .get("dependency-vulnerabilities", {})
+        .get("auto-ignore-in-report", {})
+        .get("vulnerabilities", {})
     )
 
-    assert ignored_vulnerabilities
-    for vulnerability_id, reason, expires in ignored_vulnerabilities:
-        assert vulnerability_id.isdigit()
+    assert isinstance(ignored_vulnerabilities, dict)
+    for vulnerability_id, suppression in ignored_vulnerabilities.items():
+        reason = suppression.get("reason")
+        expires = suppression.get("expires")
+
+        assert str(vulnerability_id).isdigit()
         assert reason.strip()
-        assert "revisit" in reason.lower()
+        assert "existing accepted-risk suppression" not in reason.lower()
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", expires)
