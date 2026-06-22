@@ -223,6 +223,7 @@ class TestHealthAppEndpoints:
         """Test /health returns ok when Redis and database checks pass."""
         mock_redis = MagicMock()
         mock_redis.ping = AsyncMock(return_value=True)
+        update_worker_state(status="running")
 
         with (
             patch("worker.health.get_redis_client", return_value=mock_redis),
@@ -239,6 +240,7 @@ class TestHealthAppEndpoints:
             "checks": {
                 "redis": True,
                 "database": True,
+                "worker_loop": True,
             },
         }
 
@@ -247,6 +249,7 @@ class TestHealthAppEndpoints:
         """Test /health returns degraded and non-2xx when Redis check fails."""
         mock_redis = MagicMock()
         mock_redis.ping = AsyncMock(side_effect=ConnectionError("redis unavailable"))
+        update_worker_state(status="running")
 
         with (
             patch("worker.health.get_redis_client", return_value=mock_redis),
@@ -263,6 +266,7 @@ class TestHealthAppEndpoints:
             "checks": {
                 "redis": False,
                 "database": True,
+                "worker_loop": True,
             },
         }
 
@@ -271,6 +275,7 @@ class TestHealthAppEndpoints:
         """Test /health returns degraded and non-2xx when database check fails."""
         mock_redis = MagicMock()
         mock_redis.ping = AsyncMock(return_value=True)
+        update_worker_state(status="running")
 
         with (
             patch("worker.health.get_redis_client", return_value=mock_redis),
@@ -290,6 +295,37 @@ class TestHealthAppEndpoints:
             "checks": {
                 "redis": True,
                 "database": False,
+                "worker_loop": True,
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_health_endpoint_degraded_when_worker_loop_heartbeat_is_stale(self):
+        """A stale worker heartbeat should fail the threaded health endpoint."""
+        import worker.health as health_module
+
+        mock_redis = MagicMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+
+        with health_module._state_lock:
+            health_module._worker_state["last_heartbeat"] = "2000-01-01T00:00:00+00:00"
+
+        with (
+            patch("worker.health.get_redis_client", return_value=mock_redis),
+            patch("worker.health.get_async_session_factory", return_value=_mock_session_factory()),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=health_app), base_url="http://test"
+            ) as client:
+                response = await client.get("/health")
+
+        assert response.status_code == 503
+        assert response.json() == {
+            "status": "degraded",
+            "checks": {
+                "redis": True,
+                "database": True,
+                "worker_loop": False,
             },
         }
 
@@ -313,6 +349,7 @@ class TestHealthAppEndpoints:
 
         worker_loop = asyncio.get_running_loop()
         observed_loops = []
+        update_worker_state(status="running")
 
         async def passing_check():
             observed_loops.append(asyncio.get_running_loop())
@@ -343,6 +380,7 @@ class TestHealthAppEndpoints:
             "checks": {
                 "redis": True,
                 "database": True,
+                "worker_loop": True,
             },
         }
         assert observed_loops == [worker_loop, worker_loop]

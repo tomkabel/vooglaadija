@@ -13,6 +13,17 @@ from core.queue import push_to_download_queue, push_to_retry_queue
 logger = get_logger(__name__)
 
 
+async def _retry_job_is_already_enqueued(job_id) -> bool:
+    """Return whether a retry job already exists in Redis after a deduplicated push."""
+    try:
+        from core.queue import redis_client
+
+        return await redis_client.zscore("retry_queue", str(job_id)) is not None
+    except Exception as exc:
+        logger.error("retry_queue_duplicate_check_failed", job_id=str(job_id), error=str(exc))
+        return False
+
+
 async def sync_outbox_to_queue(batch_size: int = 100) -> int:
     """Sync pending outbox entries to Redis queue."""
     session_factory = get_async_session_factory()
@@ -41,6 +52,12 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
                     if next_retry_at:
                         retry_timestamp = datetime.fromisoformat(next_retry_at).timestamp()
                         enqueued = await push_to_retry_queue(entry.job_id, retry_timestamp)
+                        if not enqueued and await _retry_job_is_already_enqueued(entry.job_id):
+                            logger.info(
+                                "retry_outbox_already_recovered",
+                                job_id=str(entry.job_id),
+                            )
+                            enqueued = True
                     else:
                         logger.error("missing_next_retry_at_in_payload", job_id=str(entry.job_id))
                         continue

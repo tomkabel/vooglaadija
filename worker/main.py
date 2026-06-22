@@ -50,6 +50,7 @@ __all__ = [
 
 # Max retries to release per main-loop iteration (prevents thundering herd)
 MAX_RETRY_BATCH = 10
+HEALTH_HEARTBEAT_INTERVAL_SECONDS = 10
 
 
 def _signal_handler() -> None:
@@ -203,6 +204,24 @@ async def _await_current_job_with_shutdown_grace(
                 await shutdown_wait_task
 
 
+async def _health_heartbeat_loop() -> None:
+    """Continuously publish worker heartbeats while the event loop is alive."""
+    while not shutdown_event.is_set():
+        try:
+            await write_health_async()
+            update_worker_state()
+        except Exception as e:
+            logger.warning("health_write_failed", error=str(e))
+
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(),
+                timeout=HEALTH_HEARTBEAT_INTERVAL_SECONDS,
+            )
+        except TimeoutError:
+            continue
+
+
 async def main() -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -244,8 +263,6 @@ async def main() -> None:
     outbox_sync_interval = timedelta(seconds=outbox_sync_interval_seconds)
     last_outbox_sync = datetime.now(UTC) - outbox_sync_interval
 
-    heartbeat_counter = 0
-    heartbeat_interval = 10
     queue_depth_counter = 0
     queue_depth_interval = 5
     brpop_timeout = 2
@@ -254,6 +271,7 @@ async def main() -> None:
     deferred_drain_interval = 5
 
     update_worker_state(status="running")
+    health_heartbeat_task = asyncio.create_task(_health_heartbeat_loop())
 
     # Track in-flight extraction for grace-period enforcement
     current_job_task: asyncio.Task | None = None
@@ -363,15 +381,6 @@ async def main() -> None:
             last_cleanup = now
             update_worker_state(last_cleanup=last_cleanup.isoformat())
 
-        heartbeat_counter += 1
-        if heartbeat_counter >= heartbeat_interval:
-            try:
-                await write_health_async()
-                update_worker_state()
-            except Exception as e:
-                logger.warning("health_write_failed", error=str(e))
-            heartbeat_counter = 0
-
         queue_depth_counter += 1
         if queue_depth_counter >= queue_depth_interval:
             await _update_queue_depth()
@@ -393,6 +402,10 @@ async def main() -> None:
         except (asyncio.CancelledError, TimeoutError):
             pass
         current_job_task = None
+
+    health_heartbeat_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await health_heartbeat_task
 
     logger.info("Worker shutdown complete, stopping health server...")
 

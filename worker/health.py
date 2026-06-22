@@ -4,9 +4,9 @@ import asyncio
 import json
 import os
 import threading
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
-from typing import TypeVar
+from collections.abc import Callable, Coroutine
+from concurrent.futures import Future
+from datetime import UTC, datetime, timedelta
 
 import uvicorn
 from fastapi import FastAPI, Response
@@ -41,8 +41,6 @@ _health_server = None
 _health_server_thread: threading.Thread | None = None
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
-T = TypeVar("T")
-
 # Re-export shared client lifecycle for worker/main.py
 close_health_redis_client = close_redis_client
 reset_health_redis_client = reset_redis_client
@@ -53,6 +51,42 @@ def update_worker_state(**kwargs):
     with _state_lock:
         _worker_state.update(kwargs)
         _worker_state["last_heartbeat"] = datetime.now(UTC).isoformat()
+
+
+def _worker_state_snapshot() -> dict[str, int | str | None]:
+    """Return a thread-safe snapshot of the worker loop state."""
+    with _state_lock:
+        return dict(_worker_state)
+
+
+def _parse_iso8601(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _worker_liveness_timeout() -> timedelta:
+    try:
+        seconds = int(os.environ.get("WORKER_HEALTH_STALE_AFTER_SECONDS", "30"))
+    except ValueError:
+        seconds = 30
+    return timedelta(seconds=max(5, seconds))
+
+
+def _check_worker_loop() -> bool:
+    """Return whether the worker loop has updated its heartbeat recently."""
+    snapshot = _worker_state_snapshot()
+    heartbeat_value = snapshot.get("last_heartbeat")
+    last_heartbeat = _parse_iso8601(heartbeat_value if isinstance(heartbeat_value, str) else None)
+    if last_heartbeat is None:
+        return False
+    return datetime.now(UTC) - last_heartbeat <= _worker_liveness_timeout()
 
 
 def get_redis_url() -> str:
@@ -144,14 +178,14 @@ async def _check_database() -> bool:
         return False
 
 
-async def _run_on_worker_loop(coro_factory: Callable[[], Awaitable[T]]) -> T:
+async def _run_on_worker_loop[T](coro_factory: Callable[[], Coroutine[object, object, T]]) -> T:
     """Run async health checks on the worker loop when the HTTP server is threaded."""
     loop = _worker_loop
     current_loop = asyncio.get_running_loop()
     if loop is None or loop is current_loop or loop.is_closed():
         return await coro_factory()
 
-    future = asyncio.run_coroutine_threadsafe(coro_factory(), loop)
+    future: Future[T] = asyncio.run_coroutine_threadsafe(coro_factory(), loop)
     return await asyncio.wrap_future(future)
 
 
@@ -162,7 +196,8 @@ async def health() -> JSONResponse:
         _run_on_worker_loop(_check_redis),
         _run_on_worker_loop(_check_database),
     )
-    is_ok = redis_ok and database_ok
+    worker_loop_ok = _check_worker_loop()
+    is_ok = redis_ok and database_ok and worker_loop_ok
     return JSONResponse(
         status_code=200 if is_ok else 503,
         content={
@@ -170,6 +205,7 @@ async def health() -> JSONResponse:
             "checks": {
                 "redis": redis_ok,
                 "database": database_ok,
+                "worker_loop": worker_loop_ok,
             },
         },
     )

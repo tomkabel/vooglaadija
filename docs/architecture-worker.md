@@ -83,7 +83,8 @@ Redis heartbeat every 10s with 30s TTL (key: `worker:health:{worker_id}`).
 
 ## Zombie Sweeper
 
-Periodic poll (every 5min) that finds jobs stuck in `processing` with `updated_at > 15min` cutoff
+Periodic poll (every 5 minutes) that finds jobs stuck in `processing` with
+`updated_at > 15 minutes` cutoff
 and requeues them. Protected by the heartbeat mechanism to prevent false-positive claims on active
 workers.
 

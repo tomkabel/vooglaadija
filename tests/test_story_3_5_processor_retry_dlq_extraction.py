@@ -319,10 +319,16 @@ async def test_outbox_relay_handles_retry_payload_success_and_failure(db_session
         )
     await db_session.commit()
 
-    with patch(
-        "worker.outbox_relay.push_to_retry_queue",
-        new_callable=AsyncMock,
-        side_effect=[True, False],
+    mock_redis = AsyncMock()
+    mock_redis.zscore = AsyncMock(return_value=None)
+
+    with (
+        patch(
+            "worker.outbox_relay.push_to_retry_queue",
+            new_callable=AsyncMock,
+            side_effect=[True, False],
+        ),
+        patch("core.queue.redis_client", mock_redis),
     ):
         synced = await sync_outbox_to_queue(batch_size=10)
 
@@ -332,6 +338,51 @@ async def test_outbox_relay_handles_retry_payload_success_and_failure(db_session
     assert len(remaining) == 1
     assert remaining[0].job_id == failed_job_id
     assert remaining[0].status == "pending"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_outbox_relay_clears_duplicate_retry_rows_after_verifying_redis(db_session) -> None:
+    """Outbox relay should delete retry rows already recovered to Redis before a crash."""
+    from worker.outbox_relay import sync_outbox_to_queue
+
+    user_id = uuid4()
+    job_id = uuid4()
+    next_retry = datetime.now(UTC) + timedelta(seconds=30)
+
+    db_session.add(
+        DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url=f"https://www.youtube.com/watch?v={job_id}",
+            status="pending",
+        )
+    )
+    db_session.add(
+        Outbox(
+            id=uuid4(),
+            job_id=job_id,
+            event_type="retry_scheduled",
+            payload=json.dumps({"next_retry_at": next_retry.isoformat()}),
+            status="pending",
+        )
+    )
+    await db_session.commit()
+
+    with (
+        patch(
+            "worker.outbox_relay.push_to_retry_queue",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch("core.queue.redis_client") as mock_redis,
+    ):
+        mock_redis.zscore = AsyncMock(return_value=next_retry.timestamp())
+        synced = await sync_outbox_to_queue(batch_size=10)
+
+    assert synced == 1
+    result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
+    assert result.scalars().all() == []
 
 
 @pytest.mark.unit
