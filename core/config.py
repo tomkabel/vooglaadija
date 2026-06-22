@@ -2,7 +2,6 @@
 
 import math
 import os
-import warnings
 from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
@@ -201,12 +200,9 @@ class Settings(BaseSettings):
 
     def _validate_cors(self) -> None:
         if self.cors_origins == "*":
-            warnings.warn(
-                "CORS_ORIGINS is set to '*', allowing all origins. "
-                "This is insecure for production.",
-                stacklevel=2,
+            raise ValueError(
+                "CORS_ORIGINS cannot be '*' when credentialed requests are enabled"
             )
-            return
 
         origins = [origin.strip() for origin in self.cors_origins.split(",")]
         for origin in origins:

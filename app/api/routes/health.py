@@ -1,5 +1,5 @@
+import json
 import logging
-import os
 import time
 from typing import TypedDict
 
@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.schemas.error import ErrorCode, error_response_doc, success_response_doc
+from core.config import settings
 from core.redis_client import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,34 @@ class ReadinessResponse(BaseModel):
     redis: str
 
 
+async def _check_database(database_url: str) -> str:
+    if not database_url:
+        return "missing DATABASE_URL"
+
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return "ok"
+    except Exception as exc:
+        return f"error: {exc!s}"
+    finally:
+        await engine.dispose()
+
+
+async def _check_redis(redis_url: str) -> str:
+    if not redis_url:
+        return "missing REDIS_URL"
+
+    try:
+        client = get_redis_client()
+        if await client.ping():
+            return "ok"
+        return "error: unavailable"
+    except Exception as exc:
+        return f"error: {exc!s}"
+
+
 @router.get(
     "",
     summary="Service Health Check",
@@ -57,35 +86,13 @@ async def health_check() -> HealthStatus:
         "dependencies": {"database": "unknown", "redis": "unknown"},
     }
 
-    # 1. Independent Database Check
-    db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        try:
-            # We created a temporary engine just to check the pulse
-            engine = create_async_engine(db_url)
-            async with engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
-            health_status["dependencies"]["database"] = "ok"
-            await engine.dispose()
-        except Exception as e:
-            health_status["dependencies"]["database"] = f"error: {e!s}"
-            health_status["status"] = "unhealthy"
-    else:
-        health_status["dependencies"]["database"] = "missing DATABASE_URL"
+    health_status["dependencies"]["database"] = await _check_database(settings.database_url)
+    health_status["dependencies"]["redis"] = await _check_redis(settings.redis_url)
+
+    if health_status["dependencies"]["database"] != "ok":
         health_status["status"] = "unhealthy"
 
-    # 2. Independent Redis Check
-    redis_url = os.getenv("REDIS_URL")
-    if redis_url:
-        try:
-            client = get_redis_client()
-            if await client.ping():
-                health_status["dependencies"]["redis"] = "ok"
-        except Exception as e:
-            health_status["dependencies"]["redis"] = f"error: {e!s}"
-            health_status["status"] = "unhealthy"
-    else:
-        health_status["dependencies"]["redis"] = "missing REDIS_URL"
+    if health_status["dependencies"]["redis"] != "ok":
         health_status["status"] = "unhealthy"
 
     return health_status
@@ -102,8 +109,8 @@ async def health_check() -> HealthStatus:
             "Service is ready",
             {
                 "status": "ready",
-                "database": "connected",
-                "redis": "connected",
+                "database": "ok",
+                "redis": "ok",
             },
         ),
         503: error_response_doc(
@@ -120,35 +127,20 @@ async def readiness_check() -> ReadinessResponse | Response:
     Returns 503 if any dependency is unhealthy, allowing
     Kubernetes to remove this pod from service endpoints.
     """
-    db_status = "connected"
-    redis_status = "connected"
+    db_status = await _check_database(settings.database_url)
+    if db_status != "ok":
+        logger.warning("Database readiness check failed", extra={"database_status": db_status})
+        if not db_status.startswith("missing "):
+            db_status = "error: unavailable"
 
-    # Check database connectivity
-    try:
-        db_url = os.getenv("DATABASE_URL")
-        if not db_url:
-            db_status = "error: missing DATABASE_URL"
-        else:
-            engine = create_async_engine(db_url)
-            try:
-                async with engine.connect() as conn:
-                    await conn.execute(text("SELECT 1"))
-            finally:
-                await engine.dispose()
-    except Exception:
-        logger.exception("Database readiness check failed")
-        db_status = "error: unavailable"
-
-    # Check Redis connectivity
-    try:
-        client = get_redis_client()
-        await client.ping()
-    except Exception:
-        logger.exception("Redis readiness check failed")
-        redis_status = "error: unavailable"
+    redis_status = await _check_redis(settings.redis_url)
+    if redis_status != "ok":
+        logger.warning("Redis readiness check failed", extra={"redis_status": redis_status})
+        if not redis_status.startswith("missing "):
+            redis_status = "error: unavailable"
 
     # Determine overall status
-    is_ready = db_status == "connected" and redis_status == "connected"
+    is_ready = db_status == "ok" and redis_status == "ok"
 
     response_data = {
         "status": "ready" if is_ready else "not_ready",
@@ -158,9 +150,6 @@ async def readiness_check() -> ReadinessResponse | Response:
 
     if is_ready:
         return ReadinessResponse(**response_data)
-
-    # Return 503 with JSON body when not ready
-    import json
 
     return Response(
         content=json.dumps(response_data),

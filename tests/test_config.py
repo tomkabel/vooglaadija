@@ -3,7 +3,6 @@
 import os
 import subprocess
 import sys
-import warnings
 from pathlib import Path
 
 import pytest
@@ -241,18 +240,14 @@ class TestSettingsProductionValidation:
                 db_password="",
             )
 
-    def test_wildcard_cors_issues_warning(self):
-        """CORS_ORIGINS='*' raises a UserWarning about insecure configuration."""
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+    def test_wildcard_cors_raises(self):
+        """CORS_ORIGINS='*' fails closed in production settings."""
+        with pytest.raises((ValidationError, ValueError), match="CORS_ORIGINS cannot be"):
             _make_production_settings(
                 secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 cors_origins="*",
             )
-        assert any("allowing all origins" in str(warning.message) for warning in w), (
-            "Expected warning about wildcard CORS origins"
-        )
 
     def test_valid_cors_origins_are_accepted(self):
         """HTTP and HTTPS CORS origins, including ports, are accepted and normalized."""
