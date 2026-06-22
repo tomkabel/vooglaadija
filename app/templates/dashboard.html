@@ -164,6 +164,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script id="status-badge-templates" type="application/json">{{ status_badge_templates_json() }}</script>
+<script id="status-badge-templates" type="application/json">{{ status_badge_templates_json() | safe }}</script>
 <script src="/static/js/dashboard.js" defer></script>
 {% endblock %}

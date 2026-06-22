@@ -4,8 +4,6 @@ import html
 import json
 import re
 
-from markupsafe import Markup
-
 _STATUS_LABELS = {
     "pending": "Pending",
     "processing": "Processing",
@@ -25,45 +23,40 @@ def _status_class_suffix(status: str | None) -> str:
     return suffix or "unknown"
 
 
-def _status_badge_html(status: str | None) -> Markup:
+def _status_badge_html(status: str | None) -> str:
     """Render a safe status badge for a download job status."""
     raw_status = str(status or "unknown").strip() or "unknown"
     normalized_status = raw_status.lower()
     label = _STATUS_LABELS.get(normalized_status, raw_status)
     class_suffix = _status_class_suffix(raw_status)
-    return Markup(f'<span class="status-badge status-{class_suffix}">{html.escape(label)}</span>')
+    return f'<span class="status-badge status-{class_suffix}">{html.escape(label)}</span>'
 
 
-def _status_badge_templates_json() -> Markup:
+def _status_badge_templates_json() -> str:
     """Return helper-generated badge labels for client-side row creation."""
     payload = {"known": {status: _STATUS_LABELS[status] for status in sorted(_STATUS_LABELS)}}
     serialized = json.dumps(payload, separators=(",", ":"))
-    safe_serialized = (
+    return (
         serialized.replace("&", "\\u0026")
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
         .replace("'", "\\u0027")
     )
-    return Markup(safe_serialized)
 
 
-def _error_html(message: str) -> Markup:
+def _error_html(message: str) -> str:
     """Render a standardized error HTML fragment."""
-    return Markup(
-        f"<div class='error-box' role='alert' aria-live='assertive'>{html.escape(message)}</div>"
-    )
+    return f"<div class='error-box' role='alert' aria-live='assertive'>{html.escape(message)}</div>"
 
 
-def _success_html(message: str) -> Markup:
+def _success_html(message: str) -> str:
     """Render a standardized success HTML fragment."""
-    return Markup(
-        f"<div class='success-box' role='status' aria-live='polite'>{html.escape(message)}</div>"
-    )
+    return f"<div class='success-box' role='status' aria-live='polite'>{html.escape(message)}</div>"
 
 
-def _rate_limit_error_html(detail: str) -> Markup:
+def _rate_limit_error_html(detail: str) -> str:
     """Render the HTMX rate-limit error fragment."""
-    return Markup(
+    return (
         '<div class="error-box" role="alert" aria-live="assertive">\n'
         '  <svg class="h-5 w-5 flex-shrink-0 mt-0.5" '
         'xmlns="http://www.w3.org/2000/svg" fill="none" '
