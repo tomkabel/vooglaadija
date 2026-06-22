@@ -95,8 +95,8 @@ COPY --link --from=frontend-builder /app/frontend/node_modules/htmx.org/dist/htm
 RUN mkdir -p /app/app/static/swagger && \
     curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui-bundle.js -o /app/app/static/swagger/swagger-ui-bundle.js && \
     curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui.css -o /app/app/static/swagger/swagger-ui.css && \
-    echo "e692745937658ac8144a915552aac39392af19d91caeb6733c831115d5d1e7d6b804ef201ff894990210d6937d0b9ca5  /app/app/static/swagger/swagger-ui-bundle.js" | sha384sum -c - && \
-    echo "1b65be6b705a9eae9a123e0beae8009c46b27745452ed08f66abfd24e6cd5dac779923aa03b5a20d85a8217c1527067c  /app/app/static/swagger/swagger-ui.css" | sha384sum -c -
+    echo "0028baa75a6060bac3a81329f501985abbdc1d527a5c16ac87977fb8722684d27a0092ae437ab3be434867ae18f9156d  /app/app/static/swagger/swagger-ui-bundle.js" | sha384sum -c - && \
+    echo "f50d9fa52fb1792e1f7c9cba09a827c28525fb895d01884eb3da6066e10ac72a5532876199917378c96f56c0237fbb93  /app/app/static/swagger/swagger-ui.css" | sha384sum -c -
 
 # ============================================
 # Stage 4: Runtime Base
