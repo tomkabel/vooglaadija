@@ -1,6 +1,6 @@
 # VPS Deployment Guide
 
-**Target**: Ubuntu 25 VPS at `37.114.46.226` **Domain**: `youtube.tomabel.ee`
+**Target**: Ubuntu 25 VPS at `37.114.46.226` **Domain**: `example.com`
 
 ---
 
@@ -52,7 +52,7 @@ Installs Docker, Docker Compose, nginx, certbot, UFW firewall.
 
 ### Phase 2: DNS Verification
 
-Confirms `youtube.tomabel.ee` resolves to `37.114.46.226`.
+Confirms `example.com` resolves to `37.114.46.226`.
 
 ### Phase 3: Directory Setup
 
@@ -70,7 +70,7 @@ Confirms `youtube.tomabel.ee` resolves to `37.114.46.226`.
 
 ### Phase 5: Nginx Configuration
 
-- Deploys HTTPS configuration for `youtube.tomabel.ee`
+- Deploys HTTPS configuration for `example.com`
 - HTTP → HTTPS redirect on port 80
 - TLS 1.2/1.3 with secure ciphers
 - Security headers (HSTS, X-Frame-Options, etc.)
@@ -83,7 +83,7 @@ Creates `.env` file with:
 - Generated secure `SECRET_KEY` (32+ chars)
 - Strong `DB_PASSWORD` and `REDIS_PASSWORD`
 - `COOKIE_SECURE=True` (HTTPS required)
-- `CORS_ORIGINS=https://youtube.tomabel.ee`
+- `CORS_ORIGINS=https://example.com`
 
 ### Phase 7: Application Deployment
 
@@ -162,16 +162,16 @@ If you prefer manual control:
 sudo apt update && sudo apt install -y docker.io docker-compose-plugin nginx certbot python3-certbot-nginx
 
 # 2. DNS verification
-dig +short youtube.tomabel.ee  # Should return 37.114.46.226
+dig +short example.com  # Should return 37.114.46.226
 
 # 3. Copy project files
 rsync -av --exclude='.git' --exclude='.env' ./ ubuntu@37.114.46.226:/opt/vooglaadija/
 
 # 4. SSL certificates (on VPS)
-sudo certbot certonly --webroot -w /var/www/certbot -d youtube.tomabel.ee
+sudo certbot certonly --webroot -w /var/www/certbot -d example.com
 # Copy to project:
-sudo cp /etc/letsencrypt/live/youtube.tomabel.ee/fullchain.pem /opt/vooglaadija/infra/ssl/
-sudo cp /etc/letsencrypt/live/youtube.tomabel.ee/privkey.pem /opt/vooglaadija/infra/ssl/
+sudo cp /etc/letsencrypt/live/example.com/fullchain.pem /opt/vooglaadija/infra/ssl/
+sudo cp /etc/letsencrypt/live/example.com/privkey.pem /opt/vooglaadija/infra/ssl/
 
 # 5. Create .env
 cd /opt/vooglaadija
@@ -181,7 +181,7 @@ DB_PASSWORD=<generate strong password>
 DB_NAME=ytprocessor
 REDIS_PASSWORD=<generate strong password>
 SECRET_KEY=<python3 -c "import secrets; print(secrets.token_hex(32))">
-CORS_ORIGINS=https://youtube.tomabel.ee
+CORS_ORIGINS=https://example.com
 COOKIE_SECURE=True
 EOF
 
@@ -190,7 +190,7 @@ cd /opt/vooglaadija
 docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
 
 # 7. Verify
-curl -I https://youtube.tomabel.ee
+curl -I https://example.com
 ```
 
 ---
@@ -209,7 +209,7 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml logs -f
 openssl x509 -in infra/ssl/fullchain.pem -noout -enddate
 
 # Test API health
-curl https://youtube.tomabel.ee/api/v1/health
+curl https://example.com/api/v1/health
 ```
 
 ---
@@ -233,7 +233,7 @@ docker volume rm ytprocessor-postgres-data ytprocessor-redis-data ytprocessor-st
 
 ```bash
 # On VPS, check:
-dig +short youtube.tomabel.ee
+dig +short example.com
 # Should return 37.114.46.226
 
 # If wrong, wait for DNS propagation (can take up to 48 hours)
@@ -246,10 +246,10 @@ dig +short youtube.tomabel.ee
 ls -la /opt/vooglaadija/infra/ssl/
 
 # Verify certificate:
-openssl s_client -connect youtube.tomabel.ee:443 -servername youtube.tomabel.ee
+openssl s_client -connect example.com:443 -servername example.com
 
 # Re-run certbot if needed:
-sudo certbot certonly --webroot -w /var/www/certbot -d youtube.tomabel.ee --force-renewal
+sudo certbot certonly --webroot -w /var/www/certbot -d example.com --force-renewal
 ```
 
 ### Container won't start
@@ -282,7 +282,7 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml exec api p
 - [ ] SSL certificates valid and not expired
 - [ ] `.env` file exists with strong passwords
 - [ ] All containers running (`docker compose ps`)
-- [ ] HTTPS returns 200 (`curl -I https://youtube.tomabel.ee`)
+- [ ] HTTPS returns 200 (`curl -I https://example.com`)
 - [ ] API health check passes
 - [ ] Login/Register pages accessible
 - [ ] Download job creation works

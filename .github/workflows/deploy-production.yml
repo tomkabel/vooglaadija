@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 20
     environment:
       name: production
-      url: https://youtube.tomabel.ee
+      url: https://${{ vars.DEPLOY_DOMAIN }}
     permissions:
       contents: read
       issues: write
@@ -113,23 +113,44 @@ jobs:
               printf '%s\n' "$host_key" >> ~/.ssh/known_hosts
           done <<< "$SSH_KNOWN_HOSTS"
 
-      - name: Deploy to server
+      - name: Prepare deploy payload
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
-          ENV_B64: ${{ secrets.ENV_FILE_PROD }}
+          ENV_FILE_PROD: ${{ secrets.ENV_FILE_PROD }}
+        run: |
+          install -m 700 -d .deploy-payload
+          printf '%s' "$GHCR_PAT" > .deploy-payload/ghcr_pat
+          printf '%s' "$ENV_FILE_PROD" > .deploy-payload/.env
+          chmod 600 .deploy-payload/ghcr_pat .deploy-payload/.env
+
+      - name: Deploy to server
+        env:
           IMAGE_TAG: ${{ github.sha }}
           GHCR_OWNER: ${{ github.repository_owner }}
           GHCR_REPO: ${{ github.event.repository.name }}
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
           SERVER_IP: ${{ secrets.SERVER_IP }}
         run: |
-          ssh "ubuntu@${SERVER_IP}" \
-            "GHCR_PAT='$GHCR_PAT' ENV_B64='$ENV_B64' IMAGE_TAG='$IMAGE_TAG' GHCR_OWNER='$GHCR_OWNER' GHCR_REPO='$GHCR_REPO' bash -s" \
-            < infra/deploy/remote-deploy.sh
+          DEPLOY_TMP_DIR="/tmp/vooglaadija-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh "ubuntu@${SERVER_IP}" "mkdir -p '${DEPLOY_TMP_DIR}' && chmod 700 '${DEPLOY_TMP_DIR}'"
+          scp infra/deploy/remote-deploy.sh "ubuntu@${SERVER_IP}:${DEPLOY_TMP_DIR}/remote-deploy.sh"
+          scp .deploy-payload/ghcr_pat "ubuntu@${SERVER_IP}:${DEPLOY_TMP_DIR}/ghcr_pat"
+          scp .deploy-payload/.env "ubuntu@${SERVER_IP}:${DEPLOY_TMP_DIR}/.env"
+          ssh "ubuntu@${SERVER_IP}" "
+            chmod 700 '${DEPLOY_TMP_DIR}/remote-deploy.sh' &&
+            chmod 600 '${DEPLOY_TMP_DIR}/ghcr_pat' '${DEPLOY_TMP_DIR}/.env' &&
+            IMAGE_TAG='${IMAGE_TAG}' GHCR_OWNER='${GHCR_OWNER}' GHCR_REPO='${GHCR_REPO}' DEPLOY_DOMAIN='${DEPLOY_DOMAIN}' GHCR_PAT_FILE='${DEPLOY_TMP_DIR}/ghcr_pat' ENV_FILE_PATH='${DEPLOY_TMP_DIR}/.env' bash '${DEPLOY_TMP_DIR}/remote-deploy.sh';
+            status=\$?;
+            rm -rf '${DEPLOY_TMP_DIR}';
+            exit \$status
+          "
 
       - name: Post-deploy health check
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
         run: |
           for i in {1..12}; do
-            if curl -sf --max-time 10 https://youtube.tomabel.ee/health; then
+            if curl -sf --max-time 10 "https://${DEPLOY_DOMAIN}/health"; then
               echo "Health check passed"
               exit 0
             fi

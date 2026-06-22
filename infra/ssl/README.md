@@ -33,11 +33,11 @@ For compatibility with various tools, symlinks are provided:
 On the VPS, run:
 
 ```bash
-sudo certbot certonly --webroot -w /var/www/certbot -d youtube.tomabel.ee
+sudo certbot certonly --webroot -w /var/www/certbot -d example.com
 
 # Copy to this directory:
-sudo cp /etc/letsencrypt/live/youtube.tomabel.ee/fullchain.pem ./
-sudo cp /etc/letsencrypt/live/youtube.tomabel.ee/privkey.pem ./
+sudo cp /etc/letsencrypt/live/example.com/fullchain.pem ./
+sudo cp /etc/letsencrypt/live/example.com/privkey.pem ./
 
 # Create compatibility symlinks:
 ln -sf fullchain.pem cert.pem
@@ -62,7 +62,7 @@ Copy certificates from a local machine to the VPS:
 
 ```bash
 # Local machine
-scp user@vps:/etc/letsencrypt/live/youtube.tomabel.ee/*.pem ./infra/ssl/
+scp user@vps:/etc/letsencrypt/live/example.com/*.pem ./infra/ssl/
 
 # Or use the deploy.sh script (Phase 4) which handles this automatically
 ```
@@ -71,10 +71,10 @@ scp user@vps:/etc/letsencrypt/live/youtube.tomabel.ee/*.pem ./infra/ssl/
 
 ## Let's Encrypt File Structure
 
-Let's Encrypt creates these files in `/etc/letsencrypt/live/youtube.tomabel.ee/`:
+Let's Encrypt creates these files in `/etc/letsencrypt/live/example.com/`:
 
 ```text
-/etc/letsencrypt/live/youtube.tomabel.ee/
+/etc/letsencrypt/live/example.com/
 ├── fullchain.pem   ← Use this as fullchain.pem
 ├── privkey.pem     ← Use this as privkey.pem
 ├── chain.pem      (intermediate CA)
@@ -144,7 +144,7 @@ openssl x509 -in fullchain.pem -noout -subject -issuer -dates
 nginx -t
 
 # Verify HTTPS is working
-curl -I https://youtube.tomabel.ee
+curl -I https://example.com
 ```
 
 ---
@@ -172,5 +172,5 @@ Check that nginx is using the correct config:
 
 ```bash
 docker compose logs nginx
-openssl s_client -connect youtube.tomabel.ee:443 -servername youtube.tomabel.ee
+openssl s_client -connect example.com:443 -servername example.com
 ```

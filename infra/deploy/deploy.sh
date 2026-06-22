@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===========================================
 # Vooglaadija - VPS Deployment Script
-# For subdomain: youtube.tomabel.ee
+# Domain is supplied with DEPLOY_DOMAIN
 # Target: Ubuntu 25 VPS at 37.114.46.226
 # ===========================================
 #
@@ -25,7 +25,8 @@
 set -euo pipefail
 
 # Configuration
-DOMAIN="youtube.tomabel.ee"
+: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"
+DOMAIN="$DEPLOY_DOMAIN"
 DEPLOY_DIR="/opt/vooglaadija"
 LETSENCRYPT_DIR="$DEPLOY_DIR/infra/letsencrypt"
 CERTBOT_DATA_DIR="$DEPLOY_DIR/infra/certbot/data"
@@ -401,7 +402,8 @@ SECRET_KEY_PREVIOUS=
 COOKIE_SECURE=True
 
 # CORS - HTTPS required
-CORS_ORIGINS=https://youtube.tomabel.ee
+DEPLOY_DOMAIN=${DEPLOY_DOMAIN}
+CORS_ORIGINS=https://${DEPLOY_DOMAIN}
 
 # Token Expiry
 ACCESS_TOKEN_EXPIRE_MINUTES=15

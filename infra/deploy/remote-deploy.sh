@@ -7,20 +7,21 @@ set -euo pipefail
 # ============================================
 #
 # Environment variables passed from the workflow:
-#   GHCR_PAT      - Classic PAT with read:packages scope
-#   ENV_B64       - Base64-encoded production .env file
+#   GHCR_PAT_FILE - Path to a 0600 file containing GHCR PAT
+#   ENV_FILE_PATH - Path to a 0600 production .env file
 #   IMAGE_TAG     - Commit SHA for immutable image tags
 #   GHCR_OWNER    - GitHub repository owner
 #   GHCR_REPO     - GitHub repository name
+#   DEPLOY_DOMAIN - Public production domain
 #
 # Usage (from GitHub Actions runner):
 #   ssh ubuntu@37.114.46.226 \
-#     "GHCR_PAT='...' ENV_B64='...' IMAGE_TAG='...' GHCR_OWNER='...' GHCR_REPO='...' bash -s" \
+#     "GHCR_PAT_FILE='/tmp/.../ghcr_pat' ENV_FILE_PATH='/tmp/.../.env' IMAGE_TAG='...' GHCR_OWNER='...' GHCR_REPO='...' DEPLOY_DOMAIN='example.com' bash /tmp/.../remote-deploy.sh" \
 #     < infra/deploy/remote-deploy.sh
 # ============================================
 
 DEPLOY_DIR="/opt/vooglaadija"
-DOMAIN="youtube.tomabel.ee"
+DOMAIN=""
 GHCR_REGISTRY="ghcr.io"
 
 # Colors
@@ -39,11 +40,14 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 # Configuration Validation
 # ============================================
 
-: "${GHCR_PAT:?GHCR_PAT is required}"
-: "${ENV_B64:?ENV_B64 is required}"
+: "${GHCR_PAT_FILE:?GHCR_PAT_FILE is required}"
+: "${ENV_FILE_PATH:?ENV_FILE_PATH is required}"
 : "${IMAGE_TAG:?IMAGE_TAG is required}"
 : "${GHCR_OWNER:?GHCR_OWNER is required}"
 : "${GHCR_REPO:?GHCR_REPO is required}"
+: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"
+
+DOMAIN="$DEPLOY_DOMAIN"
 
 API_IMAGE="${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_REPO}:${IMAGE_TAG}"
 WORKER_IMAGE="${GHCR_REGISTRY}/${GHCR_OWNER}/${GHCR_REPO}:worker-${IMAGE_TAG}"
@@ -80,7 +84,7 @@ write_env() {
     log_step "Writing production .env..."
 
     local env_tmp="${DEPLOY_DIR}/.env.tmp"
-    printf '%s' "$ENV_B64" | base64 -d > "$env_tmp"
+    cp "$ENV_FILE_PATH" "$env_tmp"
     chmod 600 "$env_tmp"
     mv "$env_tmp" "${DEPLOY_DIR}/.env"
     log_info ".env written successfully"
@@ -92,7 +96,7 @@ write_env() {
 
 ghcr_login() {
     log_step "Logging into GHCR..."
-    echo "$GHCR_PAT" | docker login "$GHCR_REGISTRY" -u "$GHCR_OWNER" --password-stdin
+    docker login "$GHCR_REGISTRY" -u "$GHCR_OWNER" --password-stdin < "$GHCR_PAT_FILE"
     log_info "GHCR login successful"
 }
 
@@ -211,6 +215,10 @@ rollback() {
         return 1
     fi
 
+    if ! verify_backup_images; then
+        return 1
+    fi
+
     cat > /tmp/rollback-override.yml << EOF
 services:
   api:
@@ -235,6 +243,19 @@ EOF
     else
         log_error "Rollback health check failed (HTTP $http_code). Manual intervention required."
     fi
+}
+
+verify_backup_images() {
+    log_step "Verifying rollback images exist in registry..."
+    local image
+    for image in "$BACKUP_API" "$BACKUP_WORKER"; do
+        [[ -n "$image" ]] || continue
+        if ! docker manifest inspect "$image" >/dev/null 2>&1; then
+            log_error "Backup image is unavailable: $image"
+            return 1
+        fi
+    done
+    log_info "Rollback images verified"
 }
 
 # ============================================

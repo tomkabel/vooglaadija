@@ -15,6 +15,7 @@ COMPOSE_PASSWORD_URL_PATTERNS = (
     "DATABASE_URL: postgresql+asyncpg://",
     "REDIS_URL: redis://:",
 )
+PRODUCTION_DOMAIN_LITERAL = "youtube.tomabel.ee"
 
 
 def _git(*args: str) -> list[str]:
@@ -143,6 +144,62 @@ def test_compose_paths_do_not_embed_rotated_passwords_in_urls():
 
     assert "DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}" in demo_compose
     assert "REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}" in demo_compose
+
+
+@pytest.mark.unit
+def test_production_deploy_domain_is_parameterized():
+    """Production deploy files use DEPLOY_DOMAIN rather than a fixed hostname."""
+    files = [
+        ".env.example",
+        ".github/workflows/deploy-production.yml",
+        "docker-compose.production.yml",
+        "infra/deploy/deploy.sh",
+        "infra/deploy/README.md",
+        "infra/nginx/nginx.production.conf",
+        "infra/ssl/README.md",
+    ]
+
+    for relative_path in files:
+        assert PRODUCTION_DOMAIN_LITERAL not in (REPO_ROOT / relative_path).read_text()
+
+    env_example = (REPO_ROOT / ".env.example").read_text()
+    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
+    nginx_template = (REPO_ROOT / "infra/nginx/nginx.production.conf").read_text()
+    deploy_script = (REPO_ROOT / "infra/deploy/deploy.sh").read_text()
+
+    assert "DEPLOY_DOMAIN=example.com" in env_example
+    assert 'CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+    assert 'DEPLOY_DOMAIN: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+    assert "server_name ${DEPLOY_DOMAIN};" in nginx_template
+    assert "/etc/letsencrypt/live/${DEPLOY_DOMAIN}/fullchain.pem" in nginx_template
+    assert ': "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in deploy_script
+    assert "DOMAIN=\"$DEPLOY_DOMAIN\"" in deploy_script
+
+
+@pytest.mark.unit
+def test_remote_deploy_uses_secret_files_not_ssh_env_payloads():
+    """Production deploy passes secret material through files, not SSH env args."""
+    workflow = (REPO_ROOT / ".github/workflows/deploy-production.yml").read_text()
+    remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
+
+    assert "GHCR_PAT=.*bash -s" not in workflow
+    assert "ENV_B64=.*bash -s" not in workflow
+    assert "GHCR_PAT_FILE" in workflow
+    assert "ENV_FILE_PATH" in workflow
+    assert ': "${GHCR_PAT_FILE:?GHCR_PAT_FILE is required}"' in remote_script
+    assert ': "${ENV_FILE_PATH:?ENV_FILE_PATH is required}"' in remote_script
+    assert 'docker login "$GHCR_REGISTRY" -u "$GHCR_OWNER" --password-stdin < "$GHCR_PAT_FILE"' in remote_script
+    assert 'printf \'%s\' "$ENV_B64"' not in remote_script
+
+
+@pytest.mark.unit
+def test_remote_deploy_verifies_rollback_images_before_restore():
+    """Rollback verifies captured backup image tags before changing services."""
+    remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
+
+    assert "docker manifest inspect \"$image\"" in remote_script
+    assert "verify_backup_images" in remote_script
+    assert "Backup image is unavailable" in remote_script
 
 
 @pytest.mark.unit
