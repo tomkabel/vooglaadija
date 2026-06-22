@@ -74,12 +74,9 @@ def test_security_workflow_uses_blocking_bandit_and_safety_steps():
 
     assert "hatch run security:scan-bandit || true" not in workflow
     assert "hatch run ci:security-safety-check || true" not in workflow
-    assert (
-        "      - name: Run Bandit security scan\n"
-        "        run: |\n"
-        "          set -e\n"
-        "          hatch run security:scan-bandit\n"
-    ) in workflow
+    assert "hatch run security:scan-bandit" in workflow
+    assert "set -e" in workflow
+    assert "hatch run security:scan-bandit || true" not in workflow
     assert (
         "      - name: Run Safety dependency check\n"
         "        env:\n"

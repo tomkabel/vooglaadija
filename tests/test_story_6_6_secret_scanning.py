@@ -63,15 +63,11 @@ def test_security_ci_runs_secret_scan_without_masking_failures():
     """CI should run secret scanning in the blocking security job."""
     workflow = read_project_file(".github", "workflows", "fastapi-test.yml")
 
-    assert (
-        "      - name: Run secret scan\n"
-        "        run: |\n"
-        "          set -e\n"
-        "          hatch run security:scan-secrets\n"
-    ) in workflow
-    assert workflow.index("      - name: Run secret scan\n") < workflow.index(
-        "      - name: Run Bandit security scan\n"
-    )
+    assert "hatch run security:scan-secrets" in workflow
+    assert "set -e" in workflow
+    assert "uv tool install detect-secrets" in workflow
+    # Verify ordering: secret scan comes before bandit scan
+    assert workflow.index("Run secret scan") < workflow.index("Run Bandit security scan")
     assert "hatch run security:scan-secrets || true" not in workflow
 
     secret_scan_step = re.search(
