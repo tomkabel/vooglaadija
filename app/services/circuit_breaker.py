@@ -171,7 +171,11 @@ class CircuitBreaker:
             d_failures = await self._distributed_failure_count()
             d_last_failure = await self._distributed_last_failure()
 
-            if self._use_redis and d_failures >= self.failure_threshold and d_last_failure is not None:
+            if (
+                self._use_redis
+                and d_failures >= self.failure_threshold
+                and d_last_failure is not None
+            ):
                 if self._state != CircuitState.OPEN:
                     elapsed = time.time() - d_last_failure
                     if elapsed < self.reset_timeout:

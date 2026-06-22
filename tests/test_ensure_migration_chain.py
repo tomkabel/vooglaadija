@@ -16,7 +16,9 @@ def test_broken_chain_fails_safe_without_override(monkeypatch, capsys):
     monkeypatch.delenv("ALLOW_MIGRATION_CHAIN_STAMP", raising=False)
 
     with (
-        patch.object(ensure_migration_chain, "_get_available_revisions", return_value={"002", "003"}),
+        patch.object(
+            ensure_migration_chain, "_get_available_revisions", return_value={"002", "003"}
+        ),
         patch.object(ensure_migration_chain, "_get_db_revision", return_value="001"),
         patch("alembic.config.Config"),
         patch("alembic.script.ScriptDirectory.from_config") as script_dir,
@@ -38,7 +40,9 @@ def test_broken_chain_can_be_explicitly_overridden(monkeypatch):
     monkeypatch.setenv("ALLOW_MIGRATION_CHAIN_STAMP", "1")
 
     with (
-        patch.object(ensure_migration_chain, "_get_available_revisions", return_value={"002", "003"}),
+        patch.object(
+            ensure_migration_chain, "_get_available_revisions", return_value={"002", "003"}
+        ),
         patch.object(ensure_migration_chain, "_get_db_revision", return_value="001"),
         patch("alembic.config.Config"),
         patch("alembic.script.ScriptDirectory.from_config") as script_dir,

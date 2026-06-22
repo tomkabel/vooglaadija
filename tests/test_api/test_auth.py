@@ -400,7 +400,9 @@ async def test_logout_blacklists_both_token_cookies():
             json={"email": "logout-blacklist@example.com", "password": "testpassword123"},
         )
 
-        with patch("app.services.token_blacklist.blacklist_token", new_callable=AsyncMock) as mock_blacklist:
+        with patch(
+            "app.services.token_blacklist.blacklist_token", new_callable=AsyncMock
+        ) as mock_blacklist:
             response = await client.post("/api/v1/auth/logout")
 
     assert response.status_code == 303
