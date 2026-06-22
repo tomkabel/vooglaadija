@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import datetime
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Index, Integer, String, and_, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import column, func
 
 from core.models.base import Base
+
+if TYPE_CHECKING:
+    from core.models.download_job import DownloadJob
 
 
 def not_deleted():
@@ -38,3 +44,5 @@ class User(Base):
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    download_jobs: Mapped[list[DownloadJob]] = relationship("DownloadJob", back_populates="user")

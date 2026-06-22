@@ -28,6 +28,7 @@ class FailedJob(Base):
     original_job: Mapped[DownloadJob | None] = relationship(
         "DownloadJob",
         foreign_keys=[original_job_id],
+        back_populates="failed_job",
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
