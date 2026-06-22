@@ -35,6 +35,22 @@ log_error() {
   echo -e "${RED}[ERROR]${NC} $1"
 }
 
+display_command() {
+  local -a rendered=()
+  local part
+
+  for part in "$@"; do
+    if [[ "${part}" == -token=* ]]; then
+      rendered+=("-token=<redacted>")
+    else
+      rendered+=("${part}")
+    fi
+  done
+
+  printf '%q ' "${rendered[@]}"
+  printf '\n'
+}
+
 show_help() {
   cat <<EOF
 NetData Cloud Claim Script for Vooglaadija
@@ -162,7 +178,9 @@ claim_container() {
   fi
 
   if $DRY_RUN; then
-    log_warn "DRY RUN: ${cmd[*]}"
+    local display
+    display="$(display_command "${cmd[@]}")"
+    log_warn "DRY RUN: ${display}"
   else
     if "${cmd[@]}"; then
       log_info "Successfully claimed $container_name"
@@ -180,10 +198,10 @@ get_netdata_containers() {
 echo ""
 log_info "NetData Cloud Claim Script"
 echo ""
-log_info "Token: ${CLAIM_TOKEN:0:10}..."
-log_info "URL: $CLAIM_URL"
-if [[ -n "$ROOMS_ARG" ]]; then
-  log_info "Rooms: $ROOMS_ARG"
+log_info "Token: <redacted>"
+log_info "URL: ${CLAIM_URL}"
+if [[ -n "${ROOMS_ARG}" ]]; then
+  log_info "Rooms: ${ROOMS_ARG}"
 fi
 echo ""
 

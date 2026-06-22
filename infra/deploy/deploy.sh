@@ -284,9 +284,9 @@ EOF
 
     log_info "Requesting certificate via certbot --dns-cloudflare..."
 
-    local EMAIL_FLAG=""
+    local -a EMAIL_ARGS=()
     if [[ -n "${CLOUDFLARE_EMAIL:-}" ]]; then
-        EMAIL_FLAG="--email ${CLOUDFLARE_EMAIL} --no-eff-email"
+        EMAIL_ARGS=(--email "${CLOUDFLARE_EMAIL}" --no-eff-email)
     fi
 
     docker run --rm \
@@ -298,7 +298,7 @@ EOF
         --dns-cloudflare-propagation-seconds 30 \
         --non-interactive \
         --agree-tos \
-        ${EMAIL_FLAG} \
+        "${EMAIL_ARGS[@]}" \
         -d "$DOMAIN" \
         --verbose
 
@@ -413,6 +413,9 @@ STORAGE_PATH=/app/storage
 # Observability (disabled for production)
 FEATURE_METRICS_ENABLED=false
 FEATURE_TRACING_ENABLED=false
+NETDATA_CLAIM_TOKEN=
+NETDATA_CLAIM_URL=https://app.netdata.cloud
+NETDATA_CLAIM_ROOMS=
 
 # ===========================================
 # Cloudflare DNS Challenge Credentials

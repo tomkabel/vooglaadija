@@ -42,7 +42,7 @@ x-netdata-common: &netdata-common
 x-netdata-env: &netdata-env
   NETDATA_CLAIM_TOKEN: '${NETDATA_CLAIM_TOKEN:-}'
   NETDATA_CLAIM_URL: '${NETDATA_CLAIM_URL:-https://app.netdata.cloud}'
-  NETDATA_CLAIM_ROOMS: '${NETDATA_CLAIM_ROOM:-}'
+  NETDATA_CLAIM_ROOMS: '${NETDATA_CLAIM_ROOMS:-${NETDATA_CLAIM_ROOM:-}}'
   NETDATA_INSECURE_SKIP_TLS_VERIFY: 'false'
 
 services:

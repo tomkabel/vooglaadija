@@ -36,10 +36,8 @@ services:
   api:
     environment:
       <<: *production-env
-      # Ensure database URL uses docker network
-      DATABASE_URL: 'postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/ytprocessor'
-      # Redis with password auth
-      REDIS_URL: 'redis://:${REDIS_PASSWORD}@redis:6379'
+      # core.config.Settings builds DB/Redis URLs from component env vars so
+      # rotated passwords are URL-encoded correctly.
     # Remove direct port mapping - only access via nginx
     ports: []
     # Wait for storage to be initialized
@@ -66,8 +64,8 @@ services:
   worker:
     environment:
       <<: *production-env
-      DATABASE_URL: 'postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/ytprocessor'
-      REDIS_URL: 'redis://:${REDIS_PASSWORD}@redis:6379'
+      # core.config.Settings builds DB/Redis URLs from component env vars so
+      # rotated passwords are URL-encoded correctly.
     # Wait for storage initialization
     depends_on:
       storage-init:

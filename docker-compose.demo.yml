@@ -31,11 +31,15 @@ services:
     image: vooglaadija-seed-demo:latest
     container_name: ytprocessor-seed-demo
     environment:
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: ${DB_NAME:-ytprocessor}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-postgres}:${DB_PASSWORD}@${DB_HOST:-db}:${DB_PORT:-5432}/${DB_NAME:-ytprocessor}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       STORAGE_PATH: /app/storage
     volumes:
