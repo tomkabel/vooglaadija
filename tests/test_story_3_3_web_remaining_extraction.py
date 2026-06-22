@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.main import app
 from core.models.download_job import DownloadJob
 from core.models.user import User
+from tests.route_introspection import iter_api_routes
 from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 
@@ -72,8 +73,7 @@ def test_moved_web_routes_are_registered_once_on_aggregate_router():
     """The aggregate app registers each moved web route exactly once."""
     observed_routes = [
         (method, route.path, route.endpoint.__module__)
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        for route in iter_api_routes(app)
         for method in route.methods
         if route.path
         in {

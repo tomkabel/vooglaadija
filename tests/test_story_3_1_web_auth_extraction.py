@@ -8,6 +8,7 @@ from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from tests.route_introspection import iter_api_routes
 
 
 def _csrf_cookie(response) -> str:
@@ -46,8 +47,7 @@ def test_web_auth_routes_are_registered_once_on_aggregate_router():
     """The aggregate application registers each extracted web auth route exactly once."""
     observed_routes = [
         (method, route.path, route.endpoint.__module__)
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        for route in iter_api_routes(app)
         for method in route.methods
         if route.path
         in {

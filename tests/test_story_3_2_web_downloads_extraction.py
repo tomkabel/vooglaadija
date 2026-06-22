@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.api.routes.sse import _emit_initial_snapshot
 from app.main import app
 from core.models.download_job import DownloadJob
+from tests.route_introspection import iter_api_routes
 from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 
@@ -54,8 +55,7 @@ def test_web_download_routes_are_registered_once_on_aggregate_router():
     """The aggregate app registers each extracted web download route exactly once."""
     observed_routes = [
         (method, route.path, route.endpoint.__module__)
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        for route in iter_api_routes(app)
         for method in route.methods
         if route.path
         in {
@@ -100,8 +100,7 @@ def test_downloads_stream_stays_owned_by_sse_router():
     """The aggregate app keeps /web/downloads/stream owned by the SSE route module."""
     observed_routes = [
         (method, route.path, route.endpoint.__module__)
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        for route in iter_api_routes(app)
         for method in route.methods
         if route.path == "/web/downloads/stream"
     ]
@@ -169,9 +168,7 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
         csrf_token = get_csrf_from_response(list_response) or csrf_token
         sse_events = await _emit_initial_snapshot(TestingSessionLocal, user_id, OrderedDict())
         sse_route = next(
-            route
-            for route in app.routes
-            if isinstance(route, APIRoute) and route.path == "/web/downloads/stream"
+            route for route in iter_api_routes(app) if route.path == "/web/downloads/stream"
         )
 
         delete_response = await client.delete(

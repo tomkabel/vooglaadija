@@ -4,9 +4,9 @@ import ast
 from pathlib import Path
 
 import pytest
-from fastapi.routing import APIRoute
 
 from app.main import app
+from tests.route_introspection import iter_api_routes
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_PATH = PROJECT_ROOT / "app/services/user_service.py"
@@ -130,8 +130,7 @@ def test_existing_web_route_ownership_stays_unchanged() -> None:
     """Story 3.1 and 3.3 Web route ownership remains unchanged after service extraction."""
     observed_routes = [
         (method, route.path, route.endpoint.__module__)
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        for route in iter_api_routes(app)
         for method in route.methods
         if route.path
         in {
