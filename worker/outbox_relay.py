@@ -91,7 +91,7 @@ async def cleanup_stale_outbox_entries(hours: int = 24) -> int:
     async with session_factory() as db:
         result = await db.execute(
             delete(Outbox).where(
-                Outbox.created_at < cutoff, Outbox.status.in_(["enqueued", "completed"])
+                Outbox.created_at < cutoff, Outbox.status == "pending"
             )
         )
         await db.commit()

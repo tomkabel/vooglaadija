@@ -394,4 +394,4 @@ def test_outbox_relay_static_contracts_are_preserved() -> None:
     assert ".with_for_update(skip_locked=True)" in source
     assert 'entry.event_type == "retry_scheduled"' in source
     assert "push_to_download_queue" in source
-    assert 'Outbox.status.in_(["enqueued", "completed"])' in source
+    assert 'Outbox.status == "pending"' in source
