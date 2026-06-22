@@ -248,6 +248,11 @@ services:
     command: ['--config=/etc/otel-collector-config.yml']
     volumes:
       - ./infra/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    environment:
+      # Used by infra/otel-collector-config.yml env expansion. The fallback is
+      # local/dev only; production should set a real OTLP/gRPC backend target.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-localhost:4317}
+      OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-false}
     ports:
       - '4317:4317' # OTLP gRPC
       - '4318:4318' # OTLP HTTP
