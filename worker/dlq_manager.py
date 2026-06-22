@@ -84,6 +84,7 @@ async def mark_failed_and_move_to_dlq(
         .values(
             status="failed",
             error=accumulated,
+            last_error=accumulated,
             error_category=decision.category.value,
             completed_at=datetime.now(UTC),
         )
@@ -132,6 +133,7 @@ async def reset_stuck_jobs(timeout_minutes: int = 10) -> int:
             .values(
                 status="failed",
                 error="Job timed out",
+                last_error="Job timed out",
                 error_category="timeout",
                 completed_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),

@@ -453,5 +453,6 @@ class DownloadService:
         job.retry_count = 0
         job.next_retry_at = None
         job.error = None
+        job.last_error = None
         job.error_category = None
         job.completed_at = None

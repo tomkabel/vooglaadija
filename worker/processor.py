@@ -192,6 +192,8 @@ async def _handle_circuit_open(db, active_job_id: UUID, cb_error: CircuitBreaker
             status="deferred",
             error=f"Circuit breaker open ({cb_error.service_name}), "
             f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
+            last_error=f"Circuit breaker open ({cb_error.service_name}), "
+            f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
             error_category="transient",
             updated_at=datetime.now(UTC),
         )

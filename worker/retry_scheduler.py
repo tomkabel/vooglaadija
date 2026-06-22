@@ -69,12 +69,6 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
                 f"'{category.value}' category: {error_str}"
             )
 
-        previous_errors = job.error or ""
-        if previous_errors:
-            accumulated = f"{previous_errors} \u2192 {final_error}"
-        else:
-            accumulated = final_error
-
         return RetryDecision(
             is_final=True,
             delay_seconds=None,
@@ -83,7 +77,7 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
             final_error=final_error,
             retry_after=None,
             retry_count=job.retry_count,
-            accumulated_error=accumulated,
+            accumulated_error=final_error,
             signal=classification.signal,
         )
 
@@ -109,12 +103,6 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
         category=category,
     )
 
-    previous = job.error or ""
-    if previous and job.retry_count > 0:
-        accumulated_error = f"{previous} \u2192 {formatted_error}"
-    else:
-        accumulated_error = formatted_error
-
     return RetryDecision(
         is_final=False,
         delay_seconds=delay_seconds,
@@ -125,7 +113,7 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
         retry_count=job.retry_count,
         next_retry_at=next_retry,
         formatted_error=formatted_error,
-        accumulated_error=accumulated_error,
+        accumulated_error=formatted_error,
         signal=classification.signal,
     )
 
@@ -148,6 +136,7 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
             retry_count=job.retry_count + 1,
             next_retry_at=decision.next_retry_at,
             error=decision.accumulated_error,
+            last_error=decision.accumulated_error,
             error_category=decision.category.value,
             updated_at=datetime.now(UTC),
         )
