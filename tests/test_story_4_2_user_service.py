@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.main import app
-from tests.route_introspection import iter_api_routes
+from tests.test_route_introspection import iter_api_routes
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_PATH = PROJECT_ROOT / "app/services/user_service.py"

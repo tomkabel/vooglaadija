@@ -13,9 +13,9 @@ from sqlalchemy import select
 from app.main import app
 from core.models.download_job import DownloadJob
 from core.models.user import User
-from tests.route_introspection import iter_api_routes
 from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
+from tests.test_route_introspection import iter_api_routes
 
 DASHBOARD_ROUTE_MODULE = "app.api.routes.web.web_dashboard"
 SETTINGS_ROUTE_MODULE = "app.api.routes.web.web_settings"

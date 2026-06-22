@@ -14,9 +14,9 @@ from sqlalchemy import select
 from app.api.routes.sse import _emit_initial_snapshot
 from app.main import app
 from core.models.download_job import DownloadJob
-from tests.route_introspection import iter_api_routes
 from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
+from tests.test_route_introspection import iter_api_routes
 
 DOWNLOAD_ROUTE_MODULE = "app.api.routes.web.web_downloads"
 DOWNLOAD_SERVICE_MODULE = "app.services.download_service"

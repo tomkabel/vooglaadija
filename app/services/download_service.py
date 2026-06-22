@@ -184,7 +184,7 @@ class DownloadService:
                 DownloadJob.user_id == self.user_id,
             )
         )
-        job = result.scalars().one_or_none()
+        job: DownloadJob | None = result.scalars().one_or_none()
         if job is None:
             raise DownloadNotFoundError()
         return job
@@ -396,7 +396,7 @@ class DownloadService:
                 FailedJob.user_id == self.user_id,
             )
         )
-        failed_job = result.scalars().one_or_none()
+        failed_job: FailedJob | None = result.scalars().one_or_none()
         if failed_job is None:
             raise FailedJobNotFoundError()
         return failed_job
@@ -408,7 +408,8 @@ class DownloadService:
                 DownloadJob.user_id == self.user_id,
             )
         )
-        return result.scalars().one_or_none()
+        original_job: DownloadJob | None = result.scalars().one_or_none()
+        return original_job
 
     async def _update_user_dlq_depth(self) -> None:
         try:

@@ -53,7 +53,7 @@ async def _prime_demo_jobs(user_id: uuid.UUID, db: DbSession) -> None:
 async def _demo_user_or_raise(db: DbSession, demo_email: str) -> User:
     """Return the active demo user or raise the existing HTTP errors."""
     result = await db.execute(select(User).where(User.email == demo_email, not_deleted()))
-    user = result.scalar_one_or_none()
+    user: User | None = result.scalar_one_or_none()
     if user is None:
         logger.error("demo_user_not_found", email=demo_email)
         raise HTTPException(

@@ -8,7 +8,7 @@ from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
-from tests.route_introspection import iter_api_routes
+from tests.test_route_introspection import iter_api_routes
 
 
 def _csrf_cookie(response) -> str:
