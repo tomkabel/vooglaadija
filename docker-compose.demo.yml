@@ -42,6 +42,7 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       STORAGE_PATH: /app/storage
     volumes:
       - storage:/app/storage:Z
@@ -62,6 +63,11 @@ services:
     read_only: false
     command: >
       sh -c " /opt/venv/bin/python -m scripts.seed_demo_data "
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=seed-demo-data,container_name=ytprocessor-seed-demo,environment=${ENVIRONMENT:-production},project=ytprocessor'
 
   # ============================================
   # Prometheus - scrapes app metrics and loads alert rules
@@ -92,6 +98,11 @@ services:
     user: '65534:65534'
     cap_drop:
       - ALL
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=prometheus,container_name=ytprocessor-prometheus,environment=${ENVIRONMENT:-production},project=ytprocessor'
     networks:
       ytprocessor-network:
         aliases:
@@ -131,11 +142,17 @@ services:
       - '3000:3000'
     depends_on:
       - prometheus
+      - loki
     security_opt:
       - no-new-privileges=true
     user: '472:472'
     cap_drop:
       - ALL
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=grafana,container_name=ytprocessor-grafana,environment=${ENVIRONMENT:-production},project=ytprocessor'
     networks:
       ytprocessor-network:
         aliases:

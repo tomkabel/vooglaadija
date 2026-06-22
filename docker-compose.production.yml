@@ -31,6 +31,11 @@ services:
         echo 'Storage permissions fixed';
         exit 0;
       "
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=storage-init,container_name=ytprocessor-storage-init,environment=${ENVIRONMENT:-production},project=ytprocessor'
 
   # ==========================================
   # API Service - Production Overrides
@@ -103,11 +108,10 @@ services:
       retries: 3
       start_period: 20s
     logging:
-      driver: 'json-file'
+      driver: 'loki'
       options:
-        max-size: '10m'
-        max-file: '3'
-        compress: 'true'
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=nginx,container_name=ytprocessor-nginx,environment=${ENVIRONMENT:-production},project=ytprocessor'
     networks:
       ytprocessor-network:
         aliases:
@@ -141,6 +145,11 @@ services:
           sleep 12h;
         done;
       '
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=certbot,container_name=ytprocessor-certbot,environment=${ENVIRONMENT:-production},project=ytprocessor'
     profiles: [] # Always run in production
 
   # ==========================================

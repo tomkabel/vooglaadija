@@ -77,6 +77,59 @@ docker compose up -d
 The compose file includes resource limits, health checks, read-only root filesystems, and SELinux
 labels (`:Z`).
 
+### Centralized Logs
+
+Docker Compose ships container stdout/stderr to Loki through the Loki Docker logging plugin. Install
+the plugin on each Docker host before starting the stack, and keep the alias as `loki` because the
+compose files use `logging.driver: 'loki'` for every active service:
+
+```bash
+docker plugin install grafana/loki-docker-driver:3.0.0 --alias loki --grant-all-permissions
+docker plugin enable loki
+docker compose up -d
+```
+
+The compose stack also starts the Loki backend (`grafana/loki:3.0.0`) on the existing
+`ytprocessor-network`. The Docker logging plugin sends logs to the host-published Loki endpoint at
+`http://localhost:3100/loki/api/v1/push`; Grafana reaches the same backend by service DNS at
+`http://loki:3100`.
+
+To open the centralized dashboard, start the demo stack so Grafana and Prometheus are included:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+```
+
+Open Grafana at `http://localhost:3000` and use Explore with the `Loki` datasource. Example queries:
+
+```logql
+{service="api"} | json
+{service="worker", environment="production"} | json | level="error"
+{project="ytprocessor"} | json | request_id="req-123"
+{service="api"} | json app_service="service", app_environment="environment" | app_service="vooglaadija"
+```
+
+Application logs are emitted as one JSON object per line in production, so query-time `| json`
+parsing preserves fields such as `timestamp`, `level`, `logger`, `message`, `service`,
+`environment`, and request context like `request_id`. The Loki stream labels also include
+`service` and `environment` for container-level filtering; use explicit aliases such as
+`app_service="service"` when querying same-named fields from the JSON log body.
+
+Loki retention is configured in `infra/loki/loki.yml` as `168h` (7 days). This keeps the local and
+demo footprint bounded while retaining enough history for short incident reviews. Log chunks and
+index data are stored in the `ytprocessor-loki-data` Docker volume under `/loki`; increasing the
+retention window grows disk usage roughly with log volume, so resize or prune the volume before
+raising retention for production.
+
+Rollback if the Loki Docker logging plugin is unavailable:
+
+1. Stop the stack: `docker compose down`.
+1. Change every compose logging block to one consistent fallback driver, preferably Docker's
+   `local` driver, rather than mixing `json-file` with Loki.
+1. Remove or disable the `loki` service and `Loki` Grafana datasource only after all services use
+   the fallback driver.
+1. Start the stack and verify `docker compose logs api` works before re-enabling the Loki driver.
+
 ### Services
 
 | Service          | Image                                     | Exposed Port   | Purpose                  |
@@ -88,6 +141,7 @@ labels (`:Z`).
 | `nginx`          | `nginx:alpine`                            | `80`, `443`    | Reverse proxy            |
 | `swagger-ui`     | `swaggerapi/swagger-ui:v5.1.0`            | `8081`         | API documentation        |
 | `otel-collector` | `otel/opentelemetry-collector:0.88.0`     | `4317`, `4318` | Observability collector  |
+| `loki`           | `grafana/loki:3.0.0`                      | `3100`         | Centralized log backend  |
 
 ---
 
