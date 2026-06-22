@@ -265,11 +265,13 @@ jobs:
       - name: Run secret scan
         run: |
           set -e
+          uv tool install detect-secrets
           hatch run security:scan-secrets
 
       - name: Run Bandit security scan
         run: |
           set -e
+          uv tool install bandit
           hatch run security:scan-bandit
 
       - name: Run Safety dependency check
