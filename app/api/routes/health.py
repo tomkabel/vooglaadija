@@ -46,8 +46,9 @@ async def _check_database(database_url: str) -> str:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return "ok"
-    except Exception as exc:
-        return f"error: {exc!s}"
+    except Exception:
+        logger.warning("database_health_check_failed", exc_info=True)
+        return "error: unavailable"
     finally:
         await engine.dispose()
 
@@ -61,8 +62,9 @@ async def _check_redis(redis_url: str) -> str:
         if await client.ping():
             return "ok"
         return "error: unavailable"
-    except Exception as exc:
-        return f"error: {exc!s}"
+    except Exception:
+        logger.warning("redis_health_check_failed", exc_info=True)
+        return "error: unavailable"
 
 
 @router.get(

@@ -1,5 +1,6 @@
 """Download-related web routes."""
 
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
@@ -30,6 +31,32 @@ from app.services.download_service import (
 from app.utils.validators import is_supported_url
 
 router = APIRouter(tags=["web"])
+
+_SAFE_STATUS_PATTERN = re.compile(r"[^a-z0-9_-]+", re.IGNORECASE)
+
+
+def _safe_status_label(status: str | None) -> str:
+    normalized = _SAFE_STATUS_PATTERN.sub(" ", str(status or "").strip().lower()).strip()
+    return normalized or "unknown"
+
+
+def _delete_status_conflict_message(status: str | None) -> str:
+    safe_status = _safe_status_label(status)
+    return (
+        f"Cannot delete job with status '{safe_status}'. "
+        "Only completed, failed, or cancelled jobs can be deleted."
+    )
+
+
+def _download_file_status_message(status: str | None) -> str:
+    safe_status = _safe_status_label(status)
+    return f"Job is not completed. Current status: {safe_status}"
+
+
+def _download_file_missing_message(exc: DownloadFileMissingError) -> str:
+    if exc.code == "missing_on_disk":
+        return "File not found on disk"
+    return "File not found"
 
 
 @router.get("/downloads")
@@ -145,12 +172,15 @@ async def delete_download_form(
     except DownloadNotFoundError:
         return HTMLResponse(status_code=404, content="")
     except InvalidDownloadStatusError as exc:
-        return HTMLResponse(status_code=409, content=_error_html(str(exc)))
-    except UnsafeDownloadPathError as exc:
-        raise HTTPException(
+        return HTMLResponse(
+            status_code=409,
+            content=_error_html(_delete_status_conflict_message(exc.status)),
+        )
+    except UnsafeDownloadPathError:
+        return HTMLResponse(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        ) from exc
+            content=_error_html("Access denied: invalid file path"),
+        )
 
     resp = HTMLResponse(content="")
     rotate_csrf_token(resp)
@@ -170,32 +200,32 @@ async def download_file(
     except InvalidDownloadIdError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            detail="Invalid job ID format",
         ) from exc
     except DownloadNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+            detail="Download job not found",
         ) from exc
     except InvalidDownloadStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            detail=_download_file_status_message(exc.status),
         ) from exc
     except DownloadFileExpiredError as exc:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail=str(exc),
+            detail="Download link has expired",
         ) from exc
     except DownloadFileMissingError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+            detail=_download_file_missing_message(exc),
         ) from exc
     except UnsafeDownloadPathError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
+            detail="Access denied: invalid file path",
         ) from exc
 
     return FileResponse(

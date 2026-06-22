@@ -19,7 +19,7 @@ dependencies = [
     "passlib[bcrypt]",
     "bcrypt<4.1",
     "pydantic",
-    "pydantic-settings",
+    "pydantic-settings>=2.14.2",
     "email-validator>=2.3.0",
     "sse-starlette>=1.6.0",
     "jinja2",

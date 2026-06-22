@@ -229,6 +229,17 @@ def test_fast_forward_workflow_ignores_bot_comments():
 
 
 @pytest.mark.unit
+def test_pydantic_settings_dependency_stays_on_patched_floor():
+    """Dependency metadata keeps pydantic-settings on the patched minimum release."""
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text()
+    lockfile = (REPO_ROOT / "uv.lock").read_text()
+
+    assert '"pydantic-settings>=2.14.2"' in pyproject
+    assert 'name = "pydantic-settings"' in lockfile
+    assert 'version = "2.14.2"' in lockfile
+
+
+@pytest.mark.unit
 def test_production_certbot_no_longer_mounts_docker_socket():
     """Certbot renewal does not require a writable Docker socket."""
     production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()

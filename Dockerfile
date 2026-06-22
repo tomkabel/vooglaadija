@@ -44,8 +44,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-# Install pnpm for package management (version pinned in package.json packageManager field)
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+# Install pnpm for package management (version pinned in frontend/package.json packageManager field)
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 # Copy frontend package files and pnpm lockfile to frontend subdirectory
 COPY frontend/package*.json frontend/pnpm-lock.yaml ./frontend/

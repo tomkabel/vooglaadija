@@ -560,19 +560,19 @@
   startSseHealthMonitor();
 
   // ─── Row Factory ─────────────────────────────────────────────────────
+  const SVG_NS = 'http://www.w3.org/2000/svg';
   const statusBadgeTemplates = loadStatusBadgeTemplates();
 
   function loadStatusBadgeTemplates() {
     const script = document.getElementById('status-badge-templates');
-    if (!script) return { known: {}, template: '' };
+    if (!script) return { known: {} };
     try {
       const data = JSON.parse(script.textContent || '{}');
       return {
         known: data.known || {},
-        template: data.template || '',
       };
     } catch (_err) {
-      return { known: {}, template: '' };
+      return { known: {} };
     }
   }
 
@@ -590,29 +590,103 @@
     );
   }
 
-  function getStatusBadgeHTML(status) {
-    const normalized = normalizeStatus(status);
-    const known = statusBadgeTemplates.known[normalized.toLowerCase()];
-    if (known) return known;
-    if (!statusBadgeTemplates.template) return '';
-    return statusBadgeTemplates.template
-      .replace('__STATUS_CLASS__', `status-${statusClassSuffix(normalized)}`)
-      .replace('__STATUS_LABEL__', escapeHtml(normalized));
+  function createSvgIcon(iconId, className) {
+    const createNode =
+      typeof document.createElementNS === 'function'
+        ? (tagName) => document.createElementNS(SVG_NS, tagName)
+        : (tagName) => document.createElement(tagName);
+    const svg = createNode('svg');
+    svg.setAttribute('class', className);
+    svg.setAttribute('aria-hidden', 'true');
+    const use = createNode('use');
+    use.setAttribute('href', `/static/icons/sprite.svg#${iconId}`);
+    svg.appendChild(use);
+    return svg;
   }
 
   function createStatusBadge(status) {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = getStatusBadgeHTML(status);
-    return wrapper.firstElementChild;
+    const normalized = normalizeStatus(status);
+    const badge = document.createElement('span');
+    const label = statusBadgeTemplates.known[normalized.toLowerCase()] || normalized;
+    badge.className = `status-badge status-${statusClassSuffix(normalized)}`;
+    badge.textContent = label;
+    return badge;
   }
 
   function createDownloadRow(data) {
-    const div = document.createElement('div');
-    div.className = 'download-row';
-    div.dataset.jobId = data.id;
-    div.innerHTML = getRowHTML(data);
-    htmx.process(div);
-    return div;
+    const row = document.createElement('div');
+    const titleText = String(data.title || data.url || '');
+    const createdAt = data.created_at ? String(data.created_at) : '';
+    const status = normalizeStatus(data.status);
+    const jobId = String(data.id || '');
+    const jobPathId = encodeURIComponent(jobId);
+
+    row.className = 'download-row';
+    row.dataset.jobId = jobId;
+
+    const main = document.createElement('div');
+    main.className = 'flex-1 min-w-0';
+
+    const mainWrap = document.createElement('div');
+    mainWrap.className = 'flex items-center gap-3';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className =
+      'h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0';
+    iconWrap.appendChild(createSvgIcon('icon-video', 'h-5 w-5 text-gray-400'));
+
+    const textWrap = document.createElement('div');
+
+    const title = document.createElement('p');
+    title.className = 'url-text';
+    title.setAttribute('hx-disable', '');
+    title.title = titleText;
+    title.textContent = titleText;
+
+    const timestamp = document.createElement('p');
+    timestamp.className = 'timestamp';
+    timestamp.setAttribute('data-timestamp', createdAt);
+    timestamp.textContent = formatRelativeTime(data.created_at);
+
+    textWrap.appendChild(title);
+    textWrap.appendChild(timestamp);
+    mainWrap.appendChild(iconWrap);
+    mainWrap.appendChild(textWrap);
+    main.appendChild(mainWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-3';
+    actions.appendChild(createStatusBadge(status));
+
+    if (status.toLowerCase() === 'completed') {
+      const downloadLink = document.createElement('a');
+      const downloadLabel = document.createElement('span');
+      downloadLink.href = `/web/downloads/${jobPathId}/file`;
+      downloadLink.className = 'download-btn text-xs';
+      downloadLink.setAttribute('download', '');
+      downloadLink.target = '_blank';
+      downloadLink.setAttribute('hx-boost', 'false');
+      downloadLink.appendChild(createSvgIcon('icon-download', 'h-4 w-4'));
+      downloadLabel.textContent = 'Save';
+      downloadLink.appendChild(downloadLabel);
+      actions.appendChild(downloadLink);
+    }
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'btn-danger';
+    deleteButton.setAttribute('hx-delete', `/web/downloads/${jobPathId}`);
+    deleteButton.setAttribute('hx-target', 'closest .download-row');
+    deleteButton.setAttribute('hx-swap', 'outerHTML');
+    deleteButton.setAttribute('hx-confirm', 'Delete this download?');
+    deleteButton.setAttribute('aria-label', 'Delete download');
+    deleteButton.appendChild(createSvgIcon('icon-trash', 'h-5 w-5'));
+    actions.appendChild(deleteButton);
+
+    row.appendChild(main);
+    row.appendChild(actions);
+    htmx.process(row);
+    return row;
   }
 
   function updateDownloadRow(row, data) {
@@ -694,25 +768,6 @@
       const s = Math.round(progress.eta % 60);
       eta.textContent = `${m}m ${s}s`;
     }
-  }
-
-  function getRowHTML(data) {
-    const date = formatRelativeTime(data.created_at);
-    const jobId = String(data.id || '');
-    const jobPathId = encodeURIComponent(jobId);
-    const createdAt = data.created_at ? String(data.created_at) : '';
-    const status = normalizeStatus(data.status);
-    return `<div class="flex-1 min-w-0"><div class="flex items-center gap-3"><div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"><svg class="h-5 w-5 text-gray-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-video" /></svg></div><div><p class="url-text" hx-disable title="${escapeHtml(data.title || data.url || '')}">${escapeHtml(data.title || data.url || '')}</p><p class="timestamp" data-timestamp="${escapeHtml(createdAt)}">${escapeHtml(date)}</p></div></div></div><div class="flex items-center gap-3">${getStatusBadgeHTML(status)}${
-      status.toLowerCase() === 'completed'
-        ? `<a href="/web/downloads/${jobPathId}/file" class="download-btn text-xs" download target="_blank" hx-boost="false"><svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg> Save</a>`
-        : ''
-    }<button type="button" hx-delete="/web/downloads/${jobPathId}" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download"><svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-trash" /></svg></button></div>`;
-  }
-
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 
   window.Vooglaadija.dashboard = {

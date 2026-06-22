@@ -12,6 +12,8 @@ from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.routes.web.web_helpers import (
     _error_response,
     _htmx_or_redirect,
+    _resolve_register_errors,
+    _resolve_settings_errors,
     logger,
     rotate_csrf_token,
     validate_csrf_token,
@@ -101,7 +103,13 @@ async def _change_password_response(
             "/web/settings?error=password_mismatch",
         )
     except InvalidPasswordError as exc:
-        return _error_response(request, 400, str(exc), f"/web/settings?error={exc.code}")
+        message, _ = _resolve_settings_errors(exc.code)
+        return _error_response(
+            request,
+            400,
+            message or "Password does not meet the project requirements",
+            f"/web/settings?error={exc.code}",
+        )
 
     result = _htmx_or_redirect(
         request,
@@ -138,5 +146,11 @@ async def _register_user_or_error_response(
             request, 409, "Email already registered", "/web/register?error=email_exists"
         )
     except InvalidPasswordError as exc:
-        return None, _error_response(request, 400, str(exc), f"/web/register?error={exc.code}")
+        message, _ = _resolve_register_errors(exc.code)
+        return None, _error_response(
+            request,
+            400,
+            message or "Password does not meet the project requirements",
+            f"/web/register?error={exc.code}",
+        )
     return user, None

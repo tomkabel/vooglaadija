@@ -81,6 +81,13 @@ def _new_csrf_token() -> str:
     return uuid.uuid4().hex
 
 
+def _validated_csrf_token(token: str | None) -> str | None:
+    candidate = str(token or "")
+    if _CSRF_TOKEN_PATTERN.fullmatch(candidate):
+        return candidate
+    return None
+
+
 def _validate_redirect_url(url: str | None, default: str) -> str:
     if not url:
         return default
@@ -101,22 +108,24 @@ def _validate_redirect_url(url: str | None, default: str) -> str:
 
 
 def get_csrf_token(request: Request) -> str:
-    token = cast(str | None, request.cookies.get("csrf_token"))
-    if token and _CSRF_TOKEN_PATTERN.fullmatch(token):
+    token = _validated_csrf_token(cast(str | None, request.cookies.get("csrf_token")))
+    if token is not None:
         return token
     return _new_csrf_token()
 
 
-def set_csrf_token_cookie(response: Response, token: str) -> None:
+def set_csrf_token_cookie(response: Response, token: str) -> str:
+    safe_token = _validated_csrf_token(token) or _new_csrf_token()
     response.set_cookie(
         key="csrf_token",
-        value=token,
+        value=safe_token,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="strict",
         path="/",
         max_age=86400,
     )
+    return safe_token
 
 
 def rotate_csrf_token(response: Response) -> str:

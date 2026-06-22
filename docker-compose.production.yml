@@ -7,8 +7,8 @@
 # ============================================
 
 x-production-env: &production-env # Security and production observability settings
-  CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"
-  COOKIE_SECURE: "True"
+  CORS_ORIGINS: 'https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'
+  COOKIE_SECURE: 'True'
   FEATURE_METRICS_ENABLED: ${FEATURE_METRICS_ENABLED:-true}
   FEATURE_TRACING_ENABLED: ${FEATURE_TRACING_ENABLED:-true}
 
@@ -116,7 +116,7 @@ services:
       - ./infra/certbot/data:/var/www/certbot:ro
     environment:
       NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/conf.d
-      DEPLOY_DOMAIN: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"
+      DEPLOY_DOMAIN: '${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'
     depends_on:
       api:
         condition: service_healthy

@@ -35,11 +35,8 @@ def _status_badge_html(status: str | None) -> Markup:
 
 
 def _status_badge_templates_json() -> Markup:
-    """Return helper-generated badge templates for client-side row creation."""
-    payload = {
-        "known": {status: str(_status_badge_html(status)) for status in sorted(_STATUS_LABELS)},
-        "template": ('<span class="status-badge __STATUS_CLASS__">__STATUS_LABEL__</span>'),
-    }
+    """Return helper-generated badge labels for client-side row creation."""
+    payload = {"known": {status: _STATUS_LABELS[status] for status in sorted(_STATUS_LABELS)}}
     serialized = json.dumps(payload, separators=(",", ":"))
     safe_serialized = (
         serialized.replace("&", "\\u0026")

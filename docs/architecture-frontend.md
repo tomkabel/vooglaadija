@@ -19,7 +19,7 @@ real-time job status streaming. The Tailwind CSS build pipeline processes source
 | Dynamic   | HTMX                   | 1.9.12           |
 | Real-time | SSE-Starlette          | 3.3.4            |
 | Build     | PostCSS + Autoprefixer | 8.5.10 / 10.4.20 |
-| Manager   | pnpm                   | 10.33.0          |
+| Manager   | pnpm                   | 10.33.2          |
 
 ## Design System
 

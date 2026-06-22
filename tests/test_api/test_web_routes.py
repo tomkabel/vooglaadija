@@ -249,6 +249,19 @@ class TestGetCsrfToken:
         assert token != "not-a-valid-token\r\n"
         assert re.fullmatch(r"[0-9a-f]{32}", token, re.IGNORECASE)
 
+    def test_invalid_token_is_not_written_back_to_cookie(self):
+        """Cookie issuance regenerates malformed CSRF token values."""
+        from fastapi import Response
+
+        from app.api.routes.web import set_csrf_token_cookie
+
+        response = Response()
+        set_csrf_token_cookie(response, "not-a-valid-token\r\n")
+
+        cookie_header = response.headers["set-cookie"]
+        assert "not-a-valid-token" not in cookie_header
+        assert re.search(r"csrf_token=[0-9a-f]{32}", cookie_header, re.IGNORECASE)
+
 
 class TestValidateCsrfToken:
     """Tests for validate_csrf_token helper."""

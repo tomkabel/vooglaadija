@@ -116,7 +116,8 @@ class DownloadFileExpiredError(DownloadServiceError):
 class DownloadFileMissingError(DownloadServiceError):
     """Raised when a completed job has no accessible file."""
 
-    def __init__(self, message: str = "File not found") -> None:
+    def __init__(self, message: str = "File not found", code: str = "missing_file") -> None:
+        self.code = code
         super().__init__(message)
 
 
@@ -213,7 +214,7 @@ class DownloadService:
                 f"Job is not completed. Current status: {job.status}",
             )
         if not job.file_path:
-            raise DownloadFileMissingError("File not found")
+            raise DownloadFileMissingError("File not found", code="missing_file_path")
 
         if job.expires_at and self._as_utc(job.expires_at) < datetime.now(UTC):
             raise DownloadFileExpiredError()
@@ -222,7 +223,7 @@ class DownloadService:
         if not os.path.isfile(safe_path):
             safe_job_id = str(job_id).replace("\r", "").replace("\n", "")
             logger.error("file_missing_from_disk", job_id=safe_job_id, file_path=safe_path)
-            raise DownloadFileMissingError("File not found on disk")
+            raise DownloadFileMissingError("File not found on disk", code="missing_on_disk")
 
         return DownloadFilePath(path=safe_path, filename=job.file_name)
 
