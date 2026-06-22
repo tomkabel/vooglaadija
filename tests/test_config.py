@@ -94,6 +94,9 @@ class TestSettingsTestingMode:
         for env_name in _DB_POOL_ENV_VARS:
             monkeypatch.setenv(env_name, "not-a-number")
 
+        # Clear DATABASE_URL from env to ensure testing defaults apply
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+
         settings = Settings(_env_file=None)
 
         assert settings.database_url == "sqlite+aiosqlite:///:memory:"
