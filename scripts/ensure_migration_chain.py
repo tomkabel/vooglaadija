@@ -33,6 +33,10 @@ ALEMBIC_CFG_PATH = "/app/alembic.ini"
 VERSIONS_DIR = "/app/alembic/versions"
 
 
+class RevisionLookupError(RuntimeError):
+    """Raised when the current Alembic revision cannot be read safely."""
+
+
 def _get_available_revisions(versions_dir: str) -> set[str]:
     """Extract all revision IDs from migration files in *versions_dir*."""
     revisions: set[str] = set()
@@ -74,19 +78,22 @@ def _sync_connect(database_url: str):
 
 def _get_db_revision(database_url: str) -> str | None:
     """Return the current revision stored in the database, or *None*."""
+    from psycopg.errors import UndefinedTable
+
     try:
         conn = _sync_connect(database_url)
     except Exception as exc:
-        print(f"WARNING: cannot connect to database — {exc}", file=sys.stderr)
-        return None
+        raise RevisionLookupError(f"cannot connect to database — {exc}") from exc
 
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT version_num FROM alembic_version")
             row = cur.fetchone()
             return row[0] if row else None
-    except Exception:
+    except UndefinedTable:
         return None
+    except Exception as exc:
+        raise RevisionLookupError(f"cannot read alembic_version — {exc}") from exc
     finally:
         conn.close()
 
@@ -149,7 +156,11 @@ def main() -> int:
         return 0
 
     # ── Read what the database currently thinks ─────────────────────────
-    db_revision = _get_db_revision(database_url)
+    try:
+        db_revision = _get_db_revision(database_url)
+    except RevisionLookupError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     if db_revision is None:
         # No revision at all — this is a fresh database; let alembic upgrade

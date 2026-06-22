@@ -53,3 +53,28 @@ def test_broken_chain_can_be_explicitly_overridden(monkeypatch):
 
     assert exit_code == 0
     stamp_mock.assert_called_once_with("postgresql+asyncpg://user:pass@db/test", "003")
+
+
+@pytest.mark.unit
+def test_revision_lookup_failure_blocks_startup(monkeypatch, capsys):
+    """Database connectivity/read failures should fail instead of masquerading as a fresh DB."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@db/test")
+
+    with (
+        patch.object(
+            ensure_migration_chain, "_get_available_revisions", return_value={"002", "003"}
+        ),
+        patch("alembic.config.Config"),
+        patch("alembic.script.ScriptDirectory.from_config") as script_dir,
+        patch.object(
+            ensure_migration_chain,
+            "_get_db_revision",
+            side_effect=ensure_migration_chain.RevisionLookupError("cannot connect to database"),
+        ),
+    ):
+        script_dir.return_value.get_current_head.return_value = "003"
+        exit_code = ensure_migration_chain.main()
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "cannot connect to database" in captured.err
