@@ -33,9 +33,21 @@ def test_codeql_job_preserves_pinned_python_analysis_shape():
     assert re.search(r"uses: actions/checkout@[0-9a-f]{40}\b", workflow)
     assert re.search(r"uses: github/codeql-action/init@[0-9a-f]{40}\b", workflow)
     assert re.search(r"uses: github/codeql-action/analyze@[0-9a-f]{40}\b", workflow)
+    assert "persist-credentials: false" in workflow
     assert "timeout-minutes: 30" in workflow
     assert "security-events: write" in workflow
     assert "category: '/language:python'" in workflow
+
+
+def test_active_checkout_steps_disable_persisted_git_credentials():
+    """Repository checkout steps should not leave GitHub tokens in git config."""
+    workflow = read_project_file(".github", "workflows", "fastapi-test.yml")
+
+    checkout_steps = workflow.count("uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5")
+    persist_flags = workflow.count("persist-credentials: false")
+
+    assert checkout_steps == 6
+    assert persist_flags >= checkout_steps
 
 
 def test_security_job_remains_lint_dependent_and_blocks_build_check():
