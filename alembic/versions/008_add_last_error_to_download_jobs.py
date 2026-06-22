@@ -12,6 +12,7 @@ Migrates existing concatenated data to keep only the last error segment.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "008"

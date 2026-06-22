@@ -47,16 +47,12 @@ def _pre_check_data(bind: sa.engine.Connection) -> None:
 
     # Clean invalid outbox statuses
     result = bind.execute(
-        sa.text(
-            "SELECT COUNT(*) FROM outbox "
-            "WHERE status NOT IN ('pending', 'published')"
-        )
+        sa.text("SELECT COUNT(*) FROM outbox WHERE status NOT IN ('pending', 'published')")
     ).scalar()
     if result and result > 0:
         bind.execute(
             sa.text(
-                "UPDATE outbox SET status = 'pending' "
-                "WHERE status NOT IN ('pending', 'published')"
+                "UPDATE outbox SET status = 'pending' WHERE status NOT IN ('pending', 'published')"
             )
         )
 
@@ -93,12 +89,7 @@ def _add_constraints_postgres(bind: sa.engine.Connection) -> None:
             "NOT VALID"
         )
     )
-    op.execute(
-        sa.text(
-            "ALTER TABLE download_jobs "
-            "VALIDATE CONSTRAINT chk_download_jobs_status"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE download_jobs VALIDATE CONSTRAINT chk_download_jobs_status"))
 
     # CHECK on outbox.status
     op.execute(
@@ -109,12 +100,7 @@ def _add_constraints_postgres(bind: sa.engine.Connection) -> None:
             "NOT VALID"
         )
     )
-    op.execute(
-        sa.text(
-            "ALTER TABLE outbox "
-            "VALIDATE CONSTRAINT chk_outbox_status"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE outbox VALIDATE CONSTRAINT chk_outbox_status"))
 
     # FK on outbox.job_id
     op.execute(
@@ -126,12 +112,7 @@ def _add_constraints_postgres(bind: sa.engine.Connection) -> None:
             "NOT VALID"
         )
     )
-    op.execute(
-        sa.text(
-            "ALTER TABLE outbox "
-            "VALIDATE CONSTRAINT fk_outbox_job_id"
-        )
-    )
+    op.execute(sa.text("ALTER TABLE outbox VALIDATE CONSTRAINT fk_outbox_job_id"))
 
 
 def _drop_constraints_postgres() -> None:
@@ -139,10 +120,7 @@ def _drop_constraints_postgres() -> None:
     op.execute(sa.text("ALTER TABLE outbox DROP CONSTRAINT IF EXISTS fk_outbox_job_id"))
     op.execute(sa.text("ALTER TABLE outbox DROP CONSTRAINT IF EXISTS chk_outbox_status"))
     op.execute(
-        sa.text(
-            "ALTER TABLE download_jobs "
-            "DROP CONSTRAINT IF EXISTS chk_download_jobs_status"
-        )
+        sa.text("ALTER TABLE download_jobs DROP CONSTRAINT IF EXISTS chk_download_jobs_status")
     )
 
 

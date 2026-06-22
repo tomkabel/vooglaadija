@@ -90,9 +90,7 @@ async def cleanup_stale_outbox_entries(hours: int = 24) -> int:
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
     async with session_factory() as db:
         result = await db.execute(
-            delete(Outbox).where(
-                Outbox.created_at < cutoff, Outbox.status == "pending"
-            )
+            delete(Outbox).where(Outbox.created_at < cutoff, Outbox.status == "pending")
         )
         await db.commit()
         count = int(result.rowcount or 0)

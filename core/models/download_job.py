@@ -28,7 +28,9 @@ class DownloadJob(Base):
     failed_job: Mapped[FailedJob | None] = relationship(
         "FailedJob", back_populates="original_job", uselist=False
     )
-    outbox_entries: Mapped[list[Outbox]] = relationship("Outbox", back_populates="job")
+    outbox_entries: Mapped[list[Outbox]] = relationship(
+        "Outbox", back_populates="job", cascade="all, delete-orphan"
+    )
     url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
