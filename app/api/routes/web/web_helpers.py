@@ -6,7 +6,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 from urllib.parse import urlparse
 
 from fastapi import Request, Response
@@ -101,7 +101,7 @@ def _validate_redirect_url(url: str | None, default: str) -> str:
 
 
 def get_csrf_token(request: Request) -> str:
-    token = request.cookies.get("csrf_token")
+    token = cast(str | None, request.cookies.get("csrf_token"))
     if token and _CSRF_TOKEN_PATTERN.fullmatch(token):
         return token
     return _new_csrf_token()

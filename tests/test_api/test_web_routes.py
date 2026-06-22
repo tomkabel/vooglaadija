@@ -215,6 +215,7 @@ class TestValidateRedirectUrl:
         result = _validate_redirect_url("/web/../../etc/passwd", "/web/downloads")
         assert result == "/web/downloads"
 
+
 class TestGetCsrfToken:
     """Tests for CSRF token reuse and hardening."""
 
@@ -226,7 +227,7 @@ class TestGetCsrfToken:
 
         from app.api.routes.web import get_csrf_token
 
-        token = "0123456789abcdef0123456789abcdef"
+        token = "a" * 32
         mock_request = MagicMock(spec=Request)
         mock_request.cookies = {"csrf_token": token}
 
