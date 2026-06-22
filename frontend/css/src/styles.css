@@ -231,6 +231,10 @@
     @apply mt-2 bg-jade-500/10 border-l-4 border-jade-500/50 text-jade-300 px-5 py-4 rounded-xl;
   }
 
+  .success-box-exit {
+    animation: successBoxFadeOut 0.3s ease-out forwards;
+  }
+
   .error {
     @apply bg-coral-500/10 border-l-4 border-coral-500/50 text-coral-300 px-5 py-4 rounded-xl;
   }
@@ -532,6 +536,17 @@
   }
   100% {
     opacity: 1;
+  }
+}
+
+@keyframes successBoxFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
   }
 }
 

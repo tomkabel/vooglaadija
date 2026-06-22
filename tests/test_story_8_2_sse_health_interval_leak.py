@@ -62,18 +62,17 @@ def test_sse_health_monitor_preserves_status_and_banner_behavior():
     health_source = _sse_health_monitor_source(source)
 
     assert "SSE_TIMEOUT = 35000" in source
-    assert "elapsed > 60000" in health_source
-    assert "const failed = elapsed > 120000" in health_source
-    assert "sseFailed = failed" in health_source
-    assert "banner.dataset.sseFailed = String(failed)" in health_source
-    assert "lastMsg < 10000" in health_source
+    assert "SSE_DISCONNECT_BANNER_DELAY = 10000" in source
+    assert "elapsed > SSE_DISCONNECT_BANNER_DELAY" in health_source
+    assert "lastMsg < SSE_DISCONNECT_BANNER_DELAY" in health_source
     assert "Reconnecting\\u2026" in health_source
     assert "live-indicator--active" in health_source
     assert "live-indicator--error" in health_source
     assert "sse-reconnect-banner" in health_source
-    assert "Connection lost \\u2014 updates paused" in health_source
-    assert "Retry Connection" in health_source
-    assert "Refresh" in health_source
+    assert "Connection lost." in health_source
+    assert "Reconnect" in health_source
+    assert "Retry Connection" not in health_source
+    assert "Refresh" not in health_source
 
 
 @pytest.mark.unit

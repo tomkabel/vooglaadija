@@ -226,9 +226,13 @@
 
   <!-- Status display with HTMX polling -->
   <div
+    id="chaos-status-panel"
     hx-get="/web/chaos-lab/status"
     hx-trigger="load, every 5s"
     hx-swap="innerHTML"
+    role="status"
+    aria-live="polite"
+    aria-busy="true"
     class="card p-6 slide-up animate-stagger-3 opacity-0-initial animate-fill-forwards"
   >
     <div class="flex items-center gap-2 text-gray-400">
@@ -237,4 +241,8 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/chaos-lab.js" defer></script>
 {% endblock %}

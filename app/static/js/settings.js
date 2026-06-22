@@ -1,6 +1,43 @@
 (() => {
   const Vooglaadija = window.Vooglaadija;
 
+  // ─── Username Save Form: Loading State ──────────────────────────────
+  const usernameForm = document.getElementById('username-settings-form');
+  const usernameSubmit = usernameForm?.querySelector('[data-username-submit]');
+  const usernameSpinner = usernameForm?.querySelector('[data-username-spinner]');
+  const usernameLabel = usernameForm?.querySelector('[data-username-label]');
+  const usernameDefaultLabel = usernameLabel?.textContent || 'Save username';
+
+  function setUsernameSaveLoading(isLoading) {
+    if (!(usernameForm && usernameSubmit && usernameSpinner && usernameLabel)) return;
+
+    usernameForm.setAttribute('aria-busy', String(isLoading));
+    usernameSubmit.disabled = isLoading;
+    usernameSubmit.setAttribute('aria-busy', String(isLoading));
+    usernameSpinner.classList.toggle('hidden', !isLoading);
+    usernameLabel.textContent = isLoading ? 'Saving…' : usernameDefaultLabel;
+  }
+
+  function isUsernameSettingsRequest(evt) {
+    return Boolean(evt.detail?.elt?.closest('#username-settings-form'));
+  }
+
+  if (usernameForm) {
+    usernameForm.addEventListener('htmx:beforeRequest', () => {
+      setUsernameSaveLoading(true);
+    });
+    document.body.addEventListener('htmx:afterRequest', (evt) => {
+      if (isUsernameSettingsRequest(evt)) {
+        setUsernameSaveLoading(false);
+      }
+    });
+    document.body.addEventListener('htmx:sendError', (evt) => {
+      if (isUsernameSettingsRequest(evt)) {
+        setUsernameSaveLoading(false);
+      }
+    });
+  }
+
   // ─── Password Change Form: Match Validation ─────────────────────────
   const passwordForm = document.getElementById('password-change-form');
   if (passwordForm) {

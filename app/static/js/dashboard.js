@@ -181,14 +181,13 @@
   // ─── SSE ─────────────────────────────────────────────────────────────
   let lastMsg = Date.now();
   let reconnectShown = false;
-  let sseFailed = false;
   let announcementTimer = null;
   let sseHealthIntervalId = null;
   const SSE_TIMEOUT = 35000;
+  const SSE_DISCONNECT_BANNER_DELAY = 10000;
 
   function markSseActivity() {
     lastMsg = Date.now();
-    sseFailed = false;
     const banner = document.getElementById('sse-reconnect-banner');
     if (banner) {
       banner.remove();
@@ -483,11 +482,8 @@
   }
 
   function showReconnectBanner(elapsed) {
-    if (!(elapsed > 60000)) return;
+    if (!(elapsed > SSE_DISCONNECT_BANNER_DELAY)) return;
 
-    const failed = elapsed > 120000;
-    const wasReconnectShown = reconnectShown;
-    const wasFailed = sseFailed;
     let banner = document.getElementById('sse-reconnect-banner');
     if (!banner) {
       banner = document.createElement('div');
@@ -497,13 +493,9 @@
       document.body.appendChild(banner);
     }
 
+    if (reconnectShown) return;
     reconnectShown = true;
-    sseFailed = failed;
-    if (wasReconnectShown && wasFailed === failed && banner.dataset.sseFailed === String(failed)) {
-      return;
-    }
-    banner.dataset.sseFailed = String(failed);
-    banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-alert" /></svg><span class="text-sm font-medium">${failed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused'}</span><button type="button" data-sse-retry class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">${failed ? 'Retry Connection' : 'Refresh'}</button>`;
+    banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-alert" /></svg><span class="text-sm font-medium">Connection lost.</span><button type="button" data-sse-retry class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">Reconnect</button>`;
     banner.querySelector('[data-sse-retry]')?.addEventListener('click', () => {
       window.location.reload();
     });
@@ -513,11 +505,10 @@
     const banner = document.getElementById('sse-reconnect-banner');
     if (banner) banner.remove();
     reconnectShown = false;
-    sseFailed = false;
   }
 
   function removeReconnectBannerIfRecovered() {
-    if (!(Date.now() - lastMsg < 10000)) return;
+    if (!(Date.now() - lastMsg < SSE_DISCONNECT_BANNER_DELAY)) return;
 
     removeReconnectBanner();
   }
