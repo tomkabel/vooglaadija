@@ -5,6 +5,7 @@ which prevents issues with test environment overrides and ensures
 the engine is created with the correct configuration.
 """
 
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.config import settings
@@ -30,13 +31,22 @@ class _EngineFactory:
                 settings.database_url,
                 echo=False,
                 future=True,
-                pool_size=10,
-                max_overflow=5,
-                pool_timeout=30,
-                pool_recycle=1800,
+                **self._pool_kwargs(),
+                pool_recycle=settings.db_pool_recycle,
                 pool_pre_ping=True,
             )
         return self._engine
+
+    def _pool_kwargs(self) -> dict[str, int]:
+        """Return queue pool kwargs only for dialects that support them."""
+        url = make_url(settings.database_url)
+        if url.get_backend_name() == "sqlite":
+            return {}
+        return {
+            "pool_size": settings.db_pool_size,
+            "max_overflow": settings.db_max_overflow,
+            "pool_timeout": settings.db_pool_timeout,
+        }
 
     def get_async_session_factory(self):
         """Get or create the async session factory (lazy initialization)."""

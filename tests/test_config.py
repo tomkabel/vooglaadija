@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 # Env var names that conftest sets and that affect Settings
 _CONFTEST_ENV_VARS = ("TESTING", "SECRET_KEY", "SECRET_KEY_PREVIOUS", "DATABASE_URL")
+_DB_POOL_ENV_VARS = ("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_TIMEOUT", "DB_POOL_RECYCLE")
 
 
 def _make_production_settings(**kwargs):
@@ -86,6 +87,21 @@ class TestSettingsTestingMode:
         assert settings.secret_key
         assert settings.redis_url
         assert settings.storage_path
+
+    def test_testing_env_ignores_invalid_db_pool_environment(self, monkeypatch):
+        """TESTING=1 ignores malformed DB pool env vars and keeps test settings usable."""
+        from core.config import Settings
+
+        for env_name in _DB_POOL_ENV_VARS:
+            monkeypatch.setenv(env_name, "not-a-number")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.database_url == "sqlite+aiosqlite:///:memory:"
+        assert settings.db_pool_size == 10
+        assert settings.db_max_overflow == 5
+        assert settings.db_pool_timeout == 30
+        assert settings.db_pool_recycle == 1800
 
     def test_redis_url_is_a_non_empty_string(self):
         """redis_url must be a non-empty string regardless of specific value.
@@ -359,6 +375,94 @@ class TestSettingsProductionValidation:
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
         assert s.secret_key == "a-valid-secret-key-that-is-at-least-32-chars-long"
+
+    def test_db_pool_settings_default_to_production_values(self, monkeypatch):
+        """DB pool settings default to the documented production values."""
+        for env_name in _DB_POOL_ENV_VARS:
+            monkeypatch.delenv(env_name, raising=False)
+
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+
+        assert s.db_pool_size == 10
+        assert s.db_max_overflow == 5
+        assert s.db_pool_timeout == 30
+        assert s.db_pool_recycle == 1800
+
+    def test_db_pool_settings_accept_constructor_overrides(self):
+        """DB pool settings can be overridden by explicit Settings constructor values."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            db_pool_size=12,
+            db_max_overflow=7,
+            db_pool_timeout=45,
+            db_pool_recycle=2400,
+        )
+
+        assert s.db_pool_size == 12
+        assert s.db_max_overflow == 7
+        assert s.db_pool_timeout == 45
+        assert s.db_pool_recycle == 2400
+
+    def test_db_pool_settings_read_environment_overrides(self, monkeypatch):
+        """DB pool settings read DB_POOL_* environment variable overrides."""
+        monkeypatch.setenv("DB_POOL_SIZE", "13")
+        monkeypatch.setenv("DB_MAX_OVERFLOW", "8")
+        monkeypatch.setenv("DB_POOL_TIMEOUT", "50")
+        monkeypatch.setenv("DB_POOL_RECYCLE", "2100")
+
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+
+        assert s.db_pool_size == 13
+        assert s.db_max_overflow == 8
+        assert s.db_pool_timeout == 50
+        assert s.db_pool_recycle == 2100
+
+    @pytest.mark.parametrize(
+        ("field_name", "value", "message"),
+        [
+            ("db_pool_size", 0, "Invalid DB_POOL_SIZE"),
+            ("db_pool_size", -1, "Invalid DB_POOL_SIZE"),
+            ("db_max_overflow", -1, "Invalid DB_MAX_OVERFLOW"),
+            ("db_pool_timeout", 0, "Invalid DB_POOL_TIMEOUT"),
+            ("db_pool_timeout", -1, "Invalid DB_POOL_TIMEOUT"),
+            ("db_pool_recycle", 0, "Invalid DB_POOL_RECYCLE"),
+            ("db_pool_recycle", -1, "Invalid DB_POOL_RECYCLE"),
+        ],
+    )
+    def test_invalid_db_pool_ranges_raise(self, field_name, value, message):
+        """DB pool settings reject values outside the supported ranges."""
+        with pytest.raises((ValidationError, ValueError), match=message):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                **{field_name: value},
+            )
+
+    @pytest.mark.parametrize(
+        ("env_name", "message"),
+        [
+            ("DB_POOL_SIZE", "Invalid DB_POOL_SIZE"),
+            ("DB_MAX_OVERFLOW", "Invalid DB_MAX_OVERFLOW"),
+            ("DB_POOL_TIMEOUT", "Invalid DB_POOL_TIMEOUT"),
+            ("DB_POOL_RECYCLE", "Invalid DB_POOL_RECYCLE"),
+        ],
+    )
+    def test_invalid_db_pool_environment_strings_raise(self, env_name, message, monkeypatch):
+        """DB pool settings reject non-numeric environment variable values."""
+        monkeypatch.setenv(env_name, "not-a-number")
+
+        with pytest.raises((ValidationError, ValueError), match=message):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+            )
 
     def test_known_weak_default_keys_rejected(self):
         """Keys with genuinely low Shannon entropy should be rejected."""

@@ -71,6 +71,8 @@ services:
   worker:
     environment:
       <<: *production-env
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
+      DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
       # core.config.Settings builds DB/Redis URLs from component env vars so
       # rotated passwords are URL-encoded correctly.
     # Wait for storage initialization

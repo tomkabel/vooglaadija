@@ -6,7 +6,7 @@ import warnings
 from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
-from pydantic import model_validator
+from pydantic import ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,24 @@ def _estimate_entropy(text: str) -> float:
         if p > 0:
             entropy -= p * math.log2(p)
     return entropy
+
+
+_DB_POOL_ENV_NAMES = {
+    "db_pool_size": "DB_POOL_SIZE",
+    "db_max_overflow": "DB_MAX_OVERFLOW",
+    "db_pool_timeout": "DB_POOL_TIMEOUT",
+    "db_pool_recycle": "DB_POOL_RECYCLE",
+}
+_DB_POOL_DEFAULTS = {
+    "db_pool_size": 10,
+    "db_max_overflow": 5,
+    "db_pool_timeout": 30,
+    "db_pool_recycle": 1800,
+}
+
+
+def _is_testing_enabled() -> bool:
+    return os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
 
 
 class Settings(BaseSettings):
@@ -61,6 +79,10 @@ class Settings(BaseSettings):
     db_name: str = "ytprocessor"
     db_host: str = "localhost"
     db_port: str = "5432"
+    db_pool_size: int = 10
+    db_max_overflow: int = 5
+    db_pool_timeout: int = 30
+    db_pool_recycle: int = 1800
 
     # Used to construct REDIS_URL if not set directly
     redis_host: str = "localhost"
@@ -75,18 +97,42 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_and_construct(self) -> "Settings":
-        testing_val = os.environ.get("TESTING", "").lower()
-        is_testing = testing_val in ("1", "true", "yes", "on")
-        if is_testing:
+        if _is_testing_enabled():
             return self._apply_testing_defaults()
 
         self._validate_ports()
+        self._validate_db_pool_settings()
         self._build_database_url()
         self._validate_secret_key()
         self._validate_cors()
         self._resolve_storage()
         self._build_redis_url()
         return self
+
+    @field_validator(
+        "db_pool_size",
+        "db_max_overflow",
+        "db_pool_timeout",
+        "db_pool_recycle",
+        mode="before",
+    )
+    @classmethod
+    def _parse_db_pool_integer(cls, value: object, info: ValidationInfo) -> int:
+        field_name = info.field_name
+        if field_name is None:
+            raise ValueError("Invalid DB pool setting: field name unavailable")
+        env_name = _DB_POOL_ENV_NAMES[field_name]
+        if isinstance(value, bool):
+            raise ValueError(f"Invalid {env_name}: {value!r} must be an integer")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized and normalized.lstrip("+-").isdigit():
+                return int(normalized)
+        if _is_testing_enabled():
+            return _DB_POOL_DEFAULTS[field_name]
+        raise ValueError(f"Invalid {env_name}: {value!r} must be an integer")
 
     def _apply_testing_defaults(self) -> "Settings":
         if not self.database_url:
@@ -98,6 +144,17 @@ class Settings(BaseSettings):
     def _validate_ports(self) -> None:
         self._validate_port("DB_PORT", self.db_port)
         self._validate_port("REDIS_PORT", self.redis_port)
+
+    def _validate_db_pool_settings(self) -> None:
+        self._validate_minimum("DB_POOL_SIZE", self.db_pool_size, 1)
+        self._validate_minimum("DB_MAX_OVERFLOW", self.db_max_overflow, 0)
+        self._validate_minimum("DB_POOL_TIMEOUT", self.db_pool_timeout, 1)
+        self._validate_minimum("DB_POOL_RECYCLE", self.db_pool_recycle, 1)
+
+    @staticmethod
+    def _validate_minimum(name: str, value: int, minimum: int) -> None:
+        if value < minimum:
+            raise ValueError(f"Invalid {name}: {value!r} must be >= {minimum}")
 
     @staticmethod
     def _validate_port(name: str, value: str) -> None:
