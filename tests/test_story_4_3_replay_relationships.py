@@ -23,6 +23,7 @@ EXPECTED_DOWNLOAD_JOB_COLUMNS = {
     "title",
     "file_name",
     "error",
+    "last_error",
     "error_category",
     "retry_count",
     "max_retries",

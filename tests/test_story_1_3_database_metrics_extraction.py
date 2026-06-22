@@ -19,6 +19,8 @@ _EXPECTED_ALEMBIC_VERSION_FILES = {
     "004_add_token_version_to_users.py",
     "005_add_composite_indexes.py",
     "006_add_failed_job_original_job_id_index.py",
+    "007_add_check_constraints_and_fk.py",
+    "008_add_last_error_to_download_jobs.py",
 }
 _LEGACY_MODULES = {_DATABASE_SHIM_MODULE, _METRICS_SHIM_MODULE}
 
