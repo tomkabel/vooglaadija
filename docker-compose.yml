@@ -130,6 +130,14 @@ services:
       redis:
         condition: service_healthy
     <<: *base-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     healthcheck:
       test:
         [
@@ -264,6 +272,14 @@ services:
       options:
         loki-url: 'http://localhost:3100/loki/api/v1/push'
         loki-external-labels: 'service=otel-collector,container_name=otel-collector,environment=${ENVIRONMENT:-production},project=ytprocessor'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
     networks:
       ytprocessor-network:
         aliases:
@@ -294,6 +310,14 @@ services:
       options:
         loki-url: 'http://localhost:3100/loki/api/v1/push'
         loki-external-labels: 'service=loki,container_name=ytprocessor-loki,environment=${ENVIRONMENT:-production},project=ytprocessor'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
     networks:
       ytprocessor-network:
         aliases:
@@ -327,6 +351,14 @@ services:
       options:
         loki-url: 'http://localhost:3100/loki/api/v1/push'
         loki-external-labels: 'service=nginx,container_name=ytprocessor-nginx,environment=${ENVIRONMENT:-production},project=ytprocessor'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+        reservations:
+          cpus: '0.05'
+          memory: 16M
     networks:
       ytprocessor-network:
         aliases:
@@ -344,12 +376,19 @@ services:
       URL: http://127.0.0.1:8080/openapi.json
     ports:
       - '8081:8080'
-    # swagger-ui doesn't need resource limits or security context restrictions
     logging:
       driver: 'loki'
       options:
         loki-url: 'http://localhost:3100/loki/api/v1/push'
         loki-external-labels: 'service=swagger-ui,container_name=swagger-ui,environment=${ENVIRONMENT:-production},project=ytprocessor'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
     depends_on:
       - api
     networks:

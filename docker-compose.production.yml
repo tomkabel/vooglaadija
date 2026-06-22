@@ -164,3 +164,10 @@ services:
     restart: 'no'
     deploy:
       replicas: 0
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M

@@ -139,7 +139,13 @@ jobs:
           ssh "ubuntu@${SERVER_IP}" "
             chmod 700 '${DEPLOY_TMP_DIR}/remote-deploy.sh' &&
             chmod 600 '${DEPLOY_TMP_DIR}/ghcr_pat' '${DEPLOY_TMP_DIR}/.env' &&
-            IMAGE_TAG='${IMAGE_TAG}' GHCR_OWNER='${GHCR_OWNER}' GHCR_REPO='${GHCR_REPO}' DEPLOY_DOMAIN='${DEPLOY_DOMAIN}' GHCR_PAT_FILE='${DEPLOY_TMP_DIR}/ghcr_pat' ENV_FILE_PATH='${DEPLOY_TMP_DIR}/.env' bash '${DEPLOY_TMP_DIR}/remote-deploy.sh';
+            IMAGE_TAG='${IMAGE_TAG}' \
+            GHCR_OWNER='${GHCR_OWNER}' \
+            GHCR_REPO='${GHCR_REPO}' \
+            DEPLOY_DOMAIN='${DEPLOY_DOMAIN}' \
+            GHCR_PAT_FILE='${DEPLOY_TMP_DIR}/ghcr_pat' \
+            ENV_FILE_PATH='${DEPLOY_TMP_DIR}/.env' \
+            bash '${DEPLOY_TMP_DIR}/remote-deploy.sh';
             status=\$?;
             rm -rf '${DEPLOY_TMP_DIR}';
             exit \$status
