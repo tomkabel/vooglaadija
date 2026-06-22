@@ -212,7 +212,7 @@ def test_success_fragments_auto_dismiss_after_five_seconds_with_fade_class():
     assert "setTimeout(() => {" in toast_js
     assert "}, 5000)" in toast_js
     assert ".success-box-exit" in css
-    assert "@keyframes successBoxFadeOut" in css
+    assert "@keyframes success-box-fade-out" in css
 
 
 @pytest.mark.unit

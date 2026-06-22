@@ -20,6 +20,7 @@ def _render_download_list(jobs: list[SimpleNamespace]) -> str:
 
 
 def _assert_download_rows_live_attributes(html: str) -> None:
+    assert html.count('id="download-rows"') == 1
     assert 'id="download-rows"' in html
     assert 'role="feed"' in html
     assert 'aria-label="Downloads"' in html

@@ -232,7 +232,7 @@
   }
 
   .success-box-exit {
-    animation: successBoxFadeOut 0.3s ease-out forwards;
+    animation: success-box-fade-out 0.3s ease-out forwards;
   }
 
   .error {
@@ -539,7 +539,7 @@
   }
 }
 
-@keyframes successBoxFadeOut {
+@keyframes success-box-fade-out {
   0% {
     opacity: 1;
     transform: translateY(0);
