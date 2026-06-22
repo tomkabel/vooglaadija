@@ -130,7 +130,7 @@ def get_template_context(
 
 
 def is_htmx_request(request: Request) -> bool:
-    return request.headers.get("HX-Request") == "true"
+    return str(request.headers.get("HX-Request", "")).lower() == "true"
 
 
 async def validate_csrf_token(request: Request) -> bool:

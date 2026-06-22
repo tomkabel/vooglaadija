@@ -4,6 +4,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy import func, select
@@ -186,7 +187,7 @@ class DownloadService:
         job = result.scalars().one_or_none()
         if job is None:
             raise DownloadNotFoundError()
-        return job
+        return cast(DownloadJob, job)
 
     async def retry(self, job_id: str | uuid.UUID) -> DownloadJob:
         """Reset a failed or deferred job and write an enqueue outbox row."""
@@ -398,7 +399,7 @@ class DownloadService:
         failed_job = result.scalars().one_or_none()
         if failed_job is None:
             raise FailedJobNotFoundError()
-        return failed_job
+        return cast(FailedJob, failed_job)
 
     async def _get_original_for_failed_job(self, original_job_id: uuid.UUID) -> DownloadJob | None:
         result = await self.db.execute(
@@ -407,7 +408,7 @@ class DownloadService:
                 DownloadJob.user_id == self.user_id,
             )
         )
-        return result.scalars().one_or_none()
+        return cast(DownloadJob | None, result.scalars().one_or_none())
 
     async def _update_user_dlq_depth(self) -> None:
         try:

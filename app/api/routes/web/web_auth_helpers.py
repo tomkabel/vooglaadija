@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from typing import cast
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -61,7 +62,7 @@ async def _demo_user_or_raise(db: DbSession, demo_email: str) -> User:
     if not user.is_active:
         logger.error("demo_user_inactive", email=demo_email)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo user is inactive.")
-    return user
+    return cast(User, user)
 
 
 async def _change_password_response(
