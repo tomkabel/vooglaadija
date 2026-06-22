@@ -155,11 +155,22 @@ def test_core_model_foreign_key_contract():
 
 def test_core_model_index_contract():
     """Moved models should preserve named indexes used by queries and migrations."""
+    download_job_indexes = {index.name for index in Base.metadata.tables["download_jobs"].indexes}
+    failed_job_indexes = {index.name for index in Base.metadata.tables["failed_jobs"].indexes}
     outbox_indexes = {index.name for index in Base.metadata.tables["outbox"].indexes}
     user_indexes = {index.name for index in Base.metadata.tables["users"].indexes}
 
+    assert "ix_download_jobs_expires_at" in download_job_indexes
+    assert {
+        "ix_failed_jobs_original_job_id",
+        "ix_failed_jobs_user_id",
+        "ix_failed_jobs_error_category",
+        "ix_failed_jobs_expires_at",
+    } <= failed_job_indexes
     assert "ix_outbox_status_created_at" in outbox_indexes
     assert "ix_users_email_active" in user_indexes
+    assert "ix_users_deleted_at" in user_indexes
+    assert "ix_users_email" not in user_indexes
 
 
 def test_no_internal_imports_from_legacy_model_package():

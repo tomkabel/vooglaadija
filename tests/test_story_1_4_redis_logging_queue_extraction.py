@@ -16,6 +16,7 @@ _EXPECTED_ALEMBIC_VERSION_FILES = {
     "003_add_error_category_and_failed_jobs.py",
     "004_add_token_version_to_users.py",
     "005_add_composite_indexes.py",
+    "006_add_failed_job_original_job_id_index.py",
 }
 _OLD_IMPORT_PATTERNS = (
     "from app.services.redis_client",
