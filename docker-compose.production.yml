@@ -6,9 +6,11 @@
 # The base docker-compose.yml provides defaults; this file overrides for production.
 # ============================================
 
-x-production-env: &production-env # Security settings
+x-production-env: &production-env # Security and production observability settings
   CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"
   COOKIE_SECURE: "True"
+  FEATURE_METRICS_ENABLED: ${FEATURE_METRICS_ENABLED:-true}
+  FEATURE_TRACING_ENABLED: ${FEATURE_TRACING_ENABLED:-true}
 
 services:
   # ==========================================
@@ -39,7 +41,7 @@ services:
       # core.config.Settings builds DB/Redis URLs from component env vars so
       # rotated passwords are URL-encoded correctly.
     # Remove direct port mapping - only access via nginx
-    ports: []
+    ports: !override []
     # Wait for storage to be initialized
     depends_on:
       storage-init:
@@ -142,15 +144,11 @@ services:
     profiles: [] # Always run in production
 
   # ==========================================
-  # Disable Non-Essential Services
+  # External API Docs UI - Production Disabled
   # ==========================================
   swagger-ui:
-    profiles: ['nonprod']
-    restart: 'no'
-    deploy:
-      replicas: 0
-
-  otel-collector:
+    # External interactive API docs are intentionally not exposed in production.
+    # OTel collector is inherited from docker-compose.yml and remains enabled.
     profiles: ['nonprod']
     restart: 'no'
     deploy:
