@@ -180,6 +180,11 @@ update_services() {
 # Health Check
 # ============================================
 
+health_endpoint_is_healthy() {
+    curl -fsS --max-time 10 "https://${DOMAIN}/health" \
+        | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'
+}
+
 health_check() {
     log_step "Running health checks..."
 
@@ -187,15 +192,12 @@ health_check() {
     sleep 5
 
     for i in {1..12}; do
-        local http_code
-        http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${DOMAIN}/health" || echo "000")
-
-        if [ "$http_code" = "200" ]; then
-            log_info "Health check passed (HTTP 200)"
+        if health_endpoint_is_healthy; then
+            log_info "Health check passed"
             return 0
         fi
 
-        log_info "Health check attempt $i/12: HTTP $http_code"
+        log_info "Health check attempt $i/12 did not return a healthy payload"
         sleep 5
     done
 
@@ -236,12 +238,10 @@ EOF
 
     # Verify rollback health
     sleep 5
-    local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${DOMAIN}/health" || echo "000")
-    if [ "$http_code" = "200" ]; then
+    if health_endpoint_is_healthy; then
         log_info "Rollback health check passed"
     else
-        log_error "Rollback health check failed (HTTP $http_code). Manual intervention required."
+        log_error "Rollback health check failed. Manual intervention required."
     fi
 }
 

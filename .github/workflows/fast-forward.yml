@@ -10,6 +10,7 @@ jobs:
       ${{
         contains(github.event.comment.body, '/fast-forward') &&
         github.event.issue.pull_request &&
+        github.event.comment.user.type != 'Bot' &&
         !endsWith(github.actor, '[bot]')
       }}
     runs-on: ubuntu-latest

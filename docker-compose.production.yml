@@ -87,6 +87,23 @@ services:
     image: nginx:alpine
     container_name: ytprocessor-nginx
     restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - |
+        reload_marker="$(stat -c %Y /etc/letsencrypt/.nginx-reload-required 2>/dev/null || true)";
+        (
+          last_reload_marker="$reload_marker";
+          while :; do
+            current_marker="$(stat -c %Y /etc/letsencrypt/.nginx-reload-required 2>/dev/null || true)";
+            if [ -n "$current_marker" ] && [ "$current_marker" != "$last_reload_marker" ]; then
+              nginx -s reload;
+              last_reload_marker="$current_marker";
+            fi
+            sleep 60;
+          done
+        ) &
+        exec nginx -g 'daemon off;'
     ports:
       - '80:80'
       - '443:443'

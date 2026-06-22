@@ -156,7 +156,7 @@ jobs:
           DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
         run: |
           for i in {1..12}; do
-            if curl -sf --max-time 10 "https://${DEPLOY_DOMAIN}/health"; then
+            if curl -fsS --max-time 10 "https://${DEPLOY_DOMAIN}/health" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
               echo "Health check passed"
               exit 0
             fi

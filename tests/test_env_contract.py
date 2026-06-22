@@ -208,6 +208,27 @@ def test_remote_deploy_verifies_rollback_images_before_restore():
 
 
 @pytest.mark.unit
+def test_deploy_health_gates_require_healthy_payloads():
+    """Deploy-time health checks must inspect the JSON status, not only HTTP 200."""
+    workflow = (REPO_ROOT / ".github/workflows/deploy-production.yml").read_text()
+    remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
+
+    healthy_pattern = r'"status"[[:space:]]*:[[:space:]]*"healthy"'
+
+    assert healthy_pattern in workflow
+    assert "health_endpoint_is_healthy" in remote_script
+    assert healthy_pattern in remote_script
+
+
+@pytest.mark.unit
+def test_fast_forward_workflow_ignores_bot_comments():
+    """Fast-forward workflow should not run for bot-authored issue comments."""
+    workflow = (REPO_ROOT / ".github/workflows/fast-forward.yml").read_text()
+
+    assert "github.event.comment.user.type != 'Bot'" in workflow
+
+
+@pytest.mark.unit
 def test_production_certbot_no_longer_mounts_docker_socket():
     """Certbot renewal does not require a writable Docker socket."""
     production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
@@ -217,6 +238,15 @@ def test_production_certbot_no_longer_mounts_docker_socket():
     assert "/var/run/docker.sock" not in certbot_compose
     assert "docker exec ytprocessor-nginx" not in production_compose
     assert "docker exec ytprocessor-nginx" not in certbot_compose
+
+
+@pytest.mark.unit
+def test_production_nginx_consumes_certbot_reload_marker():
+    """Production nginx should watch the shared certbot reload marker and reload itself."""
+    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
+
+    assert ".nginx-reload-required" in production_compose
+    assert "nginx -s reload" in production_compose
 
 
 @pytest.mark.unit
