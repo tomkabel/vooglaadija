@@ -81,7 +81,6 @@ services:
       - --storage.tsdb.path=/prometheus
       - --web.console.libraries=/usr/share/prometheus/console_libraries
       - --web.console.templates=/usr/share/prometheus/consoles
-      - --web.enable-admin-api
       - --web.enable-lifecycle
       # 12h retention gives enough historical data for meaningful dashboard visualization
       # during demo sessions without excessive disk usage (~2-4 GB for 12h at 15s scrape).

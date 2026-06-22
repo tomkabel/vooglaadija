@@ -153,9 +153,9 @@ def test_demo_prometheus_service_can_read_alert_rules():
 
 @pytest.mark.unit
 def test_demo_prometheus_admin_api_is_only_bound_locally():
-    """The demo admin API should not be exposed beyond localhost."""
+    """The demo Prometheus UI should stay local without enabling admin endpoints."""
     config = _load_yaml_file("docker-compose.demo.yml")
     prometheus = config["services"]["prometheus"]
 
-    assert "--web.enable-admin-api" in prometheus["command"]
     assert "127.0.0.1:9090:9090" in prometheus["ports"]
+    assert "--web.enable-admin-api" not in prometheus["command"]
