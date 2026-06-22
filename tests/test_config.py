@@ -1,7 +1,10 @@
 """Tests for Settings model_validator — new in this PR."""
 
 import os
+import subprocess
+import sys
 import warnings
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -196,7 +199,10 @@ class TestSettingsProductionValidation:
 
     def test_short_secret_key_raises(self):
         """SECRET_KEY shorter than 32 chars raises ValueError."""
-        with pytest.raises((ValidationError, ValueError)):
+        with pytest.raises(
+            (ValidationError, ValueError),
+            match="SECRET_KEY must be at least 32 characters",
+        ):
             _make_production_settings(
                 secret_key="tooshort",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
@@ -231,6 +237,106 @@ class TestSettingsProductionValidation:
         assert any("allowing all origins" in str(warning.message) for warning in w), (
             "Expected warning about wildcard CORS origins"
         )
+
+    def test_valid_cors_origins_are_accepted(self):
+        """HTTP and HTTPS CORS origins, including ports, are accepted and normalized."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            cors_origins="http://example.com, https://example.com:8443",
+        )
+
+        assert s.cors_origins == "http://example.com,https://example.com:8443"
+
+    @pytest.mark.parametrize(
+        "cors_origin",
+        [
+            "not-a-url",
+            "ftp://example.com",
+            "http://example.com/path",
+            "https://example.com:bad",
+            "https://example.com:0",
+            "https://user:pass@example.com",
+            "http://exam ple.com",
+        ],
+    )
+    def test_invalid_cors_origins_raise(self, cors_origin):
+        """Malformed or unsupported CORS_ORIGINS entries raise ValueError."""
+        with pytest.raises((ValidationError, ValueError), match="Invalid CORS origin"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                cors_origins=cors_origin,
+            )
+
+    @pytest.mark.parametrize(
+        ("port_field", "port_value"),
+        [
+            ("db_port", "0"),
+            ("db_port", "65536"),
+            ("db_port", "not-a-port"),
+            ("redis_port", "0"),
+            ("redis_port", "65536"),
+            ("redis_port", "not-a-port"),
+        ],
+    )
+    def test_invalid_configured_ports_raise(self, port_field, port_value):
+        """DB_PORT and REDIS_PORT outside 1-65535 or non-numeric raise ValueError."""
+        with pytest.raises((ValidationError, ValueError), match=port_field.upper()):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                **{port_field: port_value},
+            )
+
+    def test_unwritable_storage_path_raises(self, tmp_path, monkeypatch):
+        """An unwritable STORAGE_PATH raises ValueError with the resolved path."""
+        blocked_path = tmp_path / "blocked-storage"
+        resolved_path = blocked_path.resolve()
+
+        def fake_access(path, mode):
+            return Path(path) != resolved_path
+
+        monkeypatch.setattr(os, "access", fake_access)
+
+        with pytest.raises(
+            (ValidationError, ValueError),
+            match=f"Storage path not writable: {resolved_path}",
+        ):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                storage_path=str(blocked_path),
+            )
+
+    def test_environment_field_is_absent(self):
+        """Settings no longer exposes the removed environment field."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+
+        assert not hasattr(s, "environment")
+
+    def test_core_config_import_fails_fast_for_invalid_production_config(self, tmp_path):
+        """The settings singleton fails during module import for invalid production config."""
+        env = os.environ.copy()
+        env.pop("TESTING", None)
+        env["DATABASE_URL"] = "postgresql+asyncpg://u:p@localhost/db"
+        env["SECRET_KEY"] = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+        env["CORS_ORIGINS"] = "not-a-url"
+        env["STORAGE_PATH"] = str(tmp_path / "startup-storage")
+
+        result = subprocess.run(
+            [sys.executable, "-c", "import core.config"],
+            check=False,
+            capture_output=True,
+            env=env,
+            text=True,
+        )
+
+        assert result.returncode != 0
+        assert "Invalid CORS origin: 'not-a-url'" in result.stderr
 
     def test_database_url_constructed_from_components(self):
         """DATABASE_URL is built from DB_USER/DB_PASSWORD/DB_NAME when not set directly."""

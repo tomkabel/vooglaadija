@@ -16,6 +16,7 @@ Usage:
 """
 
 import logging
+import os
 import sys
 from collections.abc import MutableMapping
 from datetime import UTC
@@ -47,17 +48,7 @@ def add_service_context(
 ) -> MutableMapping[str, Any]:
     """Add service context to all log entries."""
     event_dict["service"] = "vooglaadija"
-    # Try to get environment from settings, fall back to env var
-    try:
-        from core.config import settings
-
-        event_dict["environment"] = (
-            settings.environment if hasattr(settings, "environment") else "unknown"
-        )
-    except Exception:
-        import os
-
-        event_dict["environment"] = os.environ.get("ENVIRONMENT", "development")
+    event_dict["environment"] = os.environ.get("ENVIRONMENT", "development")
     return event_dict
 
 
@@ -86,8 +77,6 @@ def configure_logging(log_level: str = "INFO") -> None:
     Args:
         log_level: Minimum log level to output (default: INFO)
     """
-    import os
-
     is_production = os.environ.get("ENVIRONMENT", "development") == "production"
 
     # Shared processors for all environments

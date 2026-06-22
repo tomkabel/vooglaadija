@@ -11,7 +11,6 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from core.config import settings
 from core.logging_config import get_logger
 from core.metrics import WORKER_STATUS, init_metrics
 from core.redis_client import check_worker_health, close_redis_client
@@ -84,7 +83,8 @@ def _record_shutdown_signal(signum: int) -> None:
 
 def initialize_sentry(app_version: str) -> None:
     """Initialize Sentry in production when a DSN is configured."""
-    if settings.environment != "production" or not os.environ.get("SENTRY_DSN"):
+    environment = _get_environment()
+    if environment != "production" or not os.environ.get("SENTRY_DSN"):
         return
 
     import sentry_sdk
@@ -101,10 +101,15 @@ def initialize_sentry(app_version: str) -> None:
         ],
         traces_sample_rate=0.1,
         profiles_sample_rate=0.1,
-        environment=settings.environment,
+        environment=environment,
         release=f"vooglaadija@{app_version}",
     )
     logger.info("sentry_initialized", dsn_masked="***")
+
+
+def _get_environment() -> str:
+    """Read the deployment environment from the process environment."""
+    return os.environ.get("ENVIRONMENT", "development")
 
 
 def verify_templates_and_static_assets() -> None:
@@ -182,7 +187,7 @@ def create_lifespan(
         logger.info(
             "application_starting",
             version=app_version,
-            environment=settings.environment,
+            environment=_get_environment(),
             uvloop_available=uvloop_available,
         )
         init_metrics()

@@ -4,7 +4,7 @@ import math
 import os
 import warnings
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,9 +32,6 @@ def _estimate_entropy(text: str) -> float:
 
 
 class Settings(BaseSettings):
-    # Application mode - used for structlog, sentry, etc.
-    environment: str = "development"
-
     database_url: str = ""
     secret_key: str = ""
     secret_key_previous: str = ""
@@ -83,9 +80,10 @@ class Settings(BaseSettings):
         if is_testing:
             return self._apply_testing_defaults()
 
+        self._validate_ports()
         self._build_database_url()
         self._validate_secret_key()
-        self._warn_cors()
+        self._validate_cors()
         self._resolve_storage()
         self._build_redis_url()
         return self
@@ -96,6 +94,20 @@ class Settings(BaseSettings):
         if not self.redis_url:
             self.redis_url = "redis://localhost:6379"
         return self
+
+    def _validate_ports(self) -> None:
+        self._validate_port("DB_PORT", self.db_port)
+        self._validate_port("REDIS_PORT", self.redis_port)
+
+    @staticmethod
+    def _validate_port(name: str, value: str) -> None:
+        try:
+            port = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid {name}: {value!r} must be an integer in 1-65535") from exc
+
+        if not 1 <= port <= 65535:
+            raise ValueError(f"Invalid {name}: {value!r} must be in range 1-65535")
 
     def _build_database_url(self) -> None:
         if self.database_url:
@@ -119,6 +131,9 @@ class Settings(BaseSettings):
                 'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
 
+        if len(self.secret_key) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters for security")
+
         entropy_per_char = _estimate_entropy(self.secret_key)
         if entropy_per_char < 2.9:
             raise ValueError(
@@ -126,19 +141,56 @@ class Settings(BaseSettings):
                 f"(~{entropy_per_char:.1f} bits/char, need >= 2.9). "
                 'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
-        if len(self.secret_key) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters for security")
 
-    def _warn_cors(self) -> None:
+    def _validate_cors(self) -> None:
         if self.cors_origins == "*":
             warnings.warn(
                 "CORS_ORIGINS is set to '*', allowing all origins. "
                 "This is insecure for production.",
                 stacklevel=2,
             )
+            return
+
+        origins = [origin.strip() for origin in self.cors_origins.split(",")]
+        for origin in origins:
+            self._validate_cors_origin(origin)
+        self.cors_origins = ",".join(origins)
+
+    @staticmethod
+    def _validate_cors_origin(origin: str) -> None:
+        try:
+            parsed = urlparse(origin)
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(f"Invalid CORS origin: {origin!r}") from exc
+
+        if (
+            not origin
+            or parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.hostname is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+            or any(char.isspace() for char in origin)
+            or port == 0
+        ):
+            raise ValueError(f"Invalid CORS origin: {origin!r}")
 
     def _resolve_storage(self) -> None:
-        self.storage_path = str(Path(self.storage_path).resolve())
+        path = Path(self.storage_path).expanduser().resolve()
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ValueError(f"Storage path not writable: {path}") from exc
+
+        if not os.access(path, os.W_OK):
+            raise ValueError(f"Storage path not writable: {path}")
+
+        self.storage_path = str(path)
 
     def _build_redis_url(self) -> None:
         if self.redis_url:
