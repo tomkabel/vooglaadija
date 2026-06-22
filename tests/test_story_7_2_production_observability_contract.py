@@ -50,9 +50,9 @@ def test_production_compose_explicitly_enables_metrics_and_tracing():
     assert "FEATURE_METRICS_ENABLED: ${FEATURE_METRICS_ENABLED:-true}" in production_compose
     assert "FEATURE_TRACING_ENABLED: ${FEATURE_TRACING_ENABLED:-true}" in production_compose
     assert (
-        'CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+        "CORS_ORIGINS: 'https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'" in production_compose
     )
-    assert 'COOKIE_SECURE: "True"' in production_compose
+    assert "COOKIE_SECURE: 'True'" in production_compose
     assert "DATABASE_URL: postgresql+asyncpg://" not in production_compose
     assert "REDIS_URL: redis://:" not in production_compose
     assert "ports: !override []" in production_compose

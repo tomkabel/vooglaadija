@@ -169,9 +169,9 @@ def test_production_deploy_domain_is_parameterized():
 
     assert "DEPLOY_DOMAIN=example.com" in env_example
     assert (
-        'CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+        "CORS_ORIGINS: 'https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'" in production_compose
     )
-    assert 'DEPLOY_DOMAIN: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+    assert "DEPLOY_DOMAIN: '${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'" in production_compose
     assert "server_name ${DEPLOY_DOMAIN};" in nginx_template
     assert "/etc/letsencrypt/live/${DEPLOY_DOMAIN}/fullchain.pem" in nginx_template
     assert ': "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in deploy_script
