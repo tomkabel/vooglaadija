@@ -120,7 +120,7 @@
           <svg class="h-5 w-5 text-jade-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-check" /></svg>
         </div>
         <div>
-          <p class="text-xs text-gray-500 font-display font-medium uppercase tracking-wider">Completed</p>
+          <p class="text-xs text-gray-400 font-display font-medium uppercase tracking-wider">Completed</p>
           <p id="stat-completed" class="text-xl font-display font-bold text-white mt-0.5 leading-tight tabular-nums">
             {{ jobs|selectattr('status', 'equalto', 'completed')|list|length }}
           </p>
@@ -136,7 +136,7 @@
           <svg class="h-5 w-5 text-amber-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-clock" /></svg>
         </div>
         <div>
-          <p class="text-xs text-gray-500 font-display font-medium uppercase tracking-wider">In Progress</p>
+          <p class="text-xs text-gray-400 font-display font-medium uppercase tracking-wider">In Progress</p>
           <p id="stat-in-progress" class="text-xl font-display font-bold text-white mt-0.5 leading-tight tabular-nums">
             {{ jobs|selectattr('status', 'in', ['processing', 'pending'])|list|length }}
           </p>
@@ -152,7 +152,7 @@
           <svg class="h-5 w-5 text-warm-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg>
         </div>
         <div>
-          <p class="text-xs text-gray-500 font-display font-medium uppercase tracking-wider">Total</p>
+          <p class="text-xs text-gray-400 font-display font-medium uppercase tracking-wider">Total</p>
           <p id="stat-total" class="text-xl font-display font-bold text-white mt-0.5 leading-tight tabular-nums">
             {{ jobs|length }}
           </p>

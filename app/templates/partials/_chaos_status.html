@@ -1,6 +1,6 @@
 <div class="flex items-center gap-2 mb-4">
   <h2 class="text-lg font-display font-semibold text-white">Active scenarios</h2>
-  <span class="text-xs text-gray-500 font-body">(refreshes every 5s)</span>
+  <span class="text-xs text-gray-400 font-body">(refreshes every 5s)</span>
 </div>
 
 <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -13,7 +13,7 @@
         class="w-2 h-2 rounded-full {% if status.circuit_breaker_open %}bg-coral-400{% else %}bg-gray-600{% endif %}"
       ></span>
       <span
-        class="text-sm font-mono font-bold {% if status.circuit_breaker_open %}text-coral-400{% else %}text-gray-500{% endif %}"
+        class="text-sm font-mono font-bold {% if status.circuit_breaker_open %}text-coral-400{% else %}text-gray-400{% endif %}"
       >
         {{ "ACTIVE" if status.circuit_breaker_open else "INACTIVE" }}
       </span>
@@ -29,7 +29,7 @@
         class="w-2 h-2 rounded-full {% if status.worker_crash %}bg-coral-400{% else %}bg-gray-600{% endif %}"
       ></span>
       <span
-        class="text-sm font-mono font-bold {% if status.worker_crash %}text-coral-400{% else %}text-gray-500{% endif %}"
+        class="text-sm font-mono font-bold {% if status.worker_crash %}text-coral-400{% else %}text-gray-400{% endif %}"
       >
         {{ "ACTIVE" if status.worker_crash else "INACTIVE" }}
       </span>
@@ -45,7 +45,7 @@
         class="w-2 h-2 rounded-full {% if status.db_failover %}bg-coral-400{% else %}bg-gray-600{% endif %}"
       ></span>
       <span
-        class="text-sm font-mono font-bold {% if status.db_failover %}text-coral-400{% else %}text-gray-500{% endif %}"
+        class="text-sm font-mono font-bold {% if status.db_failover %}text-coral-400{% else %}text-gray-400{% endif %}"
       >
         {{ "ACTIVE" if status.db_failover else "INACTIVE" }}
       </span>
@@ -61,7 +61,7 @@
         class="w-2 h-2 rounded-full {% if status.throttle_spike %}bg-coral-400{% else %}bg-gray-600{% endif %}"
       ></span>
       <span
-        class="text-sm font-mono font-bold {% if status.throttle_spike %}text-coral-400{% else %}text-gray-500{% endif %}"
+        class="text-sm font-mono font-bold {% if status.throttle_spike %}text-coral-400{% else %}text-gray-400{% endif %}"
       >
         {{ "ACTIVE" if status.throttle_spike else "INACTIVE" }}
       </span>
@@ -77,7 +77,7 @@
         class="w-2 h-2 rounded-full {% if status.slow_processing %}bg-coral-400{% else %}bg-gray-600{% endif %}"
       ></span>
       <span
-        class="text-sm font-mono font-bold {% if status.slow_processing %}text-coral-400{% else %}text-gray-500{% endif %}"
+        class="text-sm font-mono font-bold {% if status.slow_processing %}text-coral-400{% else %}text-gray-400{% endif %}"
       >
         {{ "SLOWED" if status.slow_processing else "NORMAL" }}
       </span>

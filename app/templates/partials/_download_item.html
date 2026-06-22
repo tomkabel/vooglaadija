@@ -4,7 +4,7 @@
       <div
         class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"
       >
-        <svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-video" /></svg>
+        <svg class="h-5 w-5 text-gray-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-video" /></svg>
       </div>
       <div>
         <p class="url-text" hx-disable title="{{ job.title or job.url }}">{{ job.title or job.url }}</p>
@@ -32,6 +32,7 @@
     {% endif %}
 
     <button
+      type="button"
       hx-delete="/web/downloads/{{ job.id }}"
       hx-target="closest .download-row"
       hx-swap="outerHTML"

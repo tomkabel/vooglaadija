@@ -702,11 +702,11 @@
     const jobPathId = encodeURIComponent(jobId);
     const createdAt = data.created_at ? String(data.created_at) : '';
     const status = normalizeStatus(data.status);
-    return `<div class="flex-1 min-w-0"><div class="flex items-center gap-3"><div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"><svg class="h-5 w-5 text-gray-500" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-video" /></svg></div><div><p class="url-text" hx-disable title="${escapeHtml(data.title || data.url || '')}">${escapeHtml(data.title || data.url || '')}</p><p class="timestamp" data-timestamp="${escapeHtml(createdAt)}">${escapeHtml(date)}</p></div></div></div><div class="flex items-center gap-3">${getStatusBadgeHTML(status)}${
+    return `<div class="flex-1 min-w-0"><div class="flex items-center gap-3"><div class="h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0"><svg class="h-5 w-5 text-gray-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-video" /></svg></div><div><p class="url-text" hx-disable title="${escapeHtml(data.title || data.url || '')}">${escapeHtml(data.title || data.url || '')}</p><p class="timestamp" data-timestamp="${escapeHtml(createdAt)}">${escapeHtml(date)}</p></div></div></div><div class="flex items-center gap-3">${getStatusBadgeHTML(status)}${
       status.toLowerCase() === 'completed'
         ? `<a href="/web/downloads/${jobPathId}/file" class="download-btn text-xs" download target="_blank" hx-boost="false"><svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg> Save</a>`
         : ''
-    }<button hx-delete="/web/downloads/${jobPathId}" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download"><svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-trash" /></svg></button></div>`;
+    }<button type="button" hx-delete="/web/downloads/${jobPathId}" hx-target="closest .download-row" hx-swap="outerHTML" hx-confirm="Delete this download?" class="btn-danger" aria-label="Delete download"><svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-trash" /></svg></button></div>`;
   }
 
   function escapeHtml(text) {

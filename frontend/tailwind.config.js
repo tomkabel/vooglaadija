@@ -18,7 +18,6 @@ module.exports = {
     'text-gray-200',
     'text-gray-300',
     'text-gray-400',
-    'text-gray-500',
     'text-white',
     'text-amber-400',
     'bg-amber-400/30',

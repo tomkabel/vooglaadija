@@ -106,24 +106,24 @@
   }
 
   .btn-ghost {
-    @apply px-4 py-2 text-gray-400 font-body font-medium rounded-lg hover:text-white hover:bg-white/[0.06] active:bg-white/[0.03] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200;
+    @apply px-4 py-2 text-gray-400 font-body font-medium rounded-lg hover:text-white hover:bg-white/[0.06] active:bg-white/[0.03] disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 transition-colors duration-200;
   }
 
   .btn-danger {
-    @apply text-gray-500 hover:text-coral-400 p-2.5 rounded-xl hover:bg-coral-500/10 active:bg-coral-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-500 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 transition-colors duration-200 ease-out-expo;
+    @apply text-gray-400 hover:text-coral-400 p-2.5 rounded-xl hover:bg-coral-500/10 active:bg-coral-500/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 transition-colors duration-200 ease-out-expo;
   }
 
   .btn-danger-solid {
-    @apply px-5 py-2.5 bg-coral-500/10 hover:bg-coral-500/20 text-coral-400 rounded-xl border border-coral-500/30 hover:border-coral-500/50 active:bg-coral-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-display font-semibold transition-colors duration-200 ease-out-expo;
+    @apply px-5 py-2.5 bg-coral-500/10 hover:bg-coral-500/20 text-coral-400 rounded-xl border border-coral-500/30 hover:border-coral-500/50 active:bg-coral-500/30 disabled:opacity-50 disabled:cursor-not-allowed font-display font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 transition-colors duration-200 ease-out-expo;
   }
 
   .download-btn {
-    @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-display font-semibold rounded-xl text-surface-900 bg-jade-500 hover:bg-jade-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-jade-500/20 hover:shadow-jade-400/30 transition-colors duration-200 ease-out-expo;
+    @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-display font-semibold rounded-xl text-surface-900 bg-jade-500 hover:bg-jade-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-jade-500/20 hover:shadow-jade-400/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jade-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 transition-colors duration-200 ease-out-expo;
   }
 
   /* === Form Components === */
   .form-input {
-    @apply w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white placeholder-gray-500 font-body focus:border-amber-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-amber-500/20 focus-visible:outline-none transition-colors duration-200 ease-out-expo;
+    @apply w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white placeholder-gray-400 font-body focus:border-amber-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 transition-colors duration-200 ease-out-expo;
   }
 
   .form-input:hover {
@@ -131,7 +131,7 @@
   }
 
   .form-input:disabled {
-    @apply opacity-60 cursor-not-allowed bg-surface-900/50 border-white/[0.04] text-gray-500;
+    @apply opacity-60 cursor-not-allowed bg-surface-900/50 border-white/[0.04] text-gray-400;
   }
 
   .form-label {
@@ -147,7 +147,7 @@
   }
 
   .input-icon-wrapper svg {
-    @apply absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none;
+    @apply absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none;
   }
 
   .password-strength {
@@ -175,7 +175,7 @@
   }
 
   .password-strength-text {
-    @apply text-xs font-body text-gray-500 transition-colors duration-300;
+    @apply text-xs font-body text-gray-400 transition-colors duration-300;
   }
 
   .password-strength-text.is-weak {
@@ -374,7 +374,7 @@
   }
 
   .timestamp {
-    @apply text-xs text-gray-500 mt-1;
+    @apply text-xs text-gray-400 mt-1;
   }
 
   /* === Visual Effect Components === */
@@ -447,7 +447,7 @@
   }
 
   .progress-eta {
-    @apply text-xs text-gray-500;
+    @apply text-xs text-gray-400;
   }
 
   /* === Toast Component === */
