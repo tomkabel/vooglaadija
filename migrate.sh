@@ -134,10 +134,9 @@ run_migrations_and_verify() {
 
 echo "Running database migrations..."
 
-# Fix broken migration chain before attempting upgrade
-# Ensures alembic_version points to a revision that exists in the filesystem,
-# preventing "Can't locate revision" errors after migration squashing.
-python /app/scripts/ensure_migration_chain.py || echo "WARNING: chain fix script failed, continuing..."
+# Validate migration chain before attempting upgrade. A broken chain must
+# stop startup; stamping head without running missing DDL is unsafe.
+python /app/scripts/ensure_migration_chain.py
 
 # Try to acquire lock
 lock_result=$(acquire_lock 2>/dev/null)

@@ -2,8 +2,9 @@
 
 When migrations are squashed/consolidated, the database's alembic_version
 table may reference a revision ID that no longer exists in the codebase.
-This script detects and fixes that situation by stamping the database to
-the current head revision using Alembic's public API.
+This script detects that situation and fails safe by default. An operator
+may explicitly opt into an unsafe stamp-to-head repair, but startup should
+never silently mark a stale schema as current.
 
 This MUST run before any call to ``alembic upgrade head`` because the
 latter will crash if the chain is broken.
@@ -19,7 +20,7 @@ Environment variables:
 
 Exit codes:
 
-    0  — chain is valid or was successfully repaired
+    0  — chain is valid or was intentionally repaired
     1  — an unexpected error occurred
 """
 
@@ -109,6 +110,11 @@ def _stamp_to_head(database_url: str, head: str) -> None:
         conn.close()
 
 
+def _unsafe_stamp_allowed() -> bool:
+    value = os.environ.get("ALLOW_MIGRATION_CHAIN_STAMP", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
@@ -155,10 +161,32 @@ def main() -> int:
         print(f"OK: database revision '{db_revision}' found in migration files")
         return 0
 
-    # ── Broken chain — stamp to head ────────────────────────────────────
+    # ── Broken chain — fail safe unless explicitly overridden ───────────
     print(
-        f"Broken chain: database revision '{db_revision}' not found in "
-        f"migration files. Stamping to head '{head}'...",
+        f"ERROR: database revision '{db_revision}' is not present in migration files.",
+        file=sys.stderr,
+    )
+    print(
+        (
+            "Refusing to stamp alembic_version automatically because that can "
+            "mark a stale schema as current without running the missing DDL. "
+            "Restore the missing revision or repair the database manually."
+        ),
+        file=sys.stderr,
+    )
+    if not _unsafe_stamp_allowed():
+        print(
+            (
+                "If you have independently verified the schema and still want "
+                "to force a stamp, rerun with ALLOW_MIGRATION_CHAIN_STAMP=1."
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"Unsafe override enabled: stamping database to head '{head}'.",
+        file=sys.stderr,
     )
 
     try:
