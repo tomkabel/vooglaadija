@@ -6,8 +6,8 @@ import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, cast
-from urllib.parse import urlparse
+from typing import Protocol
+from urllib.parse import quote, urlparse
 
 from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -108,7 +108,7 @@ def _validate_redirect_url(url: str | None, default: str) -> str:
 
 
 def get_csrf_token(request: Request) -> str:
-    token = _validated_csrf_token(cast(str | None, request.cookies.get("csrf_token")))
+    token = _validated_csrf_token(request.cookies.get("csrf_token"))
     if token is not None:
         return token
     return _new_csrf_token()
@@ -118,7 +118,7 @@ def set_csrf_token_cookie(response: Response, token: str) -> str:
     safe_token = _validated_csrf_token(token) or _new_csrf_token()
     response.set_cookie(
         key="csrf_token",
-        value=safe_token,
+        value=quote(safe_token, safe=""),
         httponly=True,
         secure=settings.cookie_secure,
         samesite="strict",
