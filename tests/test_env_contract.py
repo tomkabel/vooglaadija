@@ -168,12 +168,14 @@ def test_production_deploy_domain_is_parameterized():
     deploy_script = (REPO_ROOT / "infra/deploy/deploy.sh").read_text()
 
     assert "DEPLOY_DOMAIN=example.com" in env_example
-    assert 'CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+    assert (
+        'CORS_ORIGINS: "https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
+    )
     assert 'DEPLOY_DOMAIN: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in production_compose
     assert "server_name ${DEPLOY_DOMAIN};" in nginx_template
     assert "/etc/letsencrypt/live/${DEPLOY_DOMAIN}/fullchain.pem" in nginx_template
     assert ': "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in deploy_script
-    assert "DOMAIN=\"$DEPLOY_DOMAIN\"" in deploy_script
+    assert 'DOMAIN="$DEPLOY_DOMAIN"' in deploy_script
 
 
 @pytest.mark.unit
@@ -188,8 +190,11 @@ def test_remote_deploy_uses_secret_files_not_ssh_env_payloads():
     assert "ENV_FILE_PATH" in workflow
     assert ': "${GHCR_PAT_FILE:?GHCR_PAT_FILE is required}"' in remote_script
     assert ': "${ENV_FILE_PATH:?ENV_FILE_PATH is required}"' in remote_script
-    assert 'docker login "$GHCR_REGISTRY" -u "$GHCR_OWNER" --password-stdin < "$GHCR_PAT_FILE"' in remote_script
-    assert 'printf \'%s\' "$ENV_B64"' not in remote_script
+    assert (
+        'docker login "$GHCR_REGISTRY" -u "$GHCR_OWNER" --password-stdin < "$GHCR_PAT_FILE"'
+        in remote_script
+    )
+    assert "printf '%s' \"$ENV_B64\"" not in remote_script
 
 
 @pytest.mark.unit
@@ -197,7 +202,7 @@ def test_remote_deploy_verifies_rollback_images_before_restore():
     """Rollback verifies captured backup image tags before changing services."""
     remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
 
-    assert "docker manifest inspect \"$image\"" in remote_script
+    assert 'docker manifest inspect "$image"' in remote_script
     assert "verify_backup_images" in remote_script
     assert "Backup image is unavailable" in remote_script
 

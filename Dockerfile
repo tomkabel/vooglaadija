@@ -185,6 +185,8 @@ ENV PYTHONPATH=/app \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD ["curl", "-fsS", "-o", "/dev/null", "http://localhost:8082/health"]
 
+EXPOSE 8082
+
 COPY --from=app-builder /app/worker/entrypoint-worker.sh ./entrypoint-worker.sh
 COPY migrate.sh /app/migrate.sh
 RUN chmod +x ./entrypoint-worker.sh /app/migrate.sh && \

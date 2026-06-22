@@ -79,8 +79,7 @@ def test_security_workflow_uploads_safety_report_even_on_failure():
     workflow = read_project_file(".github", "workflows", "fastapi-test.yml")
 
     assert (
-        "      - name: Upload security report\n"
-        "        uses: actions/upload-artifact@"
+        "      - name: Upload security report\n        uses: actions/upload-artifact@"
     ) in workflow
     assert "        if: always()\n" in workflow
     assert "          path: security-report.json\n" in workflow

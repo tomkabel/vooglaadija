@@ -1,18 +1,27 @@
 """Worker health monitoring via Redis heartbeat and HTTP health endpoint."""
 
+import asyncio
 import json
 import os
 import threading
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import TypeVar
 
+import uvicorn
+from fastapi import FastAPI, Response
+from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sqlalchemy import text
 
+from core.config import settings
+from core.database import get_async_session_factory
 from core.logging_config import get_logger
 from core.redis_client import close_redis_client, get_redis_client, reset_redis_client
-from core.config import settings
 
 logger = get_logger(__name__)
+
+health_app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 # Module-level lock for thread-safe access to _worker_state
 _state_lock = threading.Lock()
@@ -29,6 +38,10 @@ _worker_state = {
 
 _start_time = datetime.now(UTC)
 _health_server = None
+_health_server_thread: threading.Thread | None = None
+_worker_loop: asyncio.AbstractEventLoop | None = None
+
+T = TypeVar("T")
 
 # Re-export shared client lifecycle for worker/main.py
 close_health_redis_client = close_redis_client
@@ -109,84 +122,74 @@ async def write_health_async() -> bool:
         return False
 
 
-class _HealthHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for health checks."""
-
-    def do_GET(self):
-        if self.path == "/metrics":
-            data = generate_latest()
-            self.send_response(200)
-            self.send_header("Content-Type", CONTENT_TYPE_LATEST)
-            self.end_headers()
-            self.wfile.write(data)
-        elif self.path == "/health":
-            uptime = (datetime.now(UTC) - _start_time).total_seconds()
-            # Clone all worker state under lock to avoid race conditions
-            with _state_lock:
-                worker_status = _worker_state.get("status", "unknown")
-                last_hb = _worker_state.get("last_heartbeat")
-                current_job_started_at = _worker_state.get("current_job_started_at")
-                health_data = {
-                    **_worker_state,
-                    "uptime_seconds": round(uptime),
-                }
-
-            # Determine health status based on worker state and heartbeat
-            if worker_status == "running":
-                # Worker is running - consider healthy if a job is actively processing
-                if current_job_started_at:
-                    # Job is running, check if job started recently
-                    job_start_dt = datetime.fromisoformat(current_job_started_at)
-                    seconds_since_job_start = (datetime.now(UTC) - job_start_dt).total_seconds()
-                    # Only mark unhealthy if job exceeded 10 minutes AND no fresh heartbeat
-                    if seconds_since_job_start > 600:
-                        # Check if there's a recent heartbeat
-                        has_fresh_heartbeat = False
-                        if last_hb:
-                            last_hb_dt = datetime.fromisoformat(last_hb)
-                            seconds_since_hb = (datetime.now(UTC) - last_hb_dt).total_seconds()
-                            if seconds_since_hb < 120:
-                                has_fresh_heartbeat = True
-                        if not has_fresh_heartbeat:
-                            health_data["status"] = "unhealthy"
-                            health_data["reason"] = "Job processing exceeded 10 minutes"
-                elif last_hb:
-                    # No job running but have heartbeat - check heartbeat freshness
-                    last_hb_dt = datetime.fromisoformat(last_hb)
-                    seconds_since_hb = (datetime.now(UTC) - last_hb_dt).total_seconds()
-                    if seconds_since_hb > 120:
-                        health_data["status"] = "unhealthy"
-                        health_data["reason"] = "No heartbeat in over 120 seconds"
-                # else: No job running and no heartbeat yet - this is okay for idle worker
-            elif worker_status == "starting":
-                health_data["status"] = "starting"
-            else:
-                health_data["status"] = "unhealthy"
-                health_data["reason"] = f"Worker status is {worker_status}"
-
-            status_code = 200 if health_data["status"] in ("running", "starting") else 503
-
-            self.send_response(status_code)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(health_data).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):  # noqa: A002
-        """Suppress default logging."""
+async def _check_redis() -> bool:
+    """Return whether Redis is reachable from the worker health app."""
+    try:
+        client = get_redis_client()
+        return bool(await client.ping())
+    except Exception as e:
+        logger.warning("worker_health_redis_check_failed", error=str(e))
+        return False
 
 
-def start_health_server(port: int | None = None) -> HTTPServer | None:
-    """Start the health check HTTP server in a background thread.
+async def _check_database() -> bool:
+    """Return whether the database is reachable from the worker health app."""
+    try:
+        session_factory = get_async_session_factory()
+        async with session_factory() as db:
+            await db.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        logger.warning("worker_health_database_check_failed", error=str(e))
+        return False
+
+
+async def _run_on_worker_loop(coro_factory: Callable[[], Awaitable[T]]) -> T:
+    """Run async health checks on the worker loop when the HTTP server is threaded."""
+    loop = _worker_loop
+    current_loop = asyncio.get_running_loop()
+    if loop is None or loop is current_loop or loop.is_closed():
+        return await coro_factory()
+
+    future = asyncio.run_coroutine_threadsafe(coro_factory(), loop)
+    return await asyncio.wrap_future(future)
+
+
+@health_app.get("/health")
+async def health() -> JSONResponse:
+    """Return dependency readiness for worker health checks."""
+    redis_ok, database_ok = await asyncio.gather(
+        _run_on_worker_loop(_check_redis),
+        _run_on_worker_loop(_check_database),
+    )
+    is_ok = redis_ok and database_ok
+    return JSONResponse(
+        status_code=200 if is_ok else 503,
+        content={
+            "status": "ok" if is_ok else "degraded",
+            "checks": {
+                "redis": redis_ok,
+                "database": database_ok,
+            },
+        },
+    )
+
+
+@health_app.get("/metrics")
+async def metrics() -> Response:
+    """Return Prometheus-formatted worker metrics."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+def start_health_server(port: int | None = None) -> uvicorn.Server | None:
+    """Start the health check FastAPI server in a background thread.
 
     Port is read from WORKER_HEALTH_PORT env var (default: 8082).
     Set WORKER_HEALTH_PORT=0 to disable.
 
-    Returns the server instance (call server.shutdown() to stop).
+    Returns the uvicorn server instance for truthiness/lifecycle compatibility.
     """
-    global _health_server
+    global _health_server, _health_server_thread, _worker_loop
     if _health_server is not None:
         return _health_server
 
@@ -198,23 +201,38 @@ def start_health_server(port: int | None = None) -> HTTPServer | None:
         logger.info("worker_health_http_disabled")
         return None
 
-    _health_server = HTTPServer(("0.0.0.0", port), _HealthHandler)
-    thread = threading.Thread(target=_health_server.serve_forever, daemon=True)
-    thread.start()
+    try:
+        _worker_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _worker_loop = None
+
+    config = uvicorn.Config(
+        health_app,
+        host="0.0.0.0",
+        port=port,
+        log_level=os.environ.get("LOG_LEVEL", "info").lower(),
+        access_log=False,
+    )
+    _health_server = uvicorn.Server(config)
+    _health_server_thread = threading.Thread(target=_health_server.run, daemon=True)
+    _health_server_thread.start()
     logger.info("worker_health_server_started", port=port)
     return _health_server
 
 
 def stop_health_server():
     """Stop the health check HTTP server."""
-    global _health_server
+    global _health_server, _health_server_thread, _worker_loop
     if _health_server:
-        _health_server.shutdown()
-        try:
-            _health_server.server_close()
-        except Exception as e:
-            logger.warning("error_closing_health_server_socket", error=str(e))
+        _health_server.should_exit = True
+        if _health_server_thread is not None:
+            _health_server_thread.join(timeout=5)
+            if _health_server_thread.is_alive():
+                _health_server.force_exit = True
+                _health_server_thread.join(timeout=1)
         _health_server = None
+        _health_server_thread = None
+        _worker_loop = None
 
 
 if __name__ == "__main__":
