@@ -2,13 +2,17 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from jose import JWTError, jwt
 from sqlalchemy import select
 
 from app import auth
+from app.api.dependencies import get_current_user_from_cookie
 from app.main import app
 from app.services.auth_service import verify_password
 from core.models.user import User
@@ -336,6 +340,71 @@ async def test_me_authenticated_returns_user():
     data = response.json()
     assert data["email"] == "me@example.com"
     assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_me_rejects_refresh_token_for_bearer_auth(db_session):
+    """Protected API routes must reject refresh tokens."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        email = f"refresh-as-access-{uuid.uuid4().hex[:8]}@example.com"
+        await client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "testpassword123"},
+        )
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "testpassword123"},
+        )
+        refresh_token = login_response.json()["refresh_token"]
+
+        response = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {refresh_token}"},
+        )
+
+    assert response.status_code == 401
+    assert "Could not validate credentials" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_cookie_auth_rejects_refresh_token(db_session):
+    """Cookie-backed protected routes must also reject refresh tokens."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        email = f"cookie-refresh-{uuid.uuid4().hex[:8]}@example.com"
+        await client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "testpassword123"},
+        )
+
+    result = await db_session.execute(select(User).where(User.email == email))
+    user = result.scalar_one()
+    request = SimpleNamespace(cookies={"access_token": auth.create_refresh_token(user.id)})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user_from_cookie(db_session, request, None)
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Could not validate credentials"
+
+
+@pytest.mark.asyncio
+async def test_logout_blacklists_both_token_cookies():
+    """Logout should await revocation for both access and refresh tokens."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/api/v1/auth/register",
+            json={"email": "logout-blacklist@example.com", "password": "testpassword123"},
+        )
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": "logout-blacklist@example.com", "password": "testpassword123"},
+        )
+
+        with patch("app.services.token_blacklist.blacklist_token", new_callable=AsyncMock) as mock_blacklist:
+            response = await client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 303
+    assert mock_blacklist.await_count == 2
 
 
 @pytest.mark.asyncio

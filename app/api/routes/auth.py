@@ -288,7 +288,7 @@ async def me(current_user: CurrentUser) -> UserResponse:
     return UserResponse(id=current_user.id, email=current_user.email)
 
 
-def _blacklist_token_cookie(
+async def _blacklist_token_cookie(
     token_str: str | None,
     verify_fn,
     blacklist_fn,
@@ -303,7 +303,7 @@ def _blacklist_token_cookie(
     if not jti:
         return
     remaining = max(int(payload.get("exp", 0)) - int(datetime.now(UTC).timestamp()), 60)
-    blacklist_fn(jti, ttl_seconds=remaining)
+    await blacklist_fn(jti, ttl_seconds=remaining)
 
 
 @router.post("/logout")
@@ -316,8 +316,16 @@ async def logout(request: Request):
     """
     from app.services.token_blacklist import blacklist_token
 
-    _blacklist_token_cookie(request.cookies.get("access_token"), verify_token, blacklist_token)
-    _blacklist_token_cookie(request.cookies.get("refresh_token"), verify_token, blacklist_token)
+    await _blacklist_token_cookie(
+        request.cookies.get("access_token"),
+        verify_token,
+        blacklist_token,
+    )
+    await _blacklist_token_cookie(
+        request.cookies.get("refresh_token"),
+        verify_token,
+        blacklist_token,
+    )
 
     redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
     clear_token_cookies(redirect)

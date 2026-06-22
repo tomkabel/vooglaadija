@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import verify_token
+from app.auth import ACCESS_TOKEN_TYPE, verify_token
 from app.services.token_blacklist import is_token_blacklisted
 from core.database import get_db
 from core.models.user import User, not_deleted
@@ -78,7 +78,7 @@ async def get_current_user_from_cookie(
         token = credentials.credentials
     else:
         token = request.cookies.get("access_token")
-    return await _resolve_user_from_token(db, token, expected_type=None)
+    return await _resolve_user_from_token(db, token, expected_type=ACCESS_TOKEN_TYPE)
 
 
 async def get_current_user(
@@ -91,7 +91,11 @@ async def get_current_user(
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return await _resolve_user_from_token(db, credentials.credentials, expected_type=None)
+    return await _resolve_user_from_token(
+        db,
+        credentials.credentials,
+        expected_type=ACCESS_TOKEN_TYPE,
+    )
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
