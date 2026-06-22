@@ -1,5 +1,6 @@
 """Tests for worker main module."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
@@ -230,6 +231,7 @@ class TestWorkerMainStartup:
             patch("worker.main.redis_client", mock_redis),
             patch("worker.main.start_health_server"),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
         ):
@@ -261,6 +263,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server"),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
         ):
@@ -289,6 +292,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server", return_value=mock_health_server),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
             patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
@@ -326,6 +330,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server", return_value=None),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
             patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
@@ -366,6 +371,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server", return_value=None),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
             patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
@@ -377,3 +383,41 @@ class TestWorkerMainStartup:
         assert any("SELECT" in c.upper() or "select" in c for c in db_calls), (
             "Expected a SELECT statement to be executed during DB startup check"
         )
+
+    @pytest.mark.unit
+    async def test_midflight_shutdown_cancels_inflight_job_after_grace(self):
+        """A shutdown that arrives mid-job should still bound the task by grace period."""
+        import importlib
+
+        import worker.main
+
+        importlib.reload(worker.main)
+        worker.main.shutdown_event.clear()
+        worker.main.shutdown_requested_at = None
+        original_grace = worker.main.GRACE_PERIOD_SECONDS
+
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        async def long_running_job():
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        task = asyncio.create_task(long_running_job())
+
+        try:
+            await started.wait()
+            worker.main.GRACE_PERIOD_SECONDS = 0
+            worker.main._signal_handler()
+            await worker.main._await_current_job_with_shutdown_grace(task, "job-123")
+        finally:
+            worker.main.GRACE_PERIOD_SECONDS = original_grace
+            worker.main.shutdown_event.clear()
+            worker.main.shutdown_requested_at = None
+
+        assert cancelled.is_set()
+        assert task.cancelled()

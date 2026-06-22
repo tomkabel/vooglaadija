@@ -156,6 +156,32 @@ class CircuitBreaker:
         """Check if circuit is half-open (testing recovery)."""
         return self.state == CircuitState.HALF_OPEN
 
+    async def is_accepting(self) -> bool:
+        """Check whether the breaker should allow deferred work to resume.
+
+        Unlike the read-only state properties, this advances timeout-based
+        OPEN -> HALF_OPEN transitions under the async lock so background drain
+        loops do not get stuck waiting for a foreground request to probe the
+        breaker first.
+        """
+        if await self._is_chaos_override_active():
+            return False
+
+        async with self._lock:
+            d_failures = await self._distributed_failure_count()
+            d_last_failure = await self._distributed_last_failure()
+
+            if self._use_redis and d_failures >= self.failure_threshold and d_last_failure is not None:
+                if self._state != CircuitState.OPEN:
+                    elapsed = time.time() - d_last_failure
+                    if elapsed < self.reset_timeout:
+                        self._state = CircuitState.OPEN
+                        self._last_failure_time = time.monotonic()
+                        self._failure_count = d_failures
+                        CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
+
+            return self._check_and_transition_to_half_open() != CircuitState.OPEN
+
     async def _is_chaos_override_active(self) -> bool:
         """Check chaos circuit-breaker override with per-instance TTL cache.
 

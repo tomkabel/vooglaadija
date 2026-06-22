@@ -137,6 +137,20 @@ class TestCircuitBreakerOpenState:
             assert cb._last_failure_time is None
 
     @pytest.mark.asyncio
+    async def test_is_accepting_transitions_open_breaker_for_background_drain(self):
+        """Background drain checks should advance OPEN -> HALF_OPEN after timeout."""
+        cb = CircuitBreaker(name="test", failure_threshold=1, reset_timeout=30.0)
+        cb._state = CircuitState.OPEN
+        cb._last_failure_time = 0.0
+
+        with patch("app.services.circuit_breaker.time.monotonic", return_value=31.0):
+            accepting = await cb.is_accepting()
+
+        assert accepting is True
+        assert cb._state == CircuitState.HALF_OPEN
+        assert cb._last_failure_time is None
+
+    @pytest.mark.asyncio
     async def test_open_state_does_not_transition_before_timeout(self):
         """Assert remains OPEN when elapsed < reset_timeout."""
         cb = CircuitBreaker(name="test", failure_threshold=1, reset_timeout=30.0)

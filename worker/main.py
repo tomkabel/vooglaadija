@@ -1,6 +1,7 @@
 """Worker main loop with circuit-aware deferred queue draining and retry throttle."""
 
 import asyncio
+import contextlib
 import os
 import signal
 import time as _time
@@ -13,8 +14,10 @@ from core.database import get_async_session_factory
 from core.logging_config import configure_logging, get_logger
 from core.metrics import CIRCUIT_DEFERRED_DEPTH, QUEUE_DEPTH
 from core.models.download_job import DownloadJob
+from core.queue import redis_client
 from core.utils.security import validate_path
-from worker.dlq_manager import cleanup_expired_dlq, update_dlq_depth as _update_dlq_depth
+from worker.dlq_manager import cleanup_expired_dlq
+from worker.dlq_manager import update_dlq_depth as _update_dlq_depth
 from worker.health import (
     close_health_redis_client,
     start_health_server,
@@ -24,7 +27,6 @@ from worker.health import (
 )
 from worker.outbox_relay import cleanup_stale_outbox_entries, sync_outbox_to_queue
 from worker.processor import _drain_circuit_deferred, process_next_job
-from core.queue import redis_client
 from worker.state import shutdown_event
 from worker.zombie_sweeper import requeue_stuck_jobs
 
@@ -160,6 +162,47 @@ async def _update_queue_depth() -> None:
         logger.warning("queue_depth_update_failed", error=str(e))
 
 
+async def _await_current_job_with_shutdown_grace(
+    current_job_task: asyncio.Task,
+    job_id: str,
+) -> None:
+    """Bound an in-flight job even when shutdown starts after processing begins."""
+    shutdown_wait_task: asyncio.Task | None = None
+    try:
+        remaining = get_grace_period_remaining()
+        if remaining is not None:
+            if remaining <= 0:
+                raise TimeoutError
+            await asyncio.wait_for(asyncio.shield(current_job_task), timeout=remaining)
+            return
+
+        shutdown_wait_task = asyncio.create_task(shutdown_event.wait())
+        done, _pending = await asyncio.wait(
+            {current_job_task, shutdown_wait_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if current_job_task in done:
+            await current_job_task
+            return
+
+        remaining = get_grace_period_remaining()
+        if remaining is None or remaining <= 0:
+            raise TimeoutError
+        await asyncio.wait_for(asyncio.shield(current_job_task), timeout=remaining)
+    except TimeoutError:
+        logger.warning("job_timeout_during_shutdown_killed", job_id=job_id)
+        current_job_task.cancel()
+        try:
+            await asyncio.wait_for(current_job_task, timeout=3.0)
+        except (asyncio.CancelledError, TimeoutError):
+            pass
+    finally:
+        if shutdown_wait_task is not None:
+            shutdown_wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await shutdown_wait_task
+
+
 async def main() -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -264,24 +307,7 @@ async def main() -> None:
                 # Wrap in a Task so we can enforce remaining grace period
                 current_job_task = asyncio.create_task(process_next_job(job_id_str))
                 try:
-                    remaining = get_grace_period_remaining()
-                    if remaining is not None and remaining > 1:
-                        await asyncio.wait_for(
-                            asyncio.shield(current_job_task),
-                            timeout=remaining,
-                        )
-                    else:
-                        await current_job_task
-                except TimeoutError:
-                    logger.warning(
-                        "job_timeout_during_shutdown_killed",
-                        job_id=job_id_str,
-                    )
-                    current_job_task.cancel()
-                    try:
-                        await asyncio.wait_for(current_job_task, timeout=3.0)
-                    except (asyncio.CancelledError, TimeoutError):
-                        pass
+                    await _await_current_job_with_shutdown_grace(current_job_task, job_id_str)
                 finally:
                     current_job_task = None
 

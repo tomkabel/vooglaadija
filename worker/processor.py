@@ -61,33 +61,49 @@ async def _drain_circuit_deferred(max_batch: int = 10) -> int:
     claim (WHERE status='pending') succeeds on re-pickup.
     Returns number of jobs drained.
     """
-    if not _circuit_is_accepting():
+    if not await _circuit_is_accepting():
         return 0
     try:
         members = await redis_client.zrange(_CIRCUIT_DEFERRED_KEY, 0, max_batch - 1)
         if not members:
             return 0
-        await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, *members)
 
         session_factory = get_async_session_factory()
         drained = 0
         async with session_factory() as db:
             for job_id_str in members:
-                result = await db.execute(
-                    update(DownloadJob)
-                    .where(DownloadJob.id == job_id_str, DownloadJob.status == "deferred")
-                    .values(status="pending", updated_at=datetime.now(UTC))
-                )
-                if result.rowcount == 1:
-                    await push_to_download_queue(job_id_str)
-                    drained += 1
-                else:
-                    logger.warning(
-                        "circuit_drain_db_mismatch",
-                        job_id=job_id_str,
-                        reason="job not in deferred state or not found",
+                try:
+                    result = await db.execute(
+                        update(DownloadJob)
+                        .where(DownloadJob.id == job_id_str, DownloadJob.status == "deferred")
+                        .values(status="pending", updated_at=datetime.now(UTC))
                     )
-            await db.commit()
+                    if result.rowcount != 1:
+                        await db.rollback()
+                        await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, job_id_str)
+                        logger.warning(
+                            "circuit_drain_db_mismatch",
+                            job_id=job_id_str,
+                            reason="job not in deferred state or not found",
+                        )
+                        continue
+
+                    enqueued = await push_to_download_queue(job_id_str)
+                    if not enqueued:
+                        await db.rollback()
+                        logger.error("circuit_drain_enqueue_failed", job_id=job_id_str)
+                        continue
+
+                    await db.commit()
+                    await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, job_id_str)
+                    drained += 1
+                except Exception as job_error:
+                    await db.rollback()
+                    logger.error(
+                        "circuit_drain_job_failed",
+                        job_id=job_id_str,
+                        error=str(job_error),
+                    )
 
         try:
             remaining = await redis_client.zcard(_CIRCUIT_DEFERRED_KEY)
@@ -100,9 +116,9 @@ async def _drain_circuit_deferred(max_batch: int = 10) -> int:
         return 0
 
 
-def _circuit_is_accepting() -> bool:
+async def _circuit_is_accepting() -> bool:
     cb = get_youtube_circuit_breaker()
-    return not cb.is_open
+    return await cb.is_accepting()
 
 
 async def process_next_job(job_id: UUID | str | None = None) -> bool:
