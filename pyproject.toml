@@ -271,8 +271,8 @@ type-check = "mypy app/ core/ --ignore-missing-imports --install-types --non-int
 unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
 integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
 # Security
-"security-safety" = "safety scan --policy-file .safety-policy.yml --output json > security-report.json 2>&1 || true"
-"security-safety-check" = "safety scan --policy-file .safety-policy.yml --output json || true"
+"security-safety" = "safety --stage cicd scan --policy-file .safety-policy.yml --output json > security-report.json"
+"security-safety-check" = "safety --stage cicd scan --policy-file .safety-policy.yml --output json > security-report.json"
 
 # Environment variable overrides for CI
 [tool.hatch.envs.ci.env-vars]

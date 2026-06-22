@@ -255,10 +255,16 @@ jobs:
         run: uv tool install hatch==${{ env.HATCH_VERSION }}
 
       - name: Run Bandit security scan
-        run: hatch run security:scan-bandit || true
+        run: |
+          set -e
+          hatch run security:scan-bandit
 
       - name: Run Safety dependency check
-        run: hatch run ci:security-safety-check || true
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
+        run: |
+          set -e
+          hatch run ci:security-safety-check
 
       - name: Upload security report
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
