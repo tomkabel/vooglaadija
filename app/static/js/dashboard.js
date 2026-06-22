@@ -1,4 +1,12 @@
 (() => {
+  const Vooglaadija = window.Vooglaadija;
+  Vooglaadija.state.dashboard = Vooglaadija.state.dashboard || {};
+  const dashboardState = Vooglaadija.state.dashboard;
+  if (dashboardState.initialized) return;
+  dashboardState.initialized = true;
+  dashboardState.sseSource = dashboardState.sseSource || null;
+  dashboardState.htmxPending = dashboardState.htmxPending || new Set();
+
   // ─── Custom Confirm Modal with Focus Trap ──────────────────────────
   const modal = document.getElementById('confirm-modal');
   const modalTitle = document.getElementById('modal-title');
@@ -171,14 +179,22 @@
   }
 
   // ─── SSE ─────────────────────────────────────────────────────────────
-  let sseSource = null;
-  const htmxPending = new Set();
   let lastMsg = Date.now();
   let reconnectShown = false;
   let sseFailed = false;
   let announcementTimer = null;
   let sseHealthIntervalId = null;
   const SSE_TIMEOUT = 35000;
+
+  function markSseActivity() {
+    lastMsg = Date.now();
+    sseFailed = false;
+    const banner = document.getElementById('sse-reconnect-banner');
+    if (banner) {
+      banner.remove();
+      reconnectShown = false;
+    }
+  }
 
   function announceDownloadUpdate(message) {
     const announcer = document.getElementById('download-announcer');
@@ -206,9 +222,9 @@
     const elt = evt.detail.elt;
     const row = elt?.closest ? elt.closest('[data-job-id]') : null;
     if (row?.dataset.jobId) {
-      htmxPending.add(row.dataset.jobId);
+      dashboardState.htmxPending.add(row.dataset.jobId);
       setTimeout(() => {
-        htmxPending.delete(row.dataset.jobId);
+        dashboardState.htmxPending.delete(row.dataset.jobId);
       }, 3000);
     }
     if (document.getElementById('download-rows')) {
@@ -232,25 +248,14 @@
 
   function handleJobUpdate(event) {
     clearSkel();
-    lastMsg = Date.now();
-    sseFailed = false;
-    const banner = document.getElementById('sse-reconnect-banner');
-    if (banner) {
-      banner.remove();
-      reconnectShown = false;
-    }
-    let data;
-    try {
-      data = JSON.parse(event.data);
-    } catch (_) {
-      return;
-    }
+    markSseActivity();
+    const data = event.detail;
     if (!data?.id) return;
     let row = document.querySelector(`[data-job-id="${CSS.escape(data.id)}"]`);
     if (row) {
       updateDownloadRow(row, data);
     } else {
-      if (htmxPending.has(data.id)) return;
+      if (dashboardState.htmxPending.has(data.id)) return;
       const optRow = document.querySelector('[data-optimistic="true"]');
       if (optRow && optRow.querySelector('.url-text').textContent === data.url) return;
       row = createDownloadRow(data);
@@ -264,12 +269,8 @@
 
   function handleProgressUpdate(event) {
     clearSkel();
-    let data;
-    try {
-      data = JSON.parse(event.data);
-    } catch (_) {
-      return;
-    }
+    markSseActivity();
+    const data = event.detail;
     if (!data?.id) return;
     let row = document.querySelector(`[data-job-id="${CSS.escape(data.id)}"]`);
     if (!row) {
@@ -295,14 +296,41 @@
 
   function attachSSE(source) {
     if (!source) return;
+    const sseSource = dashboardState.sseSource;
+    if (sseSource === source) return;
     if (sseSource && sseSource !== source) {
-      sseSource.removeEventListener('job_update', handleJobUpdate);
-      sseSource.removeEventListener('progress_update', handleProgressUpdate);
+      sseSource.removeEventListener('job_update', bridgeJobUpdate);
+      sseSource.removeEventListener('progress_update', bridgeProgressUpdate);
     }
-    source.addEventListener('job_update', handleJobUpdate);
-    source.addEventListener('progress_update', handleProgressUpdate);
-    sseSource = source;
+    source.addEventListener('job_update', bridgeJobUpdate);
+    source.addEventListener('progress_update', bridgeProgressUpdate);
+    dashboardState.sseSource = source;
   }
+
+  function parseSseData(event) {
+    try {
+      const data = JSON.parse(event.data);
+      if (!data?.id) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function bridgeJobUpdate(event) {
+    const data = parseSseData(event);
+    if (!data) return;
+    Vooglaadija.events.dispatchEvent(new CustomEvent('job-update', { detail: data }));
+  }
+
+  function bridgeProgressUpdate(event) {
+    const data = parseSseData(event);
+    if (!data) return;
+    Vooglaadija.events.dispatchEvent(new CustomEvent('progress-update', { detail: data }));
+  }
+
+  Vooglaadija.events.addEventListener('job-update', handleJobUpdate);
+  Vooglaadija.events.addEventListener('progress-update', handleProgressUpdate);
 
   document.body.addEventListener('htmx:sseOpen', (evt) => {
     attachSSE(evt.detail.source);
@@ -366,12 +394,7 @@
       updateStats();
 
       const replace = (event) => {
-        let realData;
-        try {
-          realData = JSON.parse(event.data);
-        } catch (_) {
-          return;
-        }
+        const realData = event.detail;
         if (!realData?.url) return;
         const optRow = document.querySelector('[data-optimistic="true"]');
         if (!optRow) return;
@@ -379,15 +402,13 @@
           optRow.dataset.jobId = realData.id;
           optRow.removeAttribute('data-optimistic');
           updateDownloadRow(optRow, realData);
-          if (sseSource) sseSource.removeEventListener('job_update', replace);
+          Vooglaadija.events.removeEventListener('job-update', replace);
         }
       };
-      if (sseSource) {
-        sseSource.addEventListener('job_update', replace);
-        setTimeout(() => {
-          if (sseSource) sseSource.removeEventListener('job_update', replace);
-        }, 30000);
-      }
+      Vooglaadija.events.addEventListener('job-update', replace);
+      setTimeout(() => {
+        Vooglaadija.events.removeEventListener('job-update', replace);
+      }, 30000);
     });
 
   // ─── Submit button disabled state ───────────────────────────────────
@@ -703,7 +724,7 @@
     return div.innerHTML;
   }
 
-  window.VooglaadijaDashboard = {
+  window.Vooglaadija.dashboard = {
     formatRelativeTime: formatRelativeTime,
     updateStats: updateStats,
   };

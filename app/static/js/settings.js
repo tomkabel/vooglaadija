@@ -1,4 +1,6 @@
 (() => {
+  const Vooglaadija = window.Vooglaadija;
+
   // ─── Password Change Form: Match Validation ─────────────────────────
   const passwordForm = document.getElementById('password-change-form');
   if (passwordForm) {
@@ -10,7 +12,7 @@
 
       if (newPassword.value !== confirmPassword.value) {
         event.preventDefault();
-        window.showToast('New password and confirmation do not match.', 'error');
+        Vooglaadija.toast.show('New password and confirmation do not match.', 'error');
       }
     });
 
@@ -82,7 +84,7 @@
       const confirmValue = confirmInput ? confirmInput.value.trim().toUpperCase() : '';
       if (confirmValue !== 'DELETE') {
         event.preventDefault();
-        window.showToast('Type "DELETE" to confirm account deletion.', 'warning');
+        Vooglaadija.toast.show('Type "DELETE" to confirm account deletion.', 'warning');
         return;
       }
     });

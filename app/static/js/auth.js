@@ -1,4 +1,6 @@
 (() => {
+  const Vooglaadija = window.Vooglaadija;
+
   // Public pages that don't need auth
   const PUBLIC_PAGES = ['/web/login', '/web/register', '/web/health'];
 
@@ -34,19 +36,19 @@
     // Check for logged out session message FIRST
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('logged_out') === '1') {
-      window.showToast('You have been logged out successfully.', 'info');
+      Vooglaadija.toast.show('You have been logged out successfully.', 'info');
       window.history.replaceState({}, '', window.location.pathname);
     }
 
     // Check for expired session message
     if (urlParams.get('expired') === '1') {
-      window.showToast('Your session has expired. Please log in again.', 'info');
+      Vooglaadija.toast.show('Your session has expired. Please log in again.', 'info');
       window.history.replaceState({}, '', window.location.pathname);
     }
 
     // Check for deleted account message
     if (urlParams.get('account_deleted') === '1') {
-      window.showToast('Your account has been deleted.', 'info');
+      Vooglaadija.toast.show('Your account has been deleted.', 'info');
       window.history.replaceState({}, '', window.location.pathname);
     }
 
@@ -57,8 +59,7 @@
   // Run on every page load
   initAuth();
 
-  // Expose functions globally for manual use
-  window.auth = {
+  window.Vooglaadija.auth = {
     refreshAccessToken,
   };
 })();

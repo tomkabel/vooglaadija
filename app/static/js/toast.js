@@ -1,8 +1,10 @@
 (() => {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
+  const Vooglaadija = window.Vooglaadija;
 
   function showToast(message, type) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
     const toast = document.createElement('div');
     toast.className = `toast toast-${type || 'info'}`;
     toast.setAttribute('role', 'alert');
@@ -18,5 +20,8 @@
     }, 5000);
   }
 
-  window.showToast = showToast;
+  window.Vooglaadija.toast = {
+    ...(Vooglaadija.toast || {}),
+    show: showToast,
+  };
 })();

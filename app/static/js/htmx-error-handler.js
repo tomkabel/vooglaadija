@@ -1,4 +1,6 @@
 (() => {
+  const Vooglaadija = window.Vooglaadija;
+
   /**
    * Initialize HTMX error handlers
    */
@@ -68,12 +70,12 @@
         }
 
         case 403:
-          window.showToast('You do not have permission to perform this action', 'error');
+          Vooglaadija.toast.show('You do not have permission to perform this action', 'error');
           break;
 
         case 429: {
           const retryAfter = xhr.getResponseHeader('Retry-After');
-          window.showToast(
+          Vooglaadija.toast.show(
             retryAfter
               ? `Rate limited. Try again in ${retryAfter}s`
               : 'Too many requests. Please wait before trying again.',
@@ -84,9 +86,9 @@
 
         default:
           if (xhr.status >= 500) {
-            window.showToast('Server error. Please try again later.', 'error');
+            Vooglaadija.toast.show('Server error. Please try again later.', 'error');
           } else if (xhr.status >= 400) {
-            window.showToast('Request failed. Please check your input.', 'error');
+            Vooglaadija.toast.show('Request failed. Please check your input.', 'error');
           }
       }
     });
@@ -127,20 +129,20 @@
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = errorMessage; // Parse as HTML to strip tags
           const sanitized = tempDiv.textContent.trim(); // Extract plain text
-          window.showToast(sanitized || 'Request failed. Please try again.', 'error');
+          Vooglaadija.toast.show(sanitized || 'Request failed. Please try again.', 'error');
         } else if (xhr.responseText) {
           // Fall back to extracting plain text from HTML response
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = xhr.responseText;
           const plainText = (tempDiv.textContent || tempDiv.innerText || '').trim();
           if (plainText) {
-            window.showToast(plainText, 'error');
+            Vooglaadija.toast.show(plainText, 'error');
           } else {
-            window.showToast('Request failed. Please try again.', 'error');
+            Vooglaadija.toast.show('Request failed. Please try again.', 'error');
           }
         } else {
           // No response body - still show generic error
-          window.showToast('Request failed. Please try again.', 'error');
+          Vooglaadija.toast.show('Request failed. Please try again.', 'error');
         }
       }
     });
