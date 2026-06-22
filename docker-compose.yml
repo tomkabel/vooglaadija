@@ -99,11 +99,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=api,container_name=ytprocessor-api,environment=${ENVIRONMENT:-production},project=ytprocessor'
     # Networks and aliases for service discovery
     networks:
       ytprocessor-network:
@@ -149,11 +144,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=worker,container_name=ytprocessor-worker,environment=${ENVIRONMENT:-production},project=ytprocessor'
     networks:
       ytprocessor-network:
         aliases:
@@ -171,11 +161,6 @@ services:
       POSTGRES_INITDB_ARGS: '--data-checksums'
     volumes:
       - postgres_data:/var/lib/postgresql/data:Z
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=db,container_name=ytprocessor-db,environment=${ENVIRONMENT:-production},project=ytprocessor'
     ports: []
     # Database typically needs more resources
     # Note: PostgreSQL must run as its default user, not overridden by security-context
@@ -225,11 +210,6 @@ services:
       REDISCLI_AUTH: '${REDIS_PASSWORD}'
     security_opt:
       - no-new-privileges=true
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=redis,container_name=ytprocessor-redis,environment=${ENVIRONMENT:-production},project=ytprocessor'
     deploy:
       resources:
         limits:
@@ -267,11 +247,6 @@ services:
       - '4318:4318' # OTLP HTTP
     security_opt:
       - no-new-privileges=true
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=otel-collector,container_name=otel-collector,environment=${ENVIRONMENT:-production},project=ytprocessor'
     deploy:
       resources:
         limits:
@@ -305,11 +280,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=loki,container_name=ytprocessor-loki,environment=${ENVIRONMENT:-production},project=ytprocessor'
     deploy:
       resources:
         limits:
@@ -346,11 +316,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=nginx,container_name=ytprocessor-nginx,environment=${ENVIRONMENT:-production},project=ytprocessor'
     deploy:
       resources:
         limits:
@@ -376,11 +341,6 @@ services:
       URL: http://127.0.0.1:8080/openapi.json
     ports:
       - '8081:8080'
-    logging:
-      driver: 'loki'
-      options:
-        loki-url: 'http://localhost:3100/loki/api/v1/push'
-        loki-external-labels: 'service=swagger-ui,container_name=swagger-ui,environment=${ENVIRONMENT:-production},project=ytprocessor'
     deploy:
       resources:
         limits:
