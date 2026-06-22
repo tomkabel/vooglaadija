@@ -208,6 +208,28 @@ def test_remote_deploy_verifies_rollback_images_before_restore():
 
 
 @pytest.mark.unit
+def test_production_certbot_no_longer_mounts_docker_socket():
+    """Certbot renewal does not require a writable Docker socket."""
+    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
+    certbot_compose = (REPO_ROOT / "infra/certbot/docker-compose.certbot.yml").read_text()
+
+    assert "/var/run/docker.sock" not in production_compose
+    assert "/var/run/docker.sock" not in certbot_compose
+    assert "docker exec ytprocessor-nginx" not in production_compose
+    assert "docker exec ytprocessor-nginx" not in certbot_compose
+
+
+@pytest.mark.unit
+def test_dockerfile_verifies_swagger_assets_before_installing_them():
+    """Dockerfile verifies downloaded Swagger assets with SHA-384 checksums."""
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text()
+
+    assert "sha384sum -c" in dockerfile
+    assert "swagger-ui-bundle.js" in dockerfile
+    assert "swagger-ui.css" in dockerfile
+
+
+@pytest.mark.unit
 def test_netdata_claim_contract_keeps_tokens_out_of_logs():
     """Netdata claim wiring uses plural room env and redacts token output."""
     monitoring_compose = (REPO_ROOT / "docker-compose.monitoring.yml").read_text()

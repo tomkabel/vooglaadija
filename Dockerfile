@@ -94,7 +94,9 @@ COPY --link --from=frontend-builder /app/frontend/node_modules/htmx.org/dist/htm
 # Download Swagger UI assets (version 5.32.5 - exact pin for SRI integrity)
 RUN mkdir -p /app/app/static/swagger && \
     curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui-bundle.js -o /app/app/static/swagger/swagger-ui-bundle.js && \
-    curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui.css -o /app/app/static/swagger/swagger-ui.css
+    curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui.css -o /app/app/static/swagger/swagger-ui.css && \
+    echo "e692745937658ac8144a915552aac39392af19d91caeb6733c831115d5d1e7d6b804ef201ff894990210d6937d0b9ca5  /app/app/static/swagger/swagger-ui-bundle.js" | sha384sum -c - && \
+    echo "1b65be6b705a9eae9a123e0beae8009c46b27745452ed08f66abfd24e6cd5dac779923aa03b5a20d85a8217c1527067c  /app/app/static/swagger/swagger-ui.css" | sha384sum -c -
 
 # ============================================
 # Stage 4: Runtime Base
