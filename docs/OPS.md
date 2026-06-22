@@ -12,6 +12,10 @@
 | `DB_NAME`      | PostgreSQL database name          | `ytprocessor`             |                                            |
 | `DB_HOST`      | PostgreSQL host                   | `localhost`               |                                            |
 | `DB_PORT`      | PostgreSQL port                   | `5432`                    |                                            |
+| `DB_POOL_SIZE` | SQLAlchemy pool size              | `10`                      | Worker production override defaults to `3`. |
+| `DB_MAX_OVERFLOW` | SQLAlchemy pool overflow       | `5`                       | Worker production override defaults to `2`. |
+| `DB_POOL_TIMEOUT` | SQLAlchemy pool wait timeout   | `30`                      | Must be at least `1`.                      |
+| `DB_POOL_RECYCLE` | SQLAlchemy pool recycle setting | `1800`                    | Must be at least `1`.                      |
 
 ### Redis
 
@@ -39,7 +43,7 @@
 | Variable                              | Description                    | Default                            |
 | ------------------------------------- | ------------------------------ | ---------------------------------- |
 | `FEATURE_METRICS_ENABLED`             | Enable `/metrics` endpoint     | `true`                             |
-| `FEATURE_TRACING_ENABLED`             | Enable OpenTelemetry tracing   | `false`                            |
+| `FEATURE_TRACING_ENABLED`             | Enable OpenTelemetry tracing   | `true`                             |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`         | Generic OTLP endpoint          | `http://localhost:4317`            |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace-specific OTLP endpoint   | `http://localhost:4317/v1/traces`  |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Metrics-specific OTLP endpoint | `http://localhost:4317/v1/metrics` |
@@ -76,6 +80,17 @@ docker compose up -d
 
 The compose file includes resource limits, health checks, read-only root filesystems, and SELinux
 labels (`:Z`).
+
+`docker-compose.yml` defines `deploy.resources.limits` for every base service. The API inherits the
+base service limit, while the worker declares explicit CPU and memory limits so it can be sized
+separately from API request handling. Production worker DB pool overrides live in
+`docker-compose.production.yml` as `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW`.
+
+Configuration validation runs when `core.config.Settings` is constructed outside `TESTING=1`.
+Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PATH`, weak
+`SECRET_KEY`, and invalid DB pool values fail startup before the API or worker handles traffic.
+`CORS_ORIGINS` entries must be origin-only `http` or `https` URLs; paths, credentials, query strings,
+fragments, whitespace, malformed ports, and port zero are rejected.
 
 ### Centralized Logs
 
