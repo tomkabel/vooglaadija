@@ -18,14 +18,35 @@
   {% endfor %}
 </div>
 
+<div
+  id="download-announcer"
+  class="sr-only"
+  aria-live="polite"
+  aria-atomic="true"
+></div>
+
 {% if jobs %}
-<div id="download-rows">
+<div
+  id="download-rows"
+  role="feed"
+  aria-label="Downloads"
+  aria-live="polite"
+  aria-atomic="false"
+  aria-busy="false"
+>
   {% for job in jobs %}
     {% include 'partials/_download_item.html' %}
   {% endfor %}
 </div>
 {% else %}
-<div id="download-rows">
+<div
+  id="download-rows"
+  role="feed"
+  aria-label="Downloads"
+  aria-live="polite"
+  aria-atomic="false"
+  aria-busy="false"
+>
   <div class="text-center py-16">
     <div
       class="mx-auto h-16 w-16 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-5"

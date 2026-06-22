@@ -163,7 +163,31 @@
   let lastMsg = Date.now();
   let reconnectShown = false;
   let sseFailed = false;
+  let announcementTimer = null;
+  let sseHealthIntervalId = null;
   const SSE_TIMEOUT = 35000;
+
+  function announceDownloadUpdate(message) {
+    const announcer = document.getElementById('download-announcer');
+    const announcement = String(message || '').trim();
+    if (!(announcer && announcement)) return;
+
+    announcer.textContent = '';
+    clearTimeout(announcementTimer);
+    announcementTimer = setTimeout(() => {
+      announcer.textContent = announcement;
+    }, 50);
+  }
+
+  function getDownloadTitle(data, row) {
+    const title = data.title || data.url || row.querySelector('.url-text')?.textContent;
+    return String(title || '').trim();
+  }
+
+  function getVisibleDownloadTitle(row, data) {
+    const title = row.querySelector('.url-text')?.textContent || data.title || data.url;
+    return String(title || '').trim();
+  }
 
   document.body.addEventListener('htmx:afterOnLoad', (evt) => {
     const elt = evt.detail.elt;
@@ -219,6 +243,8 @@
       row = createDownloadRow(data);
       insertRowSorted(row, data);
       row.classList.add('fade-in');
+      const title = getDownloadTitle(data, row);
+      if (title) announceDownloadUpdate(`New download: ${title}`);
     }
     updateStats();
   }
@@ -248,6 +274,8 @@
         progress: data.progress,
       });
       insertRowSorted(row, data);
+      const title = getDownloadTitle(data, row);
+      if (title) announceDownloadUpdate(`New download: ${title}`);
     }
     if (data.progress) updateDownloadProgress(row, data.progress);
   }
@@ -403,10 +431,9 @@
   });
 
   // ─── SSE Health Monitor ──────────────────────────────────────────────
-  setInterval(() => {
+  function updateLiveIndicator(elapsed) {
     const indicator = document.querySelector('.live-indicator');
     if (!indicator) return;
-    const elapsed = Date.now() - lastMsg;
     if (elapsed > SSE_TIMEOUT) {
       indicator.className = 'live-indicator live-indicator--error';
       indicator.textContent = 'Reconnecting\u2026';
@@ -414,30 +441,90 @@
       indicator.className = 'live-indicator live-indicator--active';
       indicator.textContent = 'Live';
     }
-  }, 5000);
+  }
 
-  setInterval(() => {
-    const elapsed = Date.now() - lastMsg;
-    if (elapsed > 60000 && !reconnectShown) {
-      reconnectShown = true;
-      sseFailed = elapsed > 120000;
-      const banner = document.createElement('div');
+  function showReconnectBanner(elapsed) {
+    if (!(elapsed > 60000)) return;
+
+    const failed = elapsed > 120000;
+    const wasReconnectShown = reconnectShown;
+    const wasFailed = sseFailed;
+    let banner = document.getElementById('sse-reconnect-banner');
+    if (!banner) {
+      banner = document.createElement('div');
       banner.id = 'sse-reconnect-banner';
       banner.className =
         'fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-coral-500/90 backdrop-blur-sm text-white px-5 py-3.5 rounded-xl shadow-2xl border border-white/10 slide-up';
-      banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#icon-alert" /></svg><span class="text-sm font-medium">${sseFailed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused'}</span><button onclick="location.reload()" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">${sseFailed ? 'Retry Connection' : 'Refresh'}</button>`;
       document.body.appendChild(banner);
-      const check = setInterval(() => {
-        if (Date.now() - lastMsg < 10000) {
-          const b = document.getElementById('sse-reconnect-banner');
-          if (b) b.remove();
-          reconnectShown = false;
-          sseFailed = false;
-          clearInterval(check);
-        }
-      }, 3000);
     }
-  }, 5000);
+
+    reconnectShown = true;
+    sseFailed = failed;
+    if (wasReconnectShown && wasFailed === failed && banner.dataset.sseFailed === String(failed)) {
+      return;
+    }
+    banner.dataset.sseFailed = String(failed);
+    banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="#icon-alert" /></svg><span class="text-sm font-medium">${failed ? 'Connection lost \u2014 ' : 'Connection lost \u2014 updates paused'}</span><button onclick="location.reload()" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">${failed ? 'Retry Connection' : 'Refresh'}</button>`;
+  }
+
+  function removeReconnectBanner() {
+    const banner = document.getElementById('sse-reconnect-banner');
+    if (banner) banner.remove();
+    reconnectShown = false;
+    sseFailed = false;
+  }
+
+  function removeReconnectBannerIfRecovered() {
+    if (!(Date.now() - lastMsg < 10000)) return;
+
+    removeReconnectBanner();
+  }
+
+  function runSseHealthCheck() {
+    const elapsed = Date.now() - lastMsg;
+    updateLiveIndicator(elapsed);
+    removeReconnectBannerIfRecovered();
+    showReconnectBanner(elapsed);
+  }
+
+  function shouldRunSseHealthMonitor() {
+    return Boolean(document.getElementById('sse-container'));
+  }
+
+  function startSseHealthMonitor() {
+    if (sseHealthIntervalId !== null || !shouldRunSseHealthMonitor()) return;
+    runSseHealthCheck();
+    sseHealthIntervalId = setInterval(runSseHealthCheck, 5000);
+  }
+
+  function stopSseHealthMonitor() {
+    if (sseHealthIntervalId === null) return;
+    clearInterval(sseHealthIntervalId);
+    sseHealthIntervalId = null;
+  }
+
+  function teardownSseHealthMonitor() {
+    stopSseHealthMonitor();
+    removeReconnectBanner();
+  }
+
+  function isDashboardSseElement(element) {
+    return Boolean(
+      element?.matches?.('#sse-container, #download-list') ||
+        element?.querySelector?.('#sse-container, #download-list'),
+    );
+  }
+
+  window.addEventListener('pagehide', stopSseHealthMonitor);
+  window.addEventListener('pageshow', startSseHealthMonitor);
+  window.addEventListener('beforeunload', stopSseHealthMonitor);
+  document.body.addEventListener('htmx:beforeCleanupElement', (evt) => {
+    if (isDashboardSseElement(evt.detail?.elt)) teardownSseHealthMonitor();
+  });
+  document.body.addEventListener('htmx:load', (evt) => {
+    if (isDashboardSseElement(evt.detail?.elt)) startSseHealthMonitor();
+  });
+  startSseHealthMonitor();
 
   // ─── Row Factory ─────────────────────────────────────────────────────
   const statusBadgeTemplates = loadStatusBadgeTemplates();
@@ -497,12 +584,16 @@
 
   function updateDownloadRow(row, data) {
     const badge = row.querySelector('.status-badge');
+    let statusChanged = false;
+    let nextStatus = normalizeStatus(data.status);
     if (badge) {
       const old = badge.textContent.trim().toLowerCase();
-      const next = normalizeStatus(data.status).toLowerCase();
+      nextStatus = normalizeStatus(data.status);
+      const next = nextStatus.toLowerCase();
       const replacement = createStatusBadge(data.status);
       if (replacement) {
         if (old !== next) {
+          statusChanged = true;
           replacement.classList.add('status-changed');
           setTimeout(() => {
             replacement.classList.remove('status-changed');
@@ -510,6 +601,7 @@
         }
         badge.replaceWith(replacement);
       } else if (old !== next) {
+        statusChanged = true;
         badge.classList.remove('status-changed');
         void badge.offsetWidth;
         badge.classList.add('status-changed');
@@ -517,6 +609,11 @@
           badge.classList.remove('status-changed');
         }, 600);
       }
+    }
+    if (statusChanged) {
+      const title = getVisibleDownloadTitle(row, data);
+      const visibleStatus = row.querySelector('.status-badge')?.textContent?.trim() || nextStatus;
+      if (title) announceDownloadUpdate(`${title} - ${visibleStatus}`);
     }
     const ts = row.querySelector('.timestamp');
     if (ts && data.updated_at) ts.textContent = formatRelativeTime(data.updated_at);
