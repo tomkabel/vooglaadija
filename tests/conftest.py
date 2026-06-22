@@ -10,6 +10,14 @@ _worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
 _test_db_path = os.path.abspath(f"test_{_worker_id}.db")
 _test_db_url = f"sqlite+aiosqlite:///{_test_db_path}"
 
+# Remove stale per-worker database from previous runs.
+# create_all skips existing tables so a stale file with an older schema
+# won't be updated to match the current model definitions.
+try:
+    os.remove(_test_db_path)
+except OSError:
+    pass
+
 # Force reconfigure the database URL before any app imports.
 # This ensures the app uses SQLite instead of PostgreSQL.
 import core.config  # noqa: E402
