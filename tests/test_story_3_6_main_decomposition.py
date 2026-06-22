@@ -28,6 +28,10 @@ def _csp_sources(csp: str, directive: str) -> list[str]:
     return []
 
 
+def _has_csp_source(csp: str, directive: str, expected_source: str) -> bool:
+    return any(source == expected_source for source in _csp_sources(csp, directive))
+
+
 @pytest.mark.unit
 def test_main_py_is_thin_application_assembly() -> None:
     """The FastAPI entry point stays below the story line-count limit."""
@@ -149,12 +153,12 @@ async def test_docs_cdn_fallback_keeps_versioned_urls_and_cdn_csp(monkeypatch, t
     assert "swagger-ui-dist@5.32.5/swagger-ui-bundle.js" in docs_response.text
     assert "swagger-ui-dist@5.32.5/swagger-ui.css" in docs_response.text
     docs_csp = docs_response.headers["Content-Security-Policy"]
-    assert "https://cdn.jsdelivr.net" in _csp_sources(docs_csp, "script-src")
-    assert "https://cdn.jsdelivr.net" in _csp_sources(docs_csp, "style-src")
+    assert _has_csp_source(docs_csp, "script-src", "https://cdn.jsdelivr.net")
+    assert _has_csp_source(docs_csp, "style-src", "https://cdn.jsdelivr.net")
     assert redoc_response.status_code == 200
     assert "redoc@2.0.0-rc.70/bundles/redoc.standalone.js" in redoc_response.text
     redoc_csp = redoc_response.headers["Content-Security-Policy"]
-    assert "https://cdn.jsdelivr.net" in _csp_sources(redoc_csp, "script-src")
+    assert _has_csp_source(redoc_csp, "script-src", "https://cdn.jsdelivr.net")
 
 
 @pytest.mark.unit
