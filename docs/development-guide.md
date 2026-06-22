@@ -60,7 +60,8 @@ hatch run test:all
 hatch run test:cov
 ```
 
-Tests use SQLite+aiosqlite (not PostgreSQL) by default. `conftest.py` sets `TESTING=1` and patches `core.config.settings.database_url` before any app import.
+Tests use SQLite+aiosqlite (not PostgreSQL) by default. `conftest.py` sets `TESTING=1` and patches
+`core.config.settings.database_url` before any app import.
 
 ## Linting & Quality
 
@@ -97,6 +98,7 @@ hatch run db-rollback         # Rollback one step
 ## Pre-commit Hooks
 
 Run on every commit (configured in `.pre-commit-config.yaml`):
+
 - ruff check + format
 - mypy (app/ and core/)
 - biome (JS/CSS/JSON)

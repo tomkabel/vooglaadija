@@ -4,24 +4,27 @@ Media Link Processor — Async API service for authenticated video download jobs
 
 ## Quick Reference
 
-| Part | Type | Key Tech | Root |
-|------|------|----------|------|
-| API Server | backend | FastAPI, SQLAlchemy 2.0 Async, JWT + bcrypt | `app/` |
-| Worker | backend | Async Redis consumer, yt-dlp, CircuitBreaker | `worker/` |
-| Frontend | web | Tailwind CSS 3.4, HTMX 1.9, Jinja2 | `frontend/` |
-| Infrastructure | infra | Docker Compose, Nginx (SSL), Prometheus | `infra/` |
+| Part           | Type    | Key Tech                                     | Root        |
+| -------------- | ------- | -------------------------------------------- | ----------- |
+| API Server     | backend | FastAPI, SQLAlchemy 2.0 Async, JWT + bcrypt  | `app/`      |
+| Worker         | backend | Async Redis consumer, yt-dlp, CircuitBreaker | `worker/`   |
+| Frontend       | web     | Tailwind CSS 3.4, HTMX 1.9, Jinja2           | `frontend/` |
+| Infrastructure | infra   | Docker Compose, Nginx (SSL), Prometheus      | `infra/`    |
 
 ## Generated Documentation
 
 ### Project Overview
 
-- [Project Overview](./project-overview.md) — Executive summary, tech stack, architecture classification
-- [Source Tree Analysis](./source-tree-analysis.md) — Annotated directory tree with integration points
+- [Project Overview](./project-overview.md) — Executive summary, tech stack, architecture
+  classification
+- [Source Tree Analysis](./source-tree-analysis.md) — Annotated directory tree with integration
+  points
 
 ### Architecture
 
 - [Architecture — API Server](./architecture-api.md) — FastAPI backend, services, auth, security
-- [Architecture — Worker](./architecture-worker.md) — Job processing, circuit breaker, error handling
+- [Architecture — Worker](./architecture-worker.md) — Job processing, circuit breaker, error
+  handling
 - [Architecture — Frontend](./architecture-frontend.md) — Tailwind design system, HTMX, SSE
 - [Architecture — Infrastructure](./architecture-infra.md) — Docker, monitoring stack, security
 
@@ -32,12 +35,15 @@ Media Link Processor — Async API service for authenticated video download jobs
 
 ### Components
 
-- [Component Inventory — API Server](./component-inventory-api.md) — Routes, services, models, schemas
-- [Component Inventory — Worker](./component-inventory-worker.md) — Queue structures, maintenance tasks
+- [Component Inventory — API Server](./component-inventory-api.md) — Routes, services, models,
+  schemas
+- [Component Inventory — Worker](./component-inventory-worker.md) — Queue structures, maintenance
+  tasks
 
 ### Integration
 
-- [Integration Architecture](./integration-architecture.md) — How parts communicate, data flow, shared dependencies
+- [Integration Architecture](./integration-architecture.md) — How parts communicate, data flow,
+  shared dependencies
 
 ### Development
 

@@ -32,7 +32,7 @@ config:
 
   # MD029 - Ordered list item prefix
   MD029:
-    style: one
+    style: one_or_ordered
 
   # MD036 - Emphasis used instead of heading (false positives with timestamps)
   MD036: false
@@ -50,12 +50,22 @@ ignores:
   - 'src/generated/**'
   - '**/CHANGELOG.md'
   - '.agents/**'
+  - '.claude/**'
+  - '.codex/**'
+  - '.commandcode/**'
+  - '.forge/**'
   - '.kilocode/**'
   - '.kilo/**'
   - '.opencode/**'
   - '**/.git/**'
+  - '_bmad/**'
+  - '_bmad-output/**'
   - '.github/DAILY_STANDUP.md'
   - '.github/ISSUE_TEMPLATE/**'
+  - 'ISSUES.md'
+  - 'docs/analysis/**'
+  - 'docs/security_analysis/**'
+  - 'docs/ARCHITECTURE-VULNERABILITY-ANALYSIS.md'
   - 'infra/deploy/README.md'
   - 'infra/ssl/README.md'
   - 'course-resources/**'
@@ -70,6 +80,7 @@ ignores:
   - '.openchange/**'
   - 'Senior_Final_Demos_*.md'
   - 'session-ses_*.md'
+  - 'unoptimized_prompt.md'
 
 # Disable inline config directives
 noInlineConfig: false

@@ -148,6 +148,7 @@ status: Mapped[str] = mapped_column(String(20), default="pending")
 No `CHECK` constraint or PostgreSQL `ENUM`. A bug could write `"pening"` or `"unknown"` and silently break all status-filtering logic. Same issue in `outbox.status`.
 
 **Recommendation**:
+
 ```sql
 ALTER TABLE download_jobs ADD CONSTRAINT ck_download_jobs_status
 CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'deferred'));

@@ -32,9 +32,15 @@ openapi.json
 
 # Content/research/cache directories (not project source code)
 .agents
+.claude
+.codex
+.commandcode
+.forge
 .kilo
 .kilocode
 .opencode
+_bmad
+_bmad-output
 .venv_manual
 .pytest_cache
 .openchange
@@ -45,9 +51,14 @@ research-analysis
 openspec
 presentation
 docs/images
+docs/analysis
+docs/security_analysis
+docs/ARCHITECTURE-VULNERABILITY-ANALYSIS.md
 site/content
 Senior_Final_Demos_*.md
 session-ses_*.md
+ISSUES.md
+unoptimized_prompt.md
 
 # Infrastructure docs (mirrors markdownlint ignore list)
 infra/deploy/README.md

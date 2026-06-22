@@ -32,7 +32,7 @@ repos:
       - id: check-shebang-scripts-are-executable
         exclude: '\\.agents/|\\.kilocode/'
       - id: detect-private-key
-        exclude: "^infra/ssl/"
+        exclude: '^infra/ssl/'
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: forbid-submodules
@@ -71,7 +71,8 @@ repos:
     rev: v1.15.0
     hooks:
       - id: mypy
-        args: [--ignore-missing-imports, --install-types, --non-interactive, --no-warn-unused-ignores]
+        args:
+          [--ignore-missing-imports, --install-types, --non-interactive, --no-warn-unused-ignores]
         additional_dependencies: [pydantic, types-redis, types-python-jose]
         files: '^app/'
 

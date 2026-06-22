@@ -4,18 +4,18 @@
 
 ### Database
 
-| Variable       | Description                       | Default                   | Notes                                      |
-| -------------- | --------------------------------- | ------------------------- | ------------------------------------------ |
-| `DATABASE_URL` | Full PostgreSQL connection string | _(built from components)_ | If set, `DB_*` variables are ignored.      |
-| `DB_USER`      | PostgreSQL username               | `postgres`                |                                            |
-| `DB_PASSWORD`  | PostgreSQL password               | _(required)_              | Must be set if `DATABASE_URL` is not used. |
-| `DB_NAME`      | PostgreSQL database name          | `ytprocessor`             |                                            |
-| `DB_HOST`      | PostgreSQL host                   | `localhost`               |                                            |
-| `DB_PORT`      | PostgreSQL port                   | `5432`                    |                                            |
-| `DB_POOL_SIZE` | SQLAlchemy pool size              | `10`                      | Worker production override defaults to `3`. |
-| `DB_MAX_OVERFLOW` | SQLAlchemy pool overflow       | `5`                       | Worker production override defaults to `2`. |
-| `DB_POOL_TIMEOUT` | SQLAlchemy pool wait timeout   | `30`                      | Must be at least `1`.                      |
-| `DB_POOL_RECYCLE` | SQLAlchemy pool recycle setting | `1800`                    | Must be at least `1`.                      |
+| Variable          | Description                       | Default                   | Notes                                       |
+| ----------------- | --------------------------------- | ------------------------- | ------------------------------------------- |
+| `DATABASE_URL`    | Full PostgreSQL connection string | _(built from components)_ | If set, `DB_*` variables are ignored.       |
+| `DB_USER`         | PostgreSQL username               | `postgres`                |                                             |
+| `DB_PASSWORD`     | PostgreSQL password               | _(required)_              | Must be set if `DATABASE_URL` is not used.  |
+| `DB_NAME`         | PostgreSQL database name          | `ytprocessor`             |                                             |
+| `DB_HOST`         | PostgreSQL host                   | `localhost`               |                                             |
+| `DB_PORT`         | PostgreSQL port                   | `5432`                    |                                             |
+| `DB_POOL_SIZE`    | SQLAlchemy pool size              | `10`                      | Worker production override defaults to `3`. |
+| `DB_MAX_OVERFLOW` | SQLAlchemy pool overflow          | `5`                       | Worker production override defaults to `2`. |
+| `DB_POOL_TIMEOUT` | SQLAlchemy pool wait timeout      | `30`                      | Must be at least `1`.                       |
+| `DB_POOL_RECYCLE` | SQLAlchemy pool recycle setting   | `1800`                    | Must be at least `1`.                       |
 
 ### Redis
 
@@ -89,8 +89,8 @@ separately from API request handling. Production worker DB pool overrides live i
 Configuration validation runs when `core.config.Settings` is constructed outside `TESTING=1`.
 Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PATH`, weak
 `SECRET_KEY`, and invalid DB pool values fail startup before the API or worker handles traffic.
-`CORS_ORIGINS` entries must be origin-only `http` or `https` URLs; paths, credentials, query strings,
-fragments, whitespace, malformed ports, and port zero are rejected.
+`CORS_ORIGINS` entries must be origin-only `http` or `https` URLs; paths, credentials, query
+strings, fragments, whitespace, malformed ports, and port zero are rejected.
 
 ### Centralized Logs
 
@@ -126,8 +126,8 @@ Open Grafana at `http://localhost:3000` and use Explore with the `Loki` datasour
 
 Application logs are emitted as one JSON object per line in production, so query-time `| json`
 parsing preserves fields such as `timestamp`, `level`, `logger`, `message`, `service`,
-`environment`, and request context like `request_id`. The Loki stream labels also include
-`service` and `environment` for container-level filtering; use explicit aliases such as
+`environment`, and request context like `request_id`. The Loki stream labels also include `service`
+and `environment` for container-level filtering; use explicit aliases such as
 `app_service="service"` when querying same-named fields from the JSON log body.
 
 Loki retention is configured in `infra/loki/loki.yml` as `168h` (7 days). This keeps the local and
@@ -139,8 +139,8 @@ raising retention for production.
 Rollback if the Loki Docker logging plugin is unavailable:
 
 1. Stop the stack: `docker compose down`.
-1. Change every compose logging block to one consistent fallback driver, preferably Docker's
-   `local` driver, rather than mixing `json-file` with Loki.
+1. Change every compose logging block to one consistent fallback driver, preferably Docker's `local`
+   driver, rather than mixing `json-file` with Loki.
 1. Remove or disable the `loki` service and `Loki` Grafana datasource only after all services use
    the fallback driver.
 1. Start the stack and verify `docker compose logs api` works before re-enabling the Loki driver.
