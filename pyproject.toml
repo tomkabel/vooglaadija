@@ -89,6 +89,7 @@ type = [
 security = [
     "bandit",
     "safety",
+    "detect-secrets>=1.5.0",
 ]
 dev = [
     "vooglaadija[test,lint,type,security]",
@@ -116,6 +117,7 @@ type-check = [
 security = [
     "bandit>=1.7.0",
     "safety>=2.3.0",
+    "detect-secrets>=1.5.0",
 ]
 # Meta group that includes all other groups
 dev = [
@@ -290,6 +292,7 @@ skip-install = true
 dependency-groups = ["security"]
 
 [tool.hatch.envs.security.scripts]
+scan-secrets = "detect-secrets-hook --baseline .secrets.baseline $(git ls-files ':!:app/static/js/htmx.min.js' ':!:frontend/css/dist/*' ':!:frontend/pnpm-lock.yaml' ':!:infra/ssl/*' ':!:pnpm-lock.yaml' ':!:uv.lock')"
 scan-bandit = "bandit -r app/ core/ -f screen --confidence-level high --severity-level medium"
 scan-safety = "safety scan --json --output=security-report.json || true"
 "bandit-report" = "bandit -r app/ core/ -f html -o bandit_report.html"

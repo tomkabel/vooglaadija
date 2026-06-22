@@ -254,6 +254,11 @@ jobs:
       - name: Install hatch
         run: uv tool install hatch==${{ env.HATCH_VERSION }}
 
+      - name: Run secret scan
+        run: |
+          set -e
+          hatch run security:scan-secrets
+
       - name: Run Bandit security scan
         run: |
           set -e
