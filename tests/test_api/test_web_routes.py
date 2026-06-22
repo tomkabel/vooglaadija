@@ -215,6 +215,39 @@ class TestValidateRedirectUrl:
         result = _validate_redirect_url("/web/../../etc/passwd", "/web/downloads")
         assert result == "/web/downloads"
 
+class TestGetCsrfToken:
+    """Tests for CSRF token reuse and hardening."""
+
+    def test_existing_hex_cookie_token_is_reused(self):
+        """Well-formed CSRF cookies should be reused for follow-up renders."""
+        from unittest.mock import MagicMock
+
+        from fastapi import Request
+
+        from app.api.routes.web import get_csrf_token
+
+        token = "0123456789abcdef0123456789abcdef"
+        mock_request = MagicMock(spec=Request)
+        mock_request.cookies = {"csrf_token": token}
+
+        assert get_csrf_token(mock_request) == token
+
+    def test_invalid_cookie_token_is_replaced(self):
+        """Malformed CSRF cookie values should not be reflected back to clients."""
+        from unittest.mock import MagicMock
+
+        from fastapi import Request
+
+        from app.api.routes.web import get_csrf_token
+
+        mock_request = MagicMock(spec=Request)
+        mock_request.cookies = {"csrf_token": "not-a-valid-token\r\n"}
+
+        token = get_csrf_token(mock_request)
+
+        assert token != "not-a-valid-token\r\n"
+        assert re.fullmatch(r"[0-9a-f]{32}", token, re.IGNORECASE)
+
 
 class TestValidateCsrfToken:
     """Tests for validate_csrf_token helper."""
@@ -748,6 +781,30 @@ class TestLogout:
             )
 
         assert logout_response.status_code == 303
+
+    @pytest.mark.asyncio
+    async def test_logout_blacklists_access_and_refresh_tokens(self):
+        """Web logout should revoke both token cookies before clearing them."""
+        email = f"logoutrevoke_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            with patch(
+                "app.services.token_blacklist.blacklist_token",
+                new_callable=AsyncMock,
+            ) as mock_blacklist:
+                logout_response = await client.post(
+                    "/web/logout",
+                    headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
+                )
+
+        assert logout_response.status_code == 303
+        assert mock_blacklist.await_count == 2
 
     @pytest.mark.asyncio
     async def test_logout_invalid_csrf(self):

@@ -65,7 +65,7 @@ def test_web_auth_routes_are_registered_once_on_aggregate_router():
             ("POST", "/web/login", "app.api.routes.web.web_auth"),
             ("GET", "/web/register", "app.api.routes.web.web_auth"),
             ("POST", "/web/register", "app.api.routes.web.web_auth"),
-            ("GET", "/web/demo-login", "app.api.routes.web.web_auth"),
+            ("POST", "/web/demo-login", "app.api.routes.web.web_auth"),
             ("POST", "/web/logout", "app.api.routes.web.web_auth"),
             ("POST", "/web/settings/password", "app.api.routes.web.web_auth"),
         ]

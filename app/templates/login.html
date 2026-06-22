@@ -104,20 +104,21 @@
                         </div>
                     </div>
 
-                    <div>
-                        <a href="/web/demo-login"
-                           class="w-full btn-secondary py-3 text-base flex items-center justify-center gap-2 border-2 border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-colors duration-200 rounded-lg font-display font-semibold">
-                            <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-user" /></svg>
-                            Guest Demo
-                        </a>
-                    </div>
-
                     <div class="text-center pt-2">
                         <span class="text-sm text-gray-400">Don't have an account?</span>
                         <a href="/web/register" class="text-sm font-display font-semibold text-amber-400 hover:text-amber-300 focus-visible:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 rounded-md ml-1.5 transition-colors duration-200">
                             Create one
                         </a>
                     </div>
+                </form>
+
+                <form method="POST" action="/web/demo-login" class="mt-5">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit"
+                            class="w-full btn-secondary py-3 text-base flex items-center justify-center gap-2 border-2 border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-colors duration-200 rounded-lg font-display font-semibold">
+                        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-user" /></svg>
+                        Guest Demo
+                    </button>
                 </form>
 
                 <div id="login-form" class="mt-4"></div>

@@ -1,5 +1,6 @@
 """Auth-related web routes."""
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request, Response
@@ -33,6 +34,7 @@ from app.auth import (
     create_access_token,
     create_refresh_token,
     set_token_cookies,
+    verify_token,
 )
 from app.services.auth_service import verify_password
 from core.config import settings
@@ -40,6 +42,25 @@ from core.models.user import User, not_deleted
 
 router = APIRouter(tags=["web"])
 DEMO_EMAIL = "demo@vooglaadija.io"
+
+
+async def _blacklist_token_cookie(token_str: str | None) -> None:
+    """Blacklist a cookie token for the remainder of its lifetime."""
+    if not token_str:
+        return
+
+    payload = verify_token(token_str)
+    if not payload:
+        return
+
+    jti = payload.get("jti")
+    if not jti:
+        return
+
+    from app.services.token_blacklist import blacklist_token
+
+    remaining = max(int(payload.get("exp", 0)) - int(datetime.now(UTC).timestamp()), 60)
+    await blacklist_token(jti, ttl_seconds=remaining)
 
 
 @router.get("/login")
@@ -137,10 +158,14 @@ async def register_form(
     return _register_success_response(request, access_token, refresh_token)
 
 
-@router.get("/demo-login")
+@router.post("/demo-login")
 @limiter.limit("3/minute")
 async def demo_login(request: Request, db: DbSession):
     """Authenticate as the pre-seeded demo user and redirect to downloads."""
+    if not await validate_csrf_token(request):
+        return _htmx_or_redirect(
+            request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
+        )
     user = await _demo_user_or_raise(db, DEMO_EMAIL)
     access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
@@ -161,6 +186,8 @@ async def logout(request: Request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf"
         )
+    await _blacklist_token_cookie(request.cookies.get("access_token"))
+    await _blacklist_token_cookie(request.cookies.get("refresh_token"))
     redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
     clear_token_cookies(redirect)
     return redirect

@@ -50,8 +50,19 @@ SEED_JOBS = [
 ]
 
 
+async def _demo_login(client: AsyncClient):
+    """Submit the CSRF-protected demo login form."""
+    page = await client.get("/web/login")
+    csrf_token = page.cookies.get("csrf_token") or client.cookies.get("csrf_token")
+    assert csrf_token is not None
+    return await client.post(
+        "/web/demo-login",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+
 class TestDemoLoginRoute:
-    """Tests for GET /web/demo-login."""
+    """Tests for POST /web/demo-login."""
 
     @pytest.mark.asyncio
     async def test_demo_login_redirects_and_sets_cookies(self):
@@ -70,7 +81,7 @@ class TestDemoLoginRoute:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
         ) as client:
-            response = await client.get("/web/demo-login")
+            response = await _demo_login(client)
 
         assert response.status_code == 303
         assert response.headers["location"] == "/web/downloads"
@@ -95,7 +106,7 @@ class TestDemoLoginRoute:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
         ) as client:
-            response = await client.get("/web/demo-login")
+            response = await _demo_login(client)
 
         assert response.status_code == 403
 
@@ -105,7 +116,7 @@ class TestDemoLoginRoute:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
         ) as client:
-            response = await client.get("/web/demo-login")
+            response = await _demo_login(client)
 
         assert response.status_code == 500
 
@@ -146,7 +157,7 @@ class TestDemoLoginProtectedAccess:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
         ) as client:
-            login_response = await client.get("/web/demo-login")
+            login_response = await _demo_login(client)
             assert login_response.status_code == 303
 
             access_token = login_response.cookies.get("access_token", "")

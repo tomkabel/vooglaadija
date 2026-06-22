@@ -2,6 +2,7 @@
 
 import os
 import posixpath
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 templates.env.globals["status_badge_html"] = _status_badge_html
 templates.env.globals["status_badge_templates_json"] = _status_badge_templates_json
 _ALLOWED_REDIRECT_HOSTS: tuple[str, ...] = ("/web/",)
+_CSRF_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 _ErrorMap = dict[str, tuple[str, dict[str, str]]]
 
 
@@ -75,6 +77,10 @@ def _downloads_base_path(settings_override: _SettingsWithStoragePath | None = No
     return os.path.join(active_settings.storage_path, "downloads")
 
 
+def _new_csrf_token() -> str:
+    return uuid.uuid4().hex
+
+
 def _validate_redirect_url(url: str | None, default: str) -> str:
     if not url:
         return default
@@ -95,7 +101,10 @@ def _validate_redirect_url(url: str | None, default: str) -> str:
 
 
 def get_csrf_token(request: Request) -> str:
-    return request.cookies.get("csrf_token") or uuid.uuid4().hex
+    token = request.cookies.get("csrf_token")
+    if token and _CSRF_TOKEN_PATTERN.fullmatch(token):
+        return token
+    return _new_csrf_token()
 
 
 def set_csrf_token_cookie(response: Response, token: str) -> None:
@@ -111,7 +120,7 @@ def set_csrf_token_cookie(response: Response, token: str) -> None:
 
 
 def rotate_csrf_token(response: Response) -> str:
-    new_token = uuid.uuid4().hex
+    new_token = _new_csrf_token()
     set_csrf_token_cookie(response, new_token)
     return new_token
 
