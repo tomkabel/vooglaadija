@@ -19,7 +19,7 @@ echo "Found $count sessions"
 echo "---"
 idx=0
 exported=0
-echo "$sessions" | while IFS='|' read -r sid stitle tcreated; do
+echo "$sessions" | while IFS='|' read -r sid stitle _; do
   idx=$((idx+1))
 
   safe_title=$(printf '%s' "$stitle" | tr -cd 'a-zA-Z0-9 ._-' | head -c 80 | tr ' ' '_')

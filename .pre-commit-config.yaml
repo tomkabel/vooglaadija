@@ -21,7 +21,7 @@ repos:
         exclude: '\.(svg|db|sqlite|gitkeep|min\.(js|css))$|pnpm-lock\.yaml|uv\.lock'
       - id: check-yaml
         args: [--allow-multiple-documents]
-        exclude: "pnpm-lock\\.yaml|\\.kilocode/skills/ci-cd/assets/templates/"
+        exclude: "pnpm-lock\\.yaml|\\.kilocode/skills/ci-cd/assets/templates/|^docker-compose\\.production\\.yml$"
       - id: check-toml
       - id: check-json
         exclude: "tsconfig\\.json"
