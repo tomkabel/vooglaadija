@@ -17,7 +17,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOKI_DRIVER = "loki"
 LOKI_PUSH_URL = "http://localhost:3100/loki/api/v1/push"
 
-BASE_LOGGED_SERVICES = {
+# Base compose services — Loki logging was moved to override files only.
+# These services use Docker's default logging driver (json-file).
+BASE_COMPOSE_SERVICES = {
     "api",
     "worker",
     "db",
@@ -28,6 +30,7 @@ BASE_LOGGED_SERVICES = {
     "loki",
 }
 
+# Services that override files (production, demo) add Loki logging.
 PRODUCTION_OVERRIDE_LOGGED_SERVICES = {
     "storage-init",
     "nginx",
@@ -107,15 +110,18 @@ def _assert_loki_logging_contract(
 
 
 @pytest.mark.unit
-def test_base_compose_services_use_one_loki_logging_driver():
-    """Every base compose service should ship logs through the Loki Docker driver."""
+def test_base_compose_services_exist_and_use_default_logging():
+    """Base compose services exist and use Docker's default logging driver (no explicit logging config)."""
     config = _load_yaml_file("docker-compose.yml")
     services = config["services"]
 
-    assert BASE_LOGGED_SERVICES.issubset(services)
-    assert set(services) == BASE_LOGGED_SERVICES
+    assert set(services) == BASE_COMPOSE_SERVICES
     for service_name in services:
-        _assert_loki_logging_contract(service_name, services[service_name])
+        service_config = services[service_name]
+        # No explicit logging config — Docker's default json-file driver is used
+        assert "logging" not in service_config, (
+            f"{service_name} should not define explicit logging in base compose"
+        )
 
 
 @pytest.mark.unit
@@ -175,8 +181,8 @@ def test_loki_backend_service_config_and_volume_exist():
 
 
 @pytest.mark.unit
-def test_application_services_receive_environment_for_json_structlog_output():
-    """API and worker containers should run in production mode for JSON logs."""
+def test_application_services_receive_production_environment_variable():
+    """API and worker containers should default to production environment."""
     base_services = _load_yaml_file("docker-compose.yml")["services"]
     demo_services = _load_yaml_file("docker-compose.demo.yml")["services"]
 
@@ -226,23 +232,24 @@ def test_production_structlog_output_remains_queryable_json(
     structlog.reset_defaults()
     structlog.contextvars.clear_contextvars()
 
-    configure_logging(log_level="INFO")
-    structlog.contextvars.bind_contextvars(request_id="req-story-7-5")
-    logger = get_logger("story_7_5_contract")
+    try:
+        configure_logging(log_level="INFO")
+        structlog.contextvars.bind_contextvars(request_id="req-story-7-5")
+        logger = get_logger("story_7_5_contract")
 
-    logger.info("download_ready", job_id="job-123")
+        logger.info("download_ready", job_id="job-123")
 
-    captured = capsys.readouterr().out.strip().splitlines()
-    payload = json.loads(captured[-1])
+        captured = capsys.readouterr().out.strip().splitlines()
+        payload = json.loads(captured[-1])
 
-    assert payload["message"] == "download_ready"
-    assert payload["job_id"] == "job-123"
-    assert payload["request_id"] == "req-story-7-5"
-    assert payload["service"] == "vooglaadija"
-    assert payload["level"] == "info"
-    assert payload["logger"] == "story_7_5_contract"
-    assert payload["timestamp"]
-    assert "environment" in payload
-
-    structlog.contextvars.clear_contextvars()
-    logging.getLogger().handlers.clear()
+        assert payload["message"] == "download_ready"
+        assert payload["job_id"] == "job-123"
+        assert payload["request_id"] == "req-story-7-5"
+        assert payload["service"] == "vooglaadija"
+        assert payload["level"] == "info"
+        assert payload["logger"] == "story_7_5_contract"
+        assert payload["timestamp"]
+        assert "environment" in payload
+    finally:
+        structlog.contextvars.clear_contextvars()
+        logging.getLogger().handlers.clear()
