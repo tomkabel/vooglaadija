@@ -90,6 +90,8 @@ AGENTS.md
 # Databases & Data
 # =============================================
 *.db
+*.db-journal
+*.db-wal
 *.sqlite
 *.sqlite3
 test_*.db
