@@ -240,6 +240,7 @@ def test_pydantic_settings_dependency_stays_on_patched_floor():
     # exact pin — any later patch/bugfix release that still satisfies
     # pydantic-settings>=2.14.2 should pass.
     import re
+
     lock_version_match = re.search(
         r'^version = "([^"]+)"$',
         lockfile,
