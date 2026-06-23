@@ -7,10 +7,10 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
 from alembic import command
+from alembic.config import Config
 from core.config import settings
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

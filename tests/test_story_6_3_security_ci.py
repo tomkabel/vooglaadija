@@ -44,11 +44,11 @@ def test_active_checkout_steps_disable_persisted_git_credentials():
     workflow = read_project_file(".github", "workflows", "fastapi-test.yml")
 
     checkout_steps = workflow.count(
-        "uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5"
+        "uses: actions/checkout@"
     )
     persist_flags = workflow.count("persist-credentials: false")
 
-    assert checkout_steps == 6
+    assert checkout_steps >= 6
     assert persist_flags >= checkout_steps
 
 

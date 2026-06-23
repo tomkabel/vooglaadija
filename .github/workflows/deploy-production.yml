@@ -87,7 +87,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@dc588b651fe13675773604f8950593fbcf303f58
