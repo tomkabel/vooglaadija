@@ -13,26 +13,25 @@ processors:
 
 exporters:
   debug:
-    verbosity: detailed
+    verbosity: basic
     sampling_initial: 5
     sampling_thereafter: 200
 
-  # OTLP exporter disabled for local development - would create a loop
-  # otlp:
-  #   endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4317}
-  #   tls:
-  #     insecure: true
+  otlp:
+    endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+    tls:
+      insecure: ${env:OTEL_EXPORTER_OTLP_INSECURE}
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [otlp, debug]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [otlp, debug]
     logs:
       receivers: [otlp]
       processors: [batch]

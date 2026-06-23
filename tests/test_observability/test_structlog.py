@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from app.logging_config import configure_logging, get_logger
+from core.logging_config import configure_logging, get_logger
 
 structlog = pytest.importorskip("structlog", reason="structlog not installed")
 
@@ -66,6 +66,17 @@ class TestStructlogConfiguration:
         # The logger should include 'service' key when configured
         # This is tested by the structlog processors
         logger.info("test_service_context")
+
+    def test_service_context_reads_environment_env_var(self):
+        """Service context uses ENVIRONMENT directly instead of Settings.environment."""
+        from core.logging_config import add_service_context
+
+        os.environ["ENVIRONMENT"] = "staging"
+
+        event_dict = add_service_context(None, "info", {})
+
+        assert event_dict["service"] == "vooglaadija"
+        assert event_dict["environment"] == "staging"
 
 
 class TestStructlogStructuredOutput:

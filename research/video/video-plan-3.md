@@ -15,11 +15,12 @@ This plan produces an **8-minute technical presentation** for final course gradi
 **Core Thesis:** "Production systems fail. This project is designed to detect failures, recover automatically, and provide visibility into what's happening."
 
 **Key Differentiators:**
+
 1. **Outbox Pattern** — Jobs survive server crashes
-2. **Atomic Job Claims** — No double-processing
-3. **Graceful Shutdown** — Zero lost work on deployment
-4. **Exponential Backoff** — Transient failures auto-retry
-5. **Observability Stack** — Prometheus metrics + structured logging + correlation IDs
+1. **Atomic Job Claims** — No double-processing
+1. **Graceful Shutdown** — Zero lost work on deployment
+1. **Exponential Backoff** — Transient failures auto-retry
+1. **Observability Stack** — Prometheus metrics + structured logging + correlation IDs
 
 **What The Course Required vs. What We Implemented:**
 
@@ -36,17 +37,17 @@ This plan produces an **8-minute technical presentation** for final course gradi
 
 ---
 
-# Part I: Story Foundation
+## Part I: Story Foundation
 
-## 1. The Story Angle
+### 1. The Story Angle
 
-### Why This Project Exists
+#### Why This Project Exists
 
 **Generic approach (boring):** "We built a YouTube downloader with an API."
 
 **Engineering story (compelling):** "We built a system that handles failures gracefully. When YouTube rate-limits us, we retry. When a server crashes mid-download, the job survives. When something breaks, we can see exactly what happened in our logs and metrics."
 
-### Three-Act Structure
+#### Three-Act Structure
 
 | Act | Title | Duration | Focus |
 |-----|-------|----------|-------|
@@ -54,7 +55,7 @@ This plan produces an **8-minute technical presentation** for final course gradi
 | **Act 2** | The Engineering | 1:00-5:30 | Reliability patterns: outbox, atomicity, retries |
 | **Act 3** | The Operations | 5:30-8:00 | Observability: logging, metrics, health checks |
 
-### Evidence-Based Claims
+#### Evidence-Based Claims
 
 Every claim in the video is backed by actual code or configuration:
 
@@ -69,14 +70,15 @@ Every claim in the video is backed by actual code or configuration:
 
 ---
 
-# Part II: Scene-by-Scene Production Plan
+## Part II: Scene-by-Scene Production Plan
 
-## Scene 1: Cold Open (0:00-0:20)
+### Scene 1: Cold Open (0:00-0:20)
 
 **Purpose:** Hook the viewer with "what happens when things fail"
 
 **Visual Script:**
-```
+
+```text
 [0:00-0:05] Terminal: "Received SIGTERM" in red
 [0:05-0:10] Terminal: Job status changes to "pending" with "requeued" label
 [0:10-0:15] Terminal: Download completes successfully
@@ -86,17 +88,19 @@ Every claim in the video is backed by actual code or configuration:
 **Narration:** "Most projects show the happy path. This project shows what happens when everything goes wrong—and how it automatically recovers."
 
 **B-Roll Needed:**
+
 - Terminal recording with colored output (use `脚本` or iTerm2 themes)
 - Show actual log lines with JSON format
 
 ---
 
-## Scene 2: The Problem (0:20-1:00)
+### Scene 2: The Problem (0:20-1:00)
 
 **Purpose:** Establish why reliability matters for this use case
 
 **Visual Script:**
-```
+
+```text
 [0:20-0:30] Split screen:
   Left: "YouTube Reality" - Rate limits, geo-blocks, format changes, servers down
   Right: "User Expectation" - Paste link, get video
@@ -112,15 +116,15 @@ Every claim in the video is backed by actual code or configuration:
 
 ---
 
-## Scene 3: System Architecture (1:00-2:30)
+### Scene 3: System Architecture (1:00-2:30)
 
 **Purpose:** Explain the distributed architecture with correct patterns
 
-### Part A: Correct Outbox Pattern (1:00-1:45)
+#### Part A: Correct Outbox Pattern (1:00-1:45)
 
 **THE PREVIOUS PLAN WAS WRONG.** This replaces the "dual-write with fallback" with the **correct outbox pattern**:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     CORRECT OUTBOX PATTERN                           │
 │                                                                      │
@@ -162,7 +166,8 @@ Every claim in the video is backed by actual code or configuration:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Why 30 seconds? (Not arbitrary)**
+## Why 30 seconds? (Not arbitrary)
+
 - 30s balances "quick recovery" vs "database load"
 - The relay uses `FOR UPDATE SKIP LOCKED` so multiple relays (future scale) don't conflict
 - `SELECT ... FOR UPDATE SKIP LOCKED` holds lock only briefly
@@ -171,7 +176,7 @@ Every claim in the video is backed by actual code or configuration:
 
 ### Part B: Atomic Job Claims (1:45-2:00)
 
-```
+```text
 Worker 1: UPDATE download_jobs SET status='processing' WHERE id=X AND status='pending'
 Worker 2: UPDATE download_jobs SET status='processing' WHERE id=X AND status='pending'
 Result: Only ONE worker succeeds (rowcount=1)
@@ -179,10 +184,11 @@ Result: Only ONE worker succeeds (rowcount=1)
 
 **Narration:** "Workers claim jobs atomically. The UPDATE returns success only if the job was actually pending. No locks, no race conditions, no double processing."
 
-### Part C: Graceful Shutdown (2:00-2:15)
+#### Part C: Graceful Shutdown (2:00-2:15)
 
 **Visual:**
-```
+
+```text
 Timeline:
   t=0s:   SIGTERM received
   t=0-5s: Stop accepting new requests (readiness probe fails)
@@ -193,10 +199,11 @@ Timeline:
 
 **Narration:** "On SIGTERM, the worker stops accepting new jobs through the readiness probe. It completes its current job or atomically requeues it. No work is lost on deployment."
 
-### Part D: Retry with Exponential Backoff (2:15-2:30)
+#### Part D: Retry with Exponential Backoff (2:15-2:30)
 
 **Visual:**
-```
+
+```text
 Attempt 1: FAILED at t=0
 Attempt 2: RETRY at t=2min (2^0)
 Attempt 3: RETRY at t=4min (2^1)
@@ -212,11 +219,11 @@ Attempt 5: FAILED (max retries)
 
 ---
 
-## Scene 4: Code Deep Dive - Reliability (2:30-3:30)
+### Scene 4: Code Deep Dive - Reliability (2:30-3:30)
 
 **Purpose:** Show actual implementation of reliability patterns
 
-### Code 1: Outbox Pattern (`app/services/outbox_service.py`)
+#### Code 1: Outbox Pattern (`app/services/outbox_service.py`)
 
 ```python
 # SAME TRANSACTION - both succeed or both fail
@@ -228,7 +235,7 @@ await db.commit()  # ATOMIC
 
 **What to highlight:** "Lines 25-35 show the key: job and outbox in one transaction."
 
-### Code 2: Outbox Relay (`worker/processor.py`)
+#### Code 2: Outbox Relay (`worker/processor.py`)
 
 ```python
 # Phase 1: Claim under row lock (prevents double-publish in scale-out)
@@ -248,7 +255,7 @@ await db.commit()
 
 **What to highlight:** "`FOR UPDATE SKIP LOCKED is the key—no locks, no deadlocks."
 
-### Code 3: Atomic Job Claim (`worker/processor.py`)
+#### Code 3: Atomic Job Claim (`worker/processor.py`)
 
 ```python
 result = await db.execute(
@@ -263,7 +270,7 @@ if not claimed:
 
 **What to highlight:** "Only ONE worker claims the job. The UPDATE returns 1 row affected."
 
-### Code 4: Graceful Shutdown (`worker/main.py`)
+#### Code 4: Graceful Shutdown (`worker/main.py`)
 
 ```python
 # Signal handlers
@@ -281,11 +288,11 @@ if shutdown_event.is_set():
 
 ---
 
-## Scene 5: Live Demo - Happy Path (3:30-5:00)
+### Scene 5: Live Demo - Happy Path (3:30-5:00)
 
 **CRITICAL: Pre-record this entire sequence. Live demo only if confident.**
 
-### Pre-Recorded Fallback Videos Required:
+#### Pre-Recorded Fallback Videos Required
 
 | Video | Duration | Purpose |
 |-------|----------|---------|
@@ -294,7 +301,7 @@ if shutdown_event.is_set():
 | `demo_failed_retry.mp4` | 90s | Failed job → automatic retry → success |
 | `demo_expired_download.mp4` | 30s | 410 Gone response |
 
-### Demo Steps:
+#### Demo Steps
 
 | Step | Action | Show |
 |------|--------|------|
@@ -306,7 +313,7 @@ if shutdown_event.is_set():
 | 6 | Watch SSE | Real-time: pending→processing→completed |
 | 7 | Download | File saves |
 
-### Error Scenario Demos:
+#### Error Scenario Demos
 
 | Scenario | What Happens | How to Show |
 |----------|--------------|-------------|
@@ -317,15 +324,16 @@ if shutdown_event.is_set():
 
 ---
 
-## Scene 6: Observability Stack (5:00-6:30)
+### Scene 6: Observability Stack (5:00-6:30)
 
 **Purpose:** Demonstrate production-grade operations (COURSE REQUIREMENT)
 
-### Part A: Structured Logging (5:00-5:15)
+#### Part A: Structured Logging (5:00-5:15)
 
 **File:** `app/logging_config.py`
 
 **Log Output Example:**
+
 ```json
 {
   "timestamp": "2026-04-15T14:32:00.123Z",
@@ -343,7 +351,7 @@ if shutdown_event.is_set():
 
 **Show:** Terminal output with `jq` filtering logs by `job_id`
 
-### Part B: Prometheus Metrics (5:15-5:45)
+#### Part B: Prometheus Metrics (5:15-5:45)
 
 **File:** `app/metrics.py`
 
@@ -363,8 +371,9 @@ if shutdown_event.is_set():
 
 **Narration:** "We expose Prometheus metrics. Job duration histogram buckets show p50, p95, p99. HTTP request metrics track every endpoint's latency."
 
-**Show:** 
-```
+**Show:**
+
+```text
 # Fetch metrics
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/metrics
 
@@ -372,18 +381,20 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/metrics
 grep "ytprocessor" metrics.txt
 ```
 
-### Part C: Health Checks (5:45-6:15)
+#### Part C: Health Checks (5:45-6:15)
 
 **Current Implementation:** Single `/health` endpoint (liveness only)
 
 **Gap Note:** Readiness probe not separated (documented improvement)
 
 **Endpoint:** `GET /health`
+
 ```json
 {"status": "ok"}
 ```
 
 **Docker Healthcheck:**
+
 ```yaml
 api:
   healthcheck:
@@ -395,11 +406,12 @@ api:
 
 **Narration:** "The health endpoint is used by Docker's healthcheck and orchestrators. Currently, we have a single liveness endpoint—future improvement would separate readiness from liveness."
 
-### Part D: NetData Monitoring (6:15-6:30)
+#### Part D: NetData Monitoring (6:15-6:30)
 
 **File:** `docker-compose.monitoring.yml`
 
 **What NetData Provides:**
+
 - CPU, memory, network per container
 - HTTP request metrics (similar to Prometheus)
 - PostgreSQL metrics (via postgres_exporter pattern)
@@ -413,13 +425,14 @@ api:
 
 ---
 
-## Scene 7: Security Implementation (6:30-7:00)
+### Scene 7: Security Implementation (6:30-7:00)
 
 **Purpose:** Show authentication and authorization
 
-### JWT Configuration
+#### JWT Configuration
 
 **Token Lifetimes (from `app/config.py` and `app/auth.py`):**
+
 - Access token: **15 minutes**
 - Refresh token: **7 days**
 
@@ -437,7 +450,7 @@ payload = {
 }
 ```
 
-### Cookie Security
+#### Cookie Security
 
 | Attribute | Value | Purpose |
 |-----------|-------|---------|
@@ -445,7 +458,7 @@ payload = {
 | Secure | Yes (production) | HTTPS only |
 | SameSite | Lax | CSRF protection |
 
-### CSRF Protection
+#### CSRF Protection
 
 ```python
 # Double-submit cookie pattern
@@ -454,7 +467,7 @@ payload = {
 # 3. Header or form submission validated
 ```
 
-### IDOR Protection
+#### IDOR Protection
 
 ```python
 # app/api/routes/downloads.py
@@ -470,11 +483,11 @@ result = await db.execute(
 
 ---
 
-## Scene 8: API Design (7:00-7:30)
+### Scene 8: API Design (7:00-7:30)
 
 **Purpose:** Show professional API design practices
 
-### Pagination
+#### Pagination
 
 **Endpoint:** `GET /api/v1/downloads?page=1&per_page=20`
 
@@ -489,7 +502,7 @@ result = await db.execute(
 }
 ```
 
-### Error Response Catalog
+#### Error Response Catalog
 
 **File:** `app/schemas/error.py`
 
@@ -503,6 +516,7 @@ class ErrorCode(Enum):
 ```
 
 **Standard Error Response:**
+
 ```json
 {
   "error": {
@@ -513,22 +527,23 @@ class ErrorCode(Enum):
 }
 ```
 
-### OpenAPI Documentation
+#### OpenAPI Documentation
 
 **Show:** `/docs` Swagger UI with:
+
 - All endpoints documented
 - Request/response schemas
 - Error responses for each endpoint
 
 ---
 
-## Scene 9: CI/CD Pipeline (7:30-7:50)
+### Scene 9: CI/CD Pipeline (7:30-7:50)
 
 **Purpose:** Show production-grade DevOps
 
-### Pipeline Stages
+#### Pipeline Stages
 
-```
+```text
 workflow_dispatch → lint → type-check → unit-tests → integration-tests → security-scan → docker-build
      (manual)         (5min)    (10min)       (15min)          (20min)              (10min)        (15min)
 ```
@@ -543,6 +558,7 @@ workflow_dispatch → lint → type-check → unit-tests → integration-tests �
 | Docker Build | multi-stage | <200MB image |
 
 **Multi-Stage Dockerfile:**
+
 ```dockerfile
 FROM python:3.12-slim AS builder
 # ... compile dependencies
@@ -559,18 +575,19 @@ CMD ["uvicorn", "app.main:app"]
 
 ---
 
-## Scene 10: Closing (7:50-8:00)
+### Scene 10: Closing (7:50-8:00)
 
 **Purpose:** Recap tangible achievements
 
 **What NOT to say:**
+
 - ❌ "Demonstrates key skills for a senior developer"
 - ❌ "Showcases system design, async programming, security patterns"
 - ❌ "Thank you for watching!"
 
 **What TO say:**
 
-```
+```text
 "This project demonstrates production reliability engineering:
 
 Tangible evidence:
@@ -589,20 +606,21 @@ The code is documented, the tests pass, the system is observable.
 ```
 
 **Final Shot:**
-```
+
+```text
 vooglaadija - A Reliability Engineering Project
 GitHub: github.com/yourusername/vooglaadija
 ```
 
 ---
 
-# Part III: Technical Appendices
+## Part III: Technical Appendices
 
-## Appendix A: Architecture Diagrams
+### Appendix A: Architecture Diagrams
 
-### Correct Outbox Pattern (Replaces Previous Error)
+#### Correct Outbox Pattern (Replaces Previous Error)
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    OUTBOX PATTERN (CORRECT)                         │
 │                                                                      │
@@ -654,9 +672,9 @@ If API crashes after COMMIT but before Redis LPUSH:
 - Job is NEVER lost
 ```
 
-### Job State Machine
+#### Job State Machine
 
-```
+```text
 ┌─────────┐    claim    ┌───────────┐    success    ┌───────────┐
 │ pending │──────────▶│processing │──────────────▶│ completed │
 └─────────┘            └───────────┘               └───────────┘
@@ -674,9 +692,9 @@ If API crashes after COMMIT but before Redis LPUSH:
                        └─────────┘
 ```
 
-### Circuit Breaker (NOT IMPLEMENTED - Documented Gap)
+#### Circuit Breaker (NOT IMPLEMENTED - Documented Gap)
 
-```
+```text
 Current Implementation:
 - Only exponential backoff on job retries
 - No circuit breaker pattern
@@ -694,9 +712,9 @@ Future Improvement:
 
 ---
 
-## Appendix B: JWT Token Flow
+### Appendix B: JWT Token Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    JWT AUTHENTICATION FLOW                          │
 │                                                                      │
@@ -746,9 +764,9 @@ Future Improvement:
 
 ---
 
-## Appendix C: Database Schema
+### Appendix C: Database Schema
 
-### Implemented
+#### Implemented
 
 ```sql
 -- Users table
@@ -786,7 +804,7 @@ CREATE INDEX ix_download_jobs_status_expires ON download_jobs(status, expires_at
 CREATE INDEX ix_outbox_status_created ON outbox(status, created_at);
 ```
 
-### Gaps Documented
+#### Gaps Documented
 
 | Gap | Severity | Future Work |
 |-----|----------|-------------|
@@ -796,9 +814,9 @@ CREATE INDEX ix_outbox_status_created ON outbox(status, created_at);
 
 ---
 
-## Appendix D: Metrics Reference
+### Appendix D: Metrics Reference
 
-### Prometheus Metrics Exposed
+#### Prometheus Metrics Exposed
 
 ```python
 # app/metrics.py
@@ -819,7 +837,7 @@ ytprocessor_outbox_pending
 ytprocessor_http_requests_total{method, endpoint, status_code}
 ```
 
-### Grafana Dashboard (NOT IMPLEMENTED)
+#### Grafana Dashboard (NOT IMPLEMENTED)
 
 | Panel | Query | Type |
 |-------|-------|------|
@@ -835,7 +853,7 @@ ytprocessor_http_requests_total{method, endpoint, status_code}
 
 ---
 
-## Appendix E: Gap Analysis Matrix
+### Appendix E: Gap Analysis Matrix
 
 | Course Requirement | Status | Evidence | Gap |
 |-------------------|--------|----------|-----|
@@ -855,9 +873,9 @@ ytprocessor_http_requests_total{method, endpoint, status_code}
 
 ---
 
-# Part IV: Production Storyboard
+## Part IV: Production Storyboard
 
-## Scene Breakdown with Timecodes
+### Scene Breakdown with Timecodes
 
 | Scene | Title | Start | End | Duration | Key Visual |
 |-------|-------|-------|-----|----------|------------|
@@ -878,11 +896,11 @@ ytprocessor_http_requests_total{method, endpoint, status_code}
 | 9 | CI/CD | 7:30 | 7:50 | 0:20 | GitHub Actions |
 | 10 | Closing | 7:50 | 8:00 | 0:10 | Title card |
 
-**Total: 8:00**
+## Total: 8:00
 
 ---
 
-## Visual Asset Checklist
+### Visual Asset Checklist
 
 | Asset | Status | Notes |
 |-------|--------|-------|
@@ -898,7 +916,7 @@ ytprocessor_http_requests_total{method, endpoint, status_code}
 
 ---
 
-## Pre-Recording Checklist
+### Pre-Recording Checklist
 
 Before any recording session:
 
@@ -913,9 +931,9 @@ Before any recording session:
 
 ---
 
-# Part V: Realistic Timeline
+## Part V: Realistic Timeline
 
-## Phase Estimates (With Buffers)
+### Phase Estimates (With Buffers)
 
 | Phase | Base | Buffer | Total | Deliverable |
 |-------|------|--------|-------|-------------|
@@ -936,9 +954,9 @@ Before any recording session:
 
 ---
 
-# Part VI: Error Prevention
+## Part VI: Error Prevention
 
-## Live Demo Failure Protocols
+### Live Demo Failure Protocols
 
 | Level | Scenario | Protocol |
 |-------|----------|----------|
@@ -947,7 +965,7 @@ Before any recording session:
 | **3** | Complete failure | Switch to pre-recorded fallback video |
 | **4** | Systematic (Docker down) | Show code, show tests, show architecture instead |
 
-## Pre-Recorded Fallback Videos
+### Pre-Recorded Fallback Videos
 
 | Video | Trigger | Purpose |
 |-------|---------|---------|
@@ -958,7 +976,7 @@ Before any recording session:
 
 ---
 
-# Appendix F: Course Requirement Mapping
+## Appendix F: Course Requirement Mapping
 
 | Course Lecture Topic | Video Coverage |
 |---------------------|----------------|
@@ -974,16 +992,17 @@ Before any recording session:
 
 ---
 
-**End of Plan v3.0**
+## End of Plan v3.0
 
 **Key Changes from v2.0:**
+
 1. ✅ Added Scene 6 (Observability) with actual metrics
-2. ✅ Fixed outbox pattern diagram (was backwards in v2.0)
-3. ✅ Added structured logging and correlation IDs
-4. ✅ Added circuit breaker gap analysis
-5. ✅ Added JWT specifics (15min/7day, HS256 note)
-6. ✅ Added database schema with gap analysis
-7. ✅ Added pagination and error catalog
-8. ✅ Created actual storyboard with timecodes
-9. ✅ Fixed timeline (40h with buffer)
-10. ✅ Added NetData monitoring (Grafana noted as gap)
+1. ✅ Fixed outbox pattern diagram (was backwards in v2.0)
+1. ✅ Added structured logging and correlation IDs
+1. ✅ Added circuit breaker gap analysis
+1. ✅ Added JWT specifics (15min/7day, HS256 note)
+1. ✅ Added database schema with gap analysis
+1. ✅ Added pagination and error catalog
+1. ✅ Created actual storyboard with timecodes
+1. ✅ Fixed timeline (40h with buffer)
+1. ✅ Added NetData monitoring (Grafana noted as gap)

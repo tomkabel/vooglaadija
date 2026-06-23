@@ -33,11 +33,11 @@ For compatibility with various tools, symlinks are provided:
 On the VPS, run:
 
 ```bash
-sudo certbot certonly --webroot -w /var/www/certbot -d youtube.tomabel.ee
+sudo certbot certonly --webroot -w /var/www/certbot -d example.com
 
 # Copy to this directory:
-sudo cp /etc/letsencrypt/live/youtube.tomabel.ee/fullchain.pem ./
-sudo cp /etc/letsencrypt/live/youtube.tomabel.ee/privkey.pem ./
+sudo cp /etc/letsencrypt/live/example.com/fullchain.pem ./
+sudo cp /etc/letsencrypt/live/example.com/privkey.pem ./
 
 # Create compatibility symlinks:
 ln -sf fullchain.pem cert.pem
@@ -53,8 +53,8 @@ sudo chmod 600 privkey.pem key.pem
 If you have certificates from another source:
 
 1. Copy `fullchain.pem` (or `cert.pem`) to this directory
-2. Copy `privkey.pem` (or `key.pem`) to this directory
-3. Ensure proper permissions
+1. Copy `privkey.pem` (or `key.pem`) to this directory
+1. Ensure proper permissions
 
 ### Option 3: Pre-provision Locally
 
@@ -62,7 +62,7 @@ Copy certificates from a local machine to the VPS:
 
 ```bash
 # Local machine
-scp user@vps:/etc/letsencrypt/live/youtube.tomabel.ee/*.pem ./infra/ssl/
+scp user@vps:/etc/letsencrypt/live/example.com/*.pem ./infra/ssl/
 
 # Or use the deploy.sh script (Phase 4) which handles this automatically
 ```
@@ -71,18 +71,18 @@ scp user@vps:/etc/letsencrypt/live/youtube.tomabel.ee/*.pem ./infra/ssl/
 
 ## Let's Encrypt File Structure
 
-Let's Encrypt creates these files in `/etc/letsencrypt/live/youtube.tomabel.ee/`:
+Let's Encrypt creates these files in `/etc/letsencrypt/live/example.com/`:
 
-```
-/etc/letsencrypt/live/youtube.tomabel.ee/
+```text
+/etc/letsencrypt/live/example.com/
 ├── fullchain.pem   ← Use this as fullchain.pem
 ├── privkey.pem     ← Use this as privkey.pem
 ├── chain.pem      (intermediate CA)
 └── cert.pem       (server certificate only - NOT the same as fullchain)
 ```
 
-**Important**: `cert.pem` contains ONLY the server certificate, NOT the full chain.
-nginx needs `fullchain.pem` (server + intermediates) for proper TLS.
+**Important**: `cert.pem` contains ONLY the server certificate, NOT the full chain. nginx needs
+`fullchain.pem` (server + intermediates) for proper TLS.
 
 ---
 
@@ -111,10 +111,10 @@ chmod 600 privkey.pem key.pem       # Owner read/write only
 ### Production Best Practices
 
 1. **Use Docker Secrets** or Kubernetes Secrets for certificate storage in production
-2. **Mount certificates as read-only volumes** (`:ro`)
-3. **Rotate certificates regularly** - Let's Encrypt certs expire every 90 days
-4. **Enable auto-renewal** - The `certbot` container handles this
-5. **Backup certificates** - Store a copy in a secure location
+1. **Mount certificates as read-only volumes** (`:ro`)
+1. **Rotate certificates regularly** - Let's Encrypt certs expire every 90 days
+1. **Enable auto-renewal** - The `certbot` container handles this
+1. **Backup certificates** - Store a copy in a secure location
 
 ---
 
@@ -144,7 +144,7 @@ openssl x509 -in fullchain.pem -noout -subject -issuer -dates
 nginx -t
 
 # Verify HTTPS is working
-curl -I https://youtube.tomabel.ee
+curl -I https://example.com
 ```
 
 ---
@@ -154,8 +154,8 @@ curl -I https://youtube.tomabel.ee
 ### "SSL certificate not found" errors
 
 1. Verify files exist: `ls -la infra/ssl/`
-2. Check permissions: `ls -la infra/ssl/*.pem`
-3. Ensure symlinks are valid: `ls -la infra/ssl/ | grep pem`
+1. Check permissions: `ls -la infra/ssl/*.pem`
+1. Ensure symlinks are valid: `ls -la infra/ssl/ | grep pem`
 
 ### Certificate expired
 
@@ -172,5 +172,5 @@ Check that nginx is using the correct config:
 
 ```bash
 docker compose logs nginx
-openssl s_client -connect youtube.tomabel.ee:443 -servername youtube.tomabel.ee
+openssl s_client -connect example.com:443 -servername example.com
 ```

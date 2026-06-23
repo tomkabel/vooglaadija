@@ -10,7 +10,7 @@
 
 [Skip to content](https://awesome-python.com/#content)
 
-**Awesome Python**
+## Awesome Python
 
 [Submit a project](https://github.com/vinta/awesome-python/blob/master/CONTRIBUTING.md)
 
@@ -24,7 +24,7 @@ An opinionated list of Python frameworks, libraries, tools, and resources.
 
 [Browse the List](https://awesome-python.com/#library-index) | [View on GitHub](https://github.com/vinta/awesome-python)
 
-**292k+ stars on GitHub / Updated April 15, 2026**
+## 292k+ stars on GitHub / Updated April 15, 2026
 
 ---
 
@@ -34,7 +34,7 @@ An opinionated list of Python frameworks, libraries, tools, and resources.
 
 ### Search and filter
 
-*Filtering for: Clear filter*
+## Filtering for: Clear filter
 
 ### Results
 

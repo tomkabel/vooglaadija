@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}Chaos Lab — Vooglaadija{% endblock %}
+
+{% block extra_head %}{% endblock %}
+
+{% block nav_actions %}
+<a href="/web/downloads" class="btn-secondary text-sm">Back to dashboard</a>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+  <!-- Header -->
+  <div class="slide-up opacity-0-initial animate-fill-forwards">
+    <div class="card-glow p-6 mb-8">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="h-10 w-10 rounded-xl bg-coral-500/10 border border-coral-500/20 flex items-center justify-center flex-shrink-0">
+          <svg class="h-5 w-5 text-coral-400" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-bolt" /></svg>
+        </div>
+        <h1 class="text-2xl font-display font-bold text-white">Chaos Engineering Lab</h1>
+      </div>
+      <p class="text-gray-400 text-sm font-body leading-relaxed">
+        Controlled failure injection for live demo. All scenarios auto-reset via Redis TTL.
+        <span class="text-coral-400 font-semibold">Disable in production.</span>
+        Requires
+        <code class="bg-surface-700 px-1.5 py-0.5 rounded text-xs font-mono text-amber-400">FEATURE_CHAOS_API_ENABLED=true</code>.
+      </p>
+    </div>
+  </div>
+
+  <!-- Scenario Cards Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 slide-up animate-stagger-1 opacity-0-initial animate-fill-forwards">
+    <!-- Circuit Breaker -->
+    <div class="card p-6">
+      <h2 class="text-lg font-display font-semibold text-white mb-3">Circuit breaker</h2>
+      <p class="text-gray-400 text-sm font-body mb-5">
+        Forces the YouTube API circuit breaker open. All extraction requests fail immediately with a
+        503. The circuit breaker auto-recovers via half-open to closed transition.
+      </p>
+      <form
+        hx-post="/api/v1/chaos/inject"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="scenario" value="circuit_breaker_open" />
+        <input type="hidden" name="duration_seconds" value="30" />
+        <button
+          type="submit"
+          class="btn-secondary w-full flex items-center justify-center gap-2 py-3 border-coral-500/30 text-coral-400 hover:border-coral-500 hover:text-coral-300"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-alert" /></svg>
+          Simulate YouTube 429
+        </button>
+      </form>
+    </div>
+
+    <!-- Worker Crash -->
+    <div class="card p-6">
+      <h2 class="text-lg font-display font-semibold text-white mb-3">Worker crash</h2>
+      <p class="text-gray-400 text-sm font-body mb-5">
+        Simulates a worker crash mid-processing. The job stays in "processing" state until the
+        zombie sweeper detects and reclaims it, demonstrating automatic recovery.
+      </p>
+      <form
+        hx-post="/api/v1/chaos/inject"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="scenario" value="worker_crash" />
+        <input type="hidden" name="duration_seconds" value="30" />
+        <button
+          type="submit"
+          class="btn-secondary w-full flex items-center justify-center gap-2 py-3 border-amber-500/30 text-amber-400 hover:border-amber-500 hover:text-amber-300"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-bolt" /></svg>
+          Simulate worker crash
+        </button>
+      </form>
+    </div>
+
+    <!-- Database Failover -->
+    <div class="card p-6">
+      <h2 class="text-lg font-display font-semibold text-white mb-3">Database failover</h2>
+      <p class="text-gray-400 text-sm font-body mb-5">
+        Raises a transient OperationalError after the worker claims a job. The retry chain fires
+        with exponential backoff and jitter, and the job is rescheduled via the outbox pattern.
+      </p>
+      <form
+        hx-post="/api/v1/chaos/inject"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="scenario" value="db_failover" />
+        <input type="hidden" name="duration_seconds" value="30" />
+        <button
+          type="submit"
+          class="btn-secondary w-full flex items-center justify-center gap-2 py-3 border-warm-500/30 text-warm-400 hover:border-warm-500 hover:text-warm-300"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-refresh" /></svg>
+          Simulate DB failover
+        </button>
+      </form>
+    </div>
+
+    <!-- 429 Spike -->
+    <div class="card p-6">
+      <h2 class="text-lg font-display font-semibold text-white mb-3">429 spike</h2>
+      <p class="text-gray-400 text-sm font-body mb-5">
+        Sets the throttle spike Redis flag consumed by the AI throttle predictor. The predictor
+        detects the spike and raises the risk score above 0.7. Requires the
+        <code class="bg-surface-700 px-1.5 py-0.5 rounded text-xs font-mono text-amber-400">ai-throttle-predictor</code> change.
+      </p>
+      <form
+        hx-post="/api/v1/chaos/inject"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="scenario" value="throttle_spike" />
+        <input type="hidden" name="duration_seconds" value="30" />
+        <button
+          type="submit"
+          class="btn-secondary w-full flex items-center justify-center gap-2 py-3 border-blue-500/30 text-blue-400 hover:border-blue-500 hover:text-blue-300"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-clock" /></svg>
+          Simulate 429 spike
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bulk Submit Section -->
+  <div class="card p-6 mb-6 slide-up animate-stagger-2 opacity-0-initial animate-fill-forwards">
+    <h2 class="text-lg font-display font-semibold text-white mb-3">Bulk submit videos</h2>
+    <p class="text-gray-400 text-sm font-body mb-5">
+      Submit multiple random videos to the download queue at once. Videos are picked from a pool of
+      30+ URLs. Jobs are staggered with 150ms delays for a cascading effect.
+    </p>
+    <div class="flex flex-wrap gap-3">
+      <form
+        hx-post="/api/v1/chaos/submit-videos"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="count" value="5" />
+        <button
+          type="submit"
+          class="btn-primary px-5 py-2.5 flex items-center gap-2"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg>
+          Submit 5 videos
+        </button>
+      </form>
+      <form
+        hx-post="/api/v1/chaos/submit-videos"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="count" value="10" />
+        <button
+          type="submit"
+          class="btn-primary px-5 py-2.5 flex items-center gap-2"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg>
+          Submit 10 videos
+        </button>
+      </form>
+      <form
+        hx-post="/api/v1/chaos/submit-videos"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="count" value="20" />
+        <button
+          type="submit"
+          class="btn-primary px-5 py-2.5 flex items-center gap-2"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg>
+          Submit 20 videos
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Worker Throttle Section -->
+  <div class="card p-6 mb-6 slide-up animate-stagger-2 opacity-0-initial animate-fill-forwards">
+    <h2 class="text-lg font-display font-semibold text-white mb-3">Worker throttle</h2>
+    <p class="text-gray-400 text-sm font-body mb-5">
+      Slows down video processing by adding a random 5-20 second delay before each job. Makes the
+      "processing" state visible on the dashboard for longer. Also reduces yt-dlp download speed to
+      simulate slow network conditions.
+    </p>
+    <div class="flex gap-3">
+      <form
+        hx-post="/api/v1/chaos/inject"
+        hx-target="#inject-result"
+        hx-swap="innerHTML"
+      >
+        <input type="hidden" name="scenario" value="slow_processing" />
+        <input type="hidden" name="duration_seconds" value="120" />
+        <button
+          type="submit"
+          class="btn-secondary flex items-center gap-2 py-3 border-coral-500/30 text-coral-400 hover:border-coral-500 hover:text-coral-300"
+        >
+          <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-clock" /></svg>
+          Slow down worker (120s)
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Injection result -->
+  <div id="inject-result" class="mb-8"></div>
+
+  <!-- Reset Button -->
+  <div class="flex gap-4 mb-8 slide-up animate-stagger-3 opacity-0-initial animate-fill-forwards">
+    <button
+      class="btn-secondary flex items-center gap-2 py-3 border-coral-500/30 text-coral-400 hover:border-coral-500 hover:text-coral-300"
+      hx-post="/api/v1/chaos/reset"
+      hx-target="#inject-result"
+      hx-swap="innerHTML"
+    >
+      <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-x" /></svg>
+      Reset all flags
+    </button>
+  </div>
+
+  <!-- Status display with HTMX polling -->
+  <div
+    id="chaos-status-panel"
+    hx-get="/web/chaos-lab/status"
+    hx-trigger="load, every 5s"
+    hx-swap="innerHTML"
+    role="status"
+    aria-live="polite"
+    aria-busy="true"
+    class="card p-6 slide-up animate-stagger-3 opacity-0-initial animate-fill-forwards"
+  >
+    <div class="flex items-center gap-2 text-gray-400">
+      <svg class="animate-spin h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-spinner" /></svg>
+      <span class="font-body text-sm">Loading status…</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/chaos-lab.js" defer></script>
+{% endblock %}

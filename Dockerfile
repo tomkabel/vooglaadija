@@ -44,8 +44,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-# Install pnpm for package management (version pinned in package.json packageManager field)
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+# Install pnpm for package management (version pinned in frontend/package.json packageManager field)
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 # Copy frontend package files and pnpm lockfile to frontend subdirectory
 COPY frontend/package*.json frontend/pnpm-lock.yaml ./frontend/
@@ -79,6 +79,8 @@ FROM python-builder AS app-builder
 # Copy source code (this invalidates frequently, but deps are already cached)
 COPY app ./app
 COPY worker ./worker
+COPY core ./core
+COPY scripts ./scripts
 COPY alembic.ini .
 COPY alembic ./alembic
 
@@ -93,7 +95,9 @@ COPY --link --from=frontend-builder /app/frontend/node_modules/htmx.org/dist/htm
 # Download Swagger UI assets (version 5.32.5 - exact pin for SRI integrity)
 RUN mkdir -p /app/app/static/swagger && \
     curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui-bundle.js -o /app/app/static/swagger/swagger-ui-bundle.js && \
-    curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui.css -o /app/app/static/swagger/swagger-ui.css
+    curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.5/swagger-ui.css -o /app/app/static/swagger/swagger-ui.css && \
+    echo "0028baa75a6060bac3a81329f501985abbdc1d527a5c16ac87977fb8722684d27a0092ae437ab3be434867ae18f9156d  /app/app/static/swagger/swagger-ui-bundle.js" | sha384sum -c - && \
+    echo "f50d9fa52fb1792e1f7c9cba09a827c28525fb895d01884eb3da6066e10ac72a5532876199917378c96f56c0237fbb93  /app/app/static/swagger/swagger-ui.css" | sha384sum -c -
 
 # ============================================
 # Stage 4: Runtime Base
@@ -108,7 +112,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     redis-tools \
-    gosu \
     curl \
     gnupg \
     && mkdir -p /etc/apt/keyrings \
@@ -127,6 +130,8 @@ WORKDIR /app
 COPY --from=app-builder /app/app ./app
 COPY --from=app-builder /app/pyproject.toml ./pyproject.toml
 COPY --from=app-builder /app/worker ./worker
+COPY --from=app-builder /app/core ./core
+COPY --from=app-builder /app/scripts ./scripts
 COPY --from=app-builder /app/alembic.ini /app/alembic.ini
 COPY --from=app-builder /app/alembic /app/alembic
 
@@ -183,6 +188,8 @@ ENV PYTHONPATH=/app \
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD ["curl", "-fsS", "-o", "/dev/null", "http://localhost:8082/health"]
+
+EXPOSE 8082
 
 COPY --from=app-builder /app/worker/entrypoint-worker.sh ./entrypoint-worker.sh
 COPY migrate.sh /app/migrate.sh

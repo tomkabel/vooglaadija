@@ -1,4 +1,4 @@
-This is a comprehensive, senior-level review and patch of the **Vooglaadija: Final Course Video Production Plan (v5.0)**. 
+This is a comprehensive, senior-level review and patch of the **Vooglaadija: Final Course Video Production Plan (v5.0)**.
 
 As a Senior Expert, I have corrected technical inconsistencies, improved architectural diagrams for clarity, normalized the branding (ensuring consistency between `vooglaadija` and the metrics/code), patched formatting errors, and hardened the technical documentation.
 
@@ -49,26 +49,29 @@ This plan outlines an **8-minute technical presentation** demonstrating **Staff-
 
 To maintain seniority, the following terminology is enforced throughout the script and documentation:
 
-*   **Idempotency:** The property of certain operations in which they can be applied multiple times without changing the result beyond the initial application.
-*   **Backpressure:** The system's ability to signal to producers that it is overwhelmed (handled via Redis queue depth).
-*   **Thundering Herd:** A scenario where many processes waiting for an event are awoken simultaneously, causing resource exhaustion (mitigated by **Full Jitter**).
-*   **MVCC (Multi-Version Concurrency Control):** Used by PostgreSQL to handle atomic updates without heavy locking.
+* **Idempotency:** The property of certain operations in which they can be applied multiple times without changing the result beyond the initial application.
+* **Backpressure:** The system's ability to signal to producers that it is overwhelmed (handled via Redis queue depth).
+* **Thundering Herd:** A scenario where many processes waiting for an event are awoken simultaneously, causing resource exhaustion (mitigated by **Full Jitter**).
+* **MVCC (Multi-Version Concurrency Control):** Used by PostgreSQL to handle atomic updates without heavy locking.
 
 ---
 
 ## Part III: Measurable Claims & Verification
 
 ### Claim 1: PostgreSQL-Backed Reliability
+
 **Metric:** Zero jobs lost if a database commit is successful.  
 **Verification:** `tests/test_worker/test_outbox_recovery.py`  
 **Protocol:** Start transaction $\rightarrow$ Insert job $\rightarrow$ Insert outbox $\rightarrow$ Hard crash process $\rightarrow$ Verify zero records exist (Rollback) **OR** Verify both exist (Commit).
 
 ### Claim 2: Idempotent Concurrency
+
 **Metric:** 100% processing rate with 0% double-processing under race conditions.  
 **Verification:** `tests/test_worker/test_atomic_claims.py`  
 **Protocol:** Spawn 10 workers targeting the same 100 `PENDING` jobs. Success is defined as exactly 100 `PROCESSING` transitions.
 
 ### Claim 3: Catastrophic Recovery (Zombie Sweeper)
+
 **Metric:** Recovery of SIGKILL/OOM-halted jobs within 15 minutes.  
 **Verification:** `tests/test_worker/test_zombie_sweeper.py`  
 **Protocol:** Set job to `PROCESSING` with `updated_at` = T-20mins. Run sweeper. Success = Job returned to `PENDING`.
@@ -78,20 +81,25 @@ To maintain seniority, the following terminology is enforced throughout the scri
 ## Part IV: Detailed Scene Plan
 
 ### Scene 1: The Hook (0:00–0:45)
+
 **Visual:** Fast-scrolling JSON logs in a dark terminal. One line highlights in red (429 Error).  
 **Script:**
 "03:47 AM. The YouTube API hits a rate limit. HTTP 429. In a naive system, this download fails, and the user is frustrated. In Vooglaadija, the worker calculates a fully jittered exponential backoff, releases its claim, and sleeps. Five minutes later, it resumes and finishes. No manual intervention. No lost work. This is production-grade engineering."
 
 ### Scene 2: The 2026 Problem Space (0:45–1:30)
+
 **Visual:** Infographic showing "API Reliability Decay."
-*   **Stat 1:** API downtime up 60% YoY (Uptrends 2025).
-*   **Stat 2:** 51% of web traffic is automated (Imperva 2025), leading to aggressive IP-based rate limiting.
+
+* **Stat 1:** API downtime up 60% YoY (Uptrends 2025).
+* **Stat 2:** 51% of web traffic is automated (Imperva 2025), leading to aggressive IP-based rate limiting.
 **Narration:** "Treating external APIs as 100% available is a junior mistake. We built Vooglaadija to assume the network is hostile and the API is unreliable."
 
 ### Scene 3: High-Level Architecture (1:30–3:30)
 
 #### A. The Transactional Outbox Pattern
+
 **Diagram:**
+
 ```text
 [ API ] --(Single Transaction)--> [ PostgreSQL: Jobs Table + Outbox Table ]
                                      |
@@ -102,20 +110,25 @@ To maintain seniority, the following terminology is enforced throughout the scri
       |
       +-- (Atomic)  --> [ DELETE FROM Outbox ]
 ```
+
 **Senior Insight:** We use `DELETE` instead of `UPDATE` for outbox entries. This keeps the outbox table small, prevents index bloat, and ensures high-performance scans even under heavy load.
 
 #### B. The Atomic Claim
+
 **Logic:**
+
 ```sql
 UPDATE download_jobs 
 SET status = 'processing', updated_at = NOW()
 WHERE id = :job_id AND status = 'pending';
 ```
+
 **Narration:** "We don't use distributed locks. We use the database's MVCC. If two workers pull the same ID from Redis, the `WHERE status = 'pending'` clause ensures only one worker receives a `rowcount` of 1. The other simply discards the duplicate delivery."
 
 ### Scene 4: Code Deep Dive (3:30–4:45)
 
-**Snippet 1: The AWS Full Jitter Implementation**
+## Snippet 1: The AWS Full Jitter Implementation
+
 ```python
 # app/services/retry_service.py
 def get_backoff(attempt: int, base: int = 60, cap: int = 600) -> float:
@@ -124,7 +137,8 @@ def get_backoff(attempt: int, base: int = 60, cap: int = 600) -> float:
     return random.uniform(0, upper_bound)
 ```
 
-**Snippet 2: The 25-Second Graceful Shutdown**
+## Snippet 2: The 25-Second Graceful Shutdown
+
 ```python
 # worker/main.py
 async def handle_sigterm():
@@ -137,33 +151,39 @@ async def handle_sigterm():
 ```
 
 ### Scene 5: Chaos Demo (4:45–5:45)
-**Action:** 
+
+**Action:**
+
 1. Start 5 simultaneous downloads.
-2. `docker kill vooglaadija-redis-1`.
-3. Show API logs showing the Outbox accumulating jobs.
-4. `docker start vooglaadija-redis-1`.
-5. Show the Relay flushing the outbox and workers resuming.
+1. `docker kill vooglaadija-redis-1`.
+1. Show API logs showing the Outbox accumulating jobs.
+1. `docker start vooglaadija-redis-1`.
+1. Show the Relay flushing the outbox and workers resuming.
 **Narration:** "Resilience isn't about not failing; it's about how you recover."
 
 ### Scene 6: Observability (5:45–6:45)
+
 **Metrics focus:**
-*   **Custom Histogram Buckets:** `[10, 30, 60, 120, 300, 600]`. 
-*   **Why?** "Default Prometheus buckets are for web requests (ms). Video processing takes minutes. Without custom buckets, your p99 is a mathematical ghost."
-*   **Correlation IDs:** Show a `X-Request-ID` moving from the API to the Worker log.
+
+* **Custom Histogram Buckets:** `[10, 30, 60, 120, 300, 600]`.
+* **Why?** "Default Prometheus buckets are for web requests (ms). Video processing takes minutes. Without custom buckets, your p99 is a mathematical ghost."
+* **Correlation IDs:** Show a `X-Request-ID` moving from the API to the Worker log.
 
 ---
 
 ## Part V: CI/CD & Security Strategy
 
 ### The Testing Pyramid (Updated)
-1.  **Unit Tests (PostgreSQL/Testcontainers):** Verifies `SKIP LOCKED` and atomic updates.
-2.  **Integration Tests:** Redis connectivity and SSE (Server-Sent Events) stream stability.
-3.  **Chaos Tests:** Forced process termination during active downloads.
+
+1. **Unit Tests (PostgreSQL/Testcontainers):** Verifies `SKIP LOCKED` and atomic updates.
+1. **Integration Tests:** Redis connectivity and SSE (Server-Sent Events) stream stability.
+1. **Chaos Tests:** Forced process termination during active downloads.
 
 ### Security Hardening
-*   **Bcrypt:** Cost factor 12 for password hashing.
-*   **JWT:** Short-lived (15m) access tokens; 7-day refresh tokens stored in `HttpOnly` cookies.
-*   **IDOR Protection:** Every query for a download job is scoped: `WHERE id = :id AND user_id = :current_user`.
+
+* **Bcrypt:** Cost factor 12 for password hashing.
+* **JWT:** Short-lived (15m) access tokens; 7-day refresh tokens stored in `HttpOnly` cookies.
+* **IDOR Protection:** Every query for a download job is scoped: `WHERE id = :id AND user_id = :current_user`.
 
 ---
 
@@ -182,17 +202,17 @@ async def handle_sigterm():
 
 ## Part VII: Gap Analysis (Self-Correction)
 
-*   **Gap:** We currently lack a **Circuit Breaker** on the YouTube API wrapper.
-*   **Risk:** Prolonged API outages could exhaust worker resources.
-*   **Mitigation:** Scene 8 will explicitly list "Circuit Breaker Implementation (Pattern: Red-to-Open)" as a Priority 1 future development.
+* **Gap:** We currently lack a **Circuit Breaker** on the YouTube API wrapper.
+* **Risk:** Prolonged API outages could exhaust worker resources.
+* **Mitigation:** Scene 8 will explicitly list "Circuit Breaker Implementation (Pattern: Red-to-Open)" as a Priority 1 future development.
 
 ---
 
 ## Appendix: Verified Performance Metrics
 
-*   **P50 Latency (API):** 42ms
-*   **P99 Latency (API):** 184ms
-*   **Max Throughput:** 50 concurrent downloads (Resource limited by Worker CPU)
-*   **Recovery MTTR:** < 30 seconds for Outbox; < 15 minutes for Zombie Sweep.
+* **P50 Latency (API):** 42ms
+* **P99 Latency (API):** 184ms
+* **Max Throughput:** 50 concurrent downloads (Resource limited by Worker CPU)
+* **Recovery MTTR:** < 30 seconds for Outbox; < 15 minutes for Zombie Sweep.
 
-**— END OF PRODUCTION PLAN v5.1 —**
+## — END OF PRODUCTION PLAN v5.1 —

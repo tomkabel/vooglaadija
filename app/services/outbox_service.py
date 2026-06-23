@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.outbox import Outbox
+from core.models.outbox import Outbox
 
 
 async def write_job_to_outbox(

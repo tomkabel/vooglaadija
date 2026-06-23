@@ -1,12 +1,18 @@
 apiVersion: 1
 
+# Provider configuration for Vooglaadija dashboards.
+# Dashboards are Git-managed ("Dashboards as Code") — no UI editing allowed.
 providers:
-  - name: "Vooglaadija"
+  - name: 'Vooglaadija'
     orgId: 1
-    folder: ""
+    folder: ''
     type: file
-    disableDeletion: false
+    # Prevent accidental deletion of Git-managed dashboards from the UI.
+    # Delete the JSON file from the repo + re-provision to remove a dashboard.
+    disableDeletion: true
+    # Scans are cheap; kept at 30s so dashboard updates reflect quickly during demos.
     updateIntervalSeconds: 30
-    allowUiUpdates: true
+    # UI edits are NOT allowed — all changes belong in the Git repository.
+    allowUiUpdates: false
     options:
       path: /etc/grafana/provisioning/dashboards

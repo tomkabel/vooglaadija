@@ -1,6 +1,6 @@
 name: feature request
 description: suggest a feature for cobalt
-labels: ["feature request"]
+labels: ['feature request']
 body:
   - type: markdown
     attributes:
@@ -12,7 +12,7 @@ body:
     id: feat-description
     attributes:
       label: describe the feature you'd like to see
-      description: "clear and concise description of the feature you want to see in cobalt."
+      description: 'clear and concise description of the feature you want to see in cobalt.'
     validations:
       required: true
   - type: textarea

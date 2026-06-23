@@ -1,28 +1,29 @@
 """Authentication endpoints (REST API)."""
 
-from uuid import UUID, uuid4
+from datetime import UTC, datetime
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.rate_limit_config import limiter
 from app.auth import (
+    REFRESH_TOKEN_TYPE,
     clear_token_cookies,
     create_access_token,
     create_refresh_token,
     set_token_cookies,
     verify_token,
 )
-from app.config import settings
-from app.models.user import User, not_deleted
 from app.schemas.error import ErrorCode, error_response_doc, success_response_doc
 from app.schemas.token import Token, TokenRefresh
 from app.schemas.user import UserCreate, UserResponse
-from app.services.auth_service import hash_password, verify_password
-from app.utils.username import default_username_from_email
+from app.services.auth_service import verify_password
+from app.services.user_service import DuplicateEmailError, UserService
+from core.config import settings
+from core.models.user import User, not_deleted
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,22 +69,13 @@ async def register(
     user_data: UserCreate,
     db: DbSession,
 ) -> UserResponse:
-    user = User(
-        id=uuid4(),
-        username=default_username_from_email(user_data.email),
-        email=user_data.email,
-        password_hash=hash_password(user_data.password),
-    )
-    db.add(user)
     try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
+        user = await UserService(db=db).register(user_data.email, user_data.password)
+    except DuplicateEmailError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         ) from None
-    await db.refresh(user)
 
     return UserResponse(id=user.id, email=user.email)
 
@@ -138,7 +130,7 @@ async def login(
     result = await db.execute(select(User).where(User.email == user_data.email, not_deleted()))
     user = result.scalar_one_or_none()
 
-    if user is None or not verify_password(user_data.password, user.password_hash):
+    if user is None or not await verify_password(user_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -152,10 +144,9 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, email=user.email)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
-    # Set JWT tokens as HttpOnly cookies for HTMX/browser auth
     set_token_cookies(response, access_token, refresh_token, secure=settings.cookie_secure)
 
     return Token(
@@ -221,20 +212,12 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    payload = verify_token(refresh_token_str)
+    payload = verify_token(refresh_token_str, expected_type=REFRESH_TOKEN_TYPE)
 
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token_type = payload.get("type")
-    if token_type != "refresh":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -265,8 +248,16 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, email=user.email)
-    new_refresh_token = create_refresh_token(user.id)
+    token_ver = payload.get("ver", 1)
+    if token_ver != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     # Set JWT tokens as HttpOnly cookies for HTMX/browser auth
     set_token_cookies(response, access_token, new_refresh_token, secure=settings.cookie_secure)
@@ -297,12 +288,45 @@ async def me(current_user: CurrentUser) -> UserResponse:
     return UserResponse(id=current_user.id, email=current_user.email)
 
 
+async def _blacklist_token_cookie(
+    token_str: str | None,
+    verify_fn,
+    blacklist_fn,
+) -> None:
+    """Extract jti from a token cookie and blacklist it if valid."""
+    if not token_str:
+        return
+    payload = verify_fn(token_str)
+    if not payload:
+        return
+    jti = payload.get("jti")
+    if not jti:
+        return
+    remaining = max(int(payload.get("exp", 0)) - int(datetime.now(UTC).timestamp()), 60)
+    await blacklist_fn(jti, ttl_seconds=remaining)
+
+
 @router.post("/logout")
 async def logout(request: Request):
     """Clear auth cookies and redirect to login.
 
     Logout is a POST action to prevent CSRF from logout links.
+    Blacklists the current access and refresh tokens' jti for their
+    remaining lifetimes, preventing token reuse even if exfiltrated.
     """
+    from app.services.token_blacklist import blacklist_token
+
+    await _blacklist_token_cookie(
+        request.cookies.get("access_token"),
+        verify_token,
+        blacklist_token,
+    )
+    await _blacklist_token_cookie(
+        request.cookies.get("refresh_token"),
+        verify_token,
+        blacklist_token,
+    )
+
     redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
     clear_token_cookies(redirect)
     return redirect

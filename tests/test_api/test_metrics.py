@@ -21,7 +21,7 @@ async def test_metrics_with_auth():
     from unittest.mock import MagicMock
 
     from app.api.dependencies import get_current_user
-    from app.models.user import User
+    from core.models.user import User
 
     mock_user = MagicMock(spec=User)
     mock_user.id = "test-user-id"
@@ -44,7 +44,7 @@ async def test_metrics_returns_prometheus_format():
     from unittest.mock import MagicMock
 
     from app.api.dependencies import get_current_user
-    from app.models.user import User
+    from core.models.user import User
 
     mock_user = MagicMock(spec=User)
     mock_user.id = "test-user-id"
@@ -61,3 +61,20 @@ async def test_metrics_returns_prometheus_format():
         assert "# TYPE ytprocessor" in content
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.asyncio
+async def test_prometheus_metrics_endpoint_exposes_core_metric_singletons():
+    """Test that the scrape endpoint exposes values from canonical core metrics."""
+    from core.metrics import QUEUE_DEPTH
+
+    QUEUE_DEPTH.set(7)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/prometheus-metrics")
+    finally:
+        QUEUE_DEPTH.set(0)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == CONTENT_TYPE_LATEST
+    assert "ytprocessor_queue_depth 7.0" in response.text

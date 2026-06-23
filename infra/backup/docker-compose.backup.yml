@@ -13,7 +13,7 @@ services:
       PGDATABASE: ${DB_NAME:-ytprocessor}
       BACKUP_OUTPUT_DIR: /var/backup/ytprocessor
       RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
-    entrypoint: ["/bin/bash", "/usr/local/bin/backup.sh"]
+    entrypoint: ['/bin/bash', '/usr/local/bin/backup.sh']
     restart: unless-stopped
     networks:
       - ytprocessor-network

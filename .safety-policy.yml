@@ -1,3 +1,26 @@
+version: '3.0'
+
 report:
-  auto-ignore-in-report:
-    vulnerabilities: ["64459", "64396"]
+  dependency-vulnerabilities:
+    enabled: true
+    auto-ignore-in-report:
+      python:
+        environment-results: true
+        unpinned-requirements: true
+      vulnerabilities: {}
+
+fail-scan-with-exit-code:
+  dependency-vulnerabilities:
+    enabled: true
+    fail-on-any-of:
+      cvss-severity:
+        - medium
+        - high
+        - critical
+
+security-updates:
+  dependency-vulnerabilities:
+    auto-security-updates-limit:
+      - patch
+      - minor
+      - major

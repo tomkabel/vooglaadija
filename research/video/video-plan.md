@@ -45,13 +45,15 @@ Create a short (5-8 minute) introductory video showcasing the Vooglaadija YouTub
 ### 2.3 Content Outline
 
 #### Scene 1: Cold Open (0:15)
-```
+
+```text
 "Imagine downloading any YouTube video with just a link..."
 [Show: Paste URL → Click download → File ready]
 ```
 
 #### Scene 2: Introduction (0:30)
-```
+
+```text
 "Hi, I'm [Name]. Today I'll be presenting Vooglaadija - a production-grade 
 YouTube media extraction API built as part of the Junior to Senior Developer 
 program at TalTech."
@@ -59,7 +61,8 @@ program at TalTech."
 ```
 
 #### Scene 3: The Problem (0:45)
-```
+
+```text
 "Manually downloading YouTube videos is cumbersome. You need browser 
 extensions, special software, or complex command-line tools. Vooglaadija 
 provides a clean REST API and web interface that anyone can use."
@@ -67,7 +70,8 @@ provides a clean REST API and web interface that anyone can use."
 ```
 
 #### Scene 4: Architecture Overview (1:00)
-```
+
+```text
 "At its core, Vooglaadija follows a producer-consumer pattern. The FastAPI 
 server acts as the API and Web UI. When a download is requested, a job is 
 queued in Redis. A separate worker process consumes jobs and uses yt-dlp 
@@ -76,20 +80,23 @@ to extract the media. Results are stored and served back to the client."
 ```
 
 #### Scene 5: Demo - Web UI (1:30)
-```
+
+```text
 "Let's see it in action. First, I'll register a new user..."
 [Screen record: Register → Login → Dashboard → Create download]
 [Highlight: Real-time status updates via HTMX SSE]
 ```
 
 #### Scene 6: Demo - API (1:00)
-```
+
+```text
 "For developers, we provide a complete REST API with JWT authentication..."
 [Screen record: Swagger UI or terminal curl commands]
 ```
 
 #### Scene 7: Architecture Deep Dive (1:00)
-```
+
+```text
 "Key technical highlights include: [CHOOSE 3-4 BASED ON STRENGTHS]
 - Async/await throughout for high throughput
 - JWT authentication with access/refresh token rotation  
@@ -100,7 +107,8 @@ to extract the media. Results are stored and served back to the client."
 ```
 
 #### Scene 8: Tech Stack (0:30)
-```
+
+```text
 "Built with Python 3.12, FastAPI, PostgreSQL, Redis, and containerized with 
 Docker. The frontend uses HTMX and Tailwind CSS for a modern experience 
 without the complexity of a JavaScript framework."
@@ -108,7 +116,8 @@ without the complexity of a JavaScript framework."
 ```
 
 #### Scene 9: CI/CD & Deployment (0:30)
-```
+
+```text
 "The project includes comprehensive CI/CD pipelines with Docker builds, 
 integration tests, and deployment workflows for development and staging 
 environments."
@@ -116,7 +125,8 @@ environments."
 ```
 
 #### Scene 10: Closing (0:30)
-```
+
+```text
 "Vooglaadija demonstrates key skills for a senior developer: system design, 
 async programming, security patterns, and DevOps practices. Thank you for 
 watching!"
@@ -130,33 +140,34 @@ watching!"
 ### 3.1 Recording Steps
 
 1. **Prepare Environment**
+
    ```bash
    # Start the application
    docker-compose up -d
-   
+
    # Or for local development
    hatch run dev
    docker-compose up -d redis db
-   
+
    # Verify all services running
    curl http://localhost:8000/api/v1/health
    ```
 
-2. **Create Demo Data**
-   - Register a test user
-   - Create 2-3 sample downloads (one pending, one completed, one failed)
-   - Prepare a real YouTube URL for live demo
+1. **Create Demo Data**
+  - Register a test user
+  - Create 2-3 sample downloads (one pending, one completed, one failed)
+  - Prepare a real YouTube URL for live demo
 
-3. **Record Screen Sections**
-   - Record architecture diagram animation (can use simpler tools)
-   - Record web UI demo flow
-   - Record API demo (Swagger UI)
-   - Record terminal shots of docker-compose, logs, etc.
+1. **Record Screen Sections**
+  - Record architecture diagram animation (can use simpler tools)
+  - Record web UI demo flow
+  - Record API demo (Swagger UI)
+  - Record terminal shots of docker-compose, logs, etc.
 
-4. **Voiceover Recording**
-   - Record after visuals are prepared
-   - Use consistent microphone distance
-   - Minimize background noise
+1. **Voiceover Recording**
+  - Record after visuals are prepared
+  - Use consistent microphone distance
+  - Minimize background noise
 
 ### 3.2 Recording Tips
 
@@ -229,8 +240,8 @@ watching!"
 ## 7. Deliverables
 
 1. **Primary:** Final edited video file (MP4)
-2. **Supporting:** Script document (for reference)
-3. **Optional:** Behind-the-scenes recording of demo takes
+1. **Supporting:** Script document (for reference)
+1. **Optional:** Behind-the-scenes recording of demo takes
 
 ---
 
@@ -239,10 +250,10 @@ watching!"
 Based on the course requirements and project analysis, emphasize:
 
 1. **Async Architecture** - Showcases Python expertise
-2. **Full-Stack Implementation** - API + Web UI + Worker
-3. **Production Patterns** - Outbox pattern, graceful shutdown
-4. **Security** - JWT auth, CSRF protection
-5. **DevOps** - Docker, CI/CD, testing
-6. **Clean Code** - Type hints, linting, testing
+1. **Full-Stack Implementation** - API + Web UI + Worker
+1. **Production Patterns** - Outbox pattern, graceful shutdown
+1. **Security** - JWT auth, CSRF protection
+1. **DevOps** - Docker, CI/CD, testing
+1. **Clean Code** - Type hints, linting, testing
 
 This demonstrates readiness for senior-level responsibilities as required by the course.

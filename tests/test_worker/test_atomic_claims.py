@@ -14,8 +14,8 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select, update
 
-from app.database import get_async_session_factory
-from app.models.download_job import DownloadJob
+from core.database import get_async_session_factory
+from core.models.download_job import DownloadJob
 
 
 class TestAtomicClaims:
@@ -55,13 +55,13 @@ class TestAtomicClaims:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.queue.redis_client", mock_redis),
+            patch("core.queue.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
-            mock_extract.return_value = ("/storage/test.mp4", "test.mp4")
+            mock_extract.return_value = ("/storage/test.mp4", "test.mp4", "Test Video")
 
             # Process the job
             result = await process_next_job(job_id)
@@ -311,13 +311,13 @@ class TestAtomicClaimsIntegration:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.queue.redis_client", mock_redis),
+            patch("core.queue.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
-            mock_extract.return_value = ("/storage/test.mp4", "test.mp4")
+            mock_extract.return_value = ("/storage/test.mp4", "test.mp4", "Atomic Test")
 
             result = await process_next_job(job_id)
 

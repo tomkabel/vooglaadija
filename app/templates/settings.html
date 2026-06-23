@@ -4,7 +4,7 @@
 
 {% block nav_actions %}
 <div class="flex items-center gap-3">
-    <a href="/web/downloads" class="btn-secondary text-sm">Back to Dashboard</a>
+    <a href="/web/downloads" class="btn-secondary text-sm">Back to dashboard</a>
     <form method="POST" action="/web/logout" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn-secondary text-sm">Sign out</button>
@@ -16,31 +16,30 @@
 <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
     {% set field_errors = field_errors or {} %}
     <div class="mb-8 slide-up opacity-0-initial animate-fill-forwards">
-        <h1 class="text-3xl sm:text-4xl font-display font-bold text-white tracking-tight">
-            Account <span class="text-gradient">Settings</span>
+        <h1 class="text-2xl sm:text-3xl font-display font-bold text-white tracking-tight leading-tight">
+            Account <span class="text-amber-400">settings</span>
         </h1>
-        <p class="mt-2 text-gray-500 font-body text-lg">Manage your profile details and account security</p>
+        <p class="mt-2 text-gray-400 font-body text-base">Manage your profile details and account security</p>
     </div>
     {% if error %}
     <div class="mb-6 error-box" role="alert" aria-live="assertive">
         <div class="flex items-center gap-3">
-            <svg class="h-5 w-5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+            <svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-warning" /></svg>
             <span>{{ error }}</span>
         </div>
     </div>
     {% endif %}
 
     <div class="space-y-6">
-        <section class="card-glow p-6 sm:p-8 slide-up animate-stagger-1 opacity-0-initial animate-fill-forwards">
-            <h2 class="text-lg font-display font-semibold text-white mb-1">Profile</h2>
-            <p class="text-sm text-gray-500 mb-6">Update your username and review your email</p>
+        <section class="card p-6 sm:p-8 slide-up opacity-0-initial animate-fill-forwards">
+            <h2 class="text-lg font-display font-semibold text-white mb-1 leading-tight">Profile</h2>
+            <p class="text-sm text-gray-400 font-body mb-6">Update your username and review your email</p>
 
             <form method="POST"
                   action="/web/settings/username"
                   hx-post="/web/settings/username"
                   hx-target="#username-feedback"
+                  id="username-settings-form"
                   class="space-y-5">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
@@ -63,24 +62,36 @@
 
                 <div>
                     <label for="email" class="form-label">Email</label>
-                    <input id="email"
-                           type="email"
-                           value="{{ current_user.email }}"
-                           disabled
-                           readonly
-                           class="form-input opacity-70 cursor-not-allowed">
+                    <div class="relative">
+                        <input id="email"
+                               type="email"
+                               value="{{ current_user.email }}"
+                               disabled
+                               readonly
+                               class="form-input pr-10">
+                        <svg class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-lock" /></svg>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1.5 font-body">Email cannot be changed</p>
                 </div>
 
                 <div class="pt-1">
-                    <button type="submit" class="btn-primary">Save username</button>
+                    <button type="submit"
+                            class="btn-primary inline-flex items-center justify-center gap-2 min-h-[44px] min-w-[160px]"
+                            data-username-submit
+                            aria-busy="false">
+                        <svg class="hidden animate-spin h-4 w-4" data-username-spinner aria-hidden="true">
+                            <use href="/static/icons/sprite.svg#icon-spinner" />
+                        </svg>
+                        <span data-username-label>Save username</span>
+                    </button>
                 </div>
             </form>
             <div id="username-feedback" class="mt-4"></div>
         </section>
 
-        <section class="card p-6 sm:p-8 slide-up animate-stagger-2 opacity-0-initial animate-fill-forwards">
-            <h2 class="text-lg font-display font-semibold text-white mb-1">Change Password</h2>
-            <p class="text-sm text-gray-500 mb-6">Choose a strong password with at least 8 characters</p>
+        <section class="card p-6 sm:p-8 slide-up opacity-0-initial animate-fill-forwards">
+            <h2 class="text-lg font-display font-semibold text-white mb-1 leading-tight">Change password</h2>
+            <p class="text-sm text-gray-400 font-body mb-6">Choose a strong password with at least 8 characters</p>
 
             <form method="POST"
                   action="/web/settings/password"
@@ -92,45 +103,60 @@
 
                 <div>
                     <label for="current_password" class="form-label">Current password</label>
-                    <input id="current_password"
-                           name="current_password"
-                           type="password"
-                           autocomplete="current-password"
-                           required
-                           aria-invalid="{{ 'true' if field_errors.get('current_password') else 'false' }}"
-                           aria-describedby="current-password-error"
-                           aria-errormessage="current-password-error"
-                           class="form-input">
+                    <div class="input-icon-wrapper">
+                        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-lock" /></svg>
+                        <input id="current_password"
+                               name="current_password"
+                               type="password"
+                               autocomplete="current-password"
+                               required
+                               aria-invalid="{{ 'true' if field_errors.get('current_password') else 'false' }}"
+                               aria-describedby="current-password-error"
+                               aria-errormessage="current-password-error"
+                               class="form-input">
+                    </div>
                     <p id="current-password-error" class="field-error" role="alert">{{ field_errors.get("current_password", "") }}</p>
                 </div>
 
                 <div>
                     <label for="new_password" class="form-label">New password</label>
-                    <input id="new_password"
-                           name="new_password"
-                           type="password"
-                           autocomplete="new-password"
-                           minlength="8"
-                           required
-                           aria-invalid="{{ 'true' if field_errors.get('new_password') else 'false' }}"
-                           aria-describedby="new-password-error"
-                           aria-errormessage="new-password-error"
-                           class="form-input">
+                    <div class="input-icon-wrapper">
+                        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-shield" /></svg>
+                        <input id="new_password"
+                               name="new_password"
+                               type="password"
+                               autocomplete="new-password"
+                               minlength="8"
+                               required
+                               aria-invalid="{{ 'true' if field_errors.get('new_password') else 'false' }}"
+                               aria-describedby="new-password-error"
+                               aria-errormessage="new-password-error"
+                               class="form-input">
+                    </div>
                     <p id="new-password-error" class="field-error" role="alert">{{ field_errors.get("new_password", "") }}</p>
+                    <div class="mt-3 password-strength" aria-live="polite">
+                        <div class="password-strength-meter" role="presentation" aria-hidden="true">
+                            <div id="new-password-strength-fill" class="password-strength-fill"></div>
+                        </div>
+                        <p id="new-password-strength-text" class="password-strength-text"></p>
+                    </div>
                 </div>
 
                 <div>
                     <label for="new_password_confirm" class="form-label">Confirm new password</label>
-                    <input id="new_password_confirm"
-                           name="new_password_confirm"
-                           type="password"
-                           autocomplete="new-password"
-                           minlength="8"
-                           required
-                           aria-invalid="{{ 'true' if field_errors.get('new_password_confirm') else 'false' }}"
-                           aria-describedby="new-password-confirm-error"
-                           aria-errormessage="new-password-confirm-error"
-                           class="form-input">
+                    <div class="input-icon-wrapper">
+                        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-shield" /></svg>
+                        <input id="new_password_confirm"
+                               name="new_password_confirm"
+                               type="password"
+                               autocomplete="new-password"
+                               minlength="8"
+                               required
+                               aria-invalid="{{ 'true' if field_errors.get('new_password_confirm') else 'false' }}"
+                               aria-describedby="new-password-confirm-error"
+                               aria-errormessage="new-password-confirm-error"
+                               class="form-input">
+                    </div>
                     <p id="new-password-confirm-error" class="field-error" role="alert">{{ field_errors.get("new_password_confirm", "") }}</p>
                 </div>
 
@@ -141,9 +167,9 @@
             <div id="password-feedback" class="mt-4"></div>
         </section>
 
-        <section class="card border border-coral-500/20 p-6 sm:p-8 slide-up animate-stagger-3 opacity-0-initial animate-fill-forwards">
-            <h2 class="text-lg font-display font-semibold text-coral-300 mb-1">Delete Account</h2>
-            <p class="text-sm text-gray-500 mb-6">
+        <section class="card-danger p-6 sm:p-8 slide-up opacity-0-initial animate-fill-forwards">
+            <h2 class="text-lg font-display font-semibold text-coral-400 mb-1 leading-tight">Delete account</h2>
+            <p class="text-sm text-gray-400 font-body mb-6">
                 This action is permanent. All your download history and account data will be removed.
             </p>
 
@@ -157,15 +183,18 @@
 
                 <div>
                     <label for="delete_password" class="form-label">Password</label>
-                    <input id="delete_password"
-                           name="password"
-                           type="password"
-                           autocomplete="current-password"
-                           required
-                           aria-invalid="{{ 'true' if field_errors.get('delete_password') else 'false' }}"
-                           aria-describedby="delete-password-error"
-                           aria-errormessage="delete-password-error"
-                           class="form-input">
+                    <div class="input-icon-wrapper">
+                        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-lock" /></svg>
+                        <input id="delete_password"
+                               name="password"
+                               type="password"
+                               autocomplete="current-password"
+                               required
+                               aria-invalid="{{ 'true' if field_errors.get('delete_password') else 'false' }}"
+                               aria-describedby="delete-password-error"
+                               aria-errormessage="delete-password-error"
+                               class="form-input">
+                    </div>
                     <p id="delete-password-error" class="field-error" role="alert">{{ field_errors.get("delete_password", "") }}</p>
                 </div>
 
@@ -183,8 +212,10 @@
                     <p id="confirm-text-error" class="field-error" role="alert">{{ field_errors.get("confirm_text", "") }}</p>
                 </div>
 
-                <div class="pt-1">
-                    <button type="submit" class="btn-danger">Delete my account</button>
+                    <div class="pt-1">
+                    <button type="submit" class="btn-danger-solid">
+                        Delete my account
+                    </button>
                 </div>
             </form>
             <div id="delete-feedback" class="mt-4"></div>

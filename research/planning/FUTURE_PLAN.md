@@ -34,13 +34,16 @@ The Vooglaadija project has **critical security vulnerabilities** that require i
 **Steps:**
 
 1. Use `BFG Repo-Cleaner` to remove sensitive files:
+
    ```bash
    bfg --delete-files infra/ssl/privkey.pem
    bfg --delete-files infra/ssl/key.pem
    bfg --delete-files .env
    ```
-2. Add to `.gitignore`:
-   ```
+
+1. Add to `.gitignore`:
+
+   ```text
    *.pem
    !infra/ssl/cert.pem
    !infra/ssl/fullchain.pem
@@ -48,16 +51,19 @@ The Vooglaadija project has **critical security vulnerabilities** that require i
    .env.local
    .env.*.local
    ```
-3. Force push to reset history (COORDINATE WITH TEAM - destructive operation):
+
+1. Force push to reset history (COORDINATE WITH TEAM - destructive operation):
+
    ```bash
    git push --force
    ```
-4. Rotate ALL secrets that were committed (they may be compromised):
-   - [ ] Generate new SSL certificates
-   - [ ] Generate new `SECRET_KEY` for JWT
-   - [ ] Generate new `DB_PASSWORD`
-   - [ ] Generate new `REDIS_PASSWORD`
-   - [ ] Generate new `NETDATA_CLAIM_TOKEN`
+
+1. Rotate ALL secrets that were committed (they may be compromised):
+  - [ ] Generate new SSL certificates
+  - [ ] Generate new `SECRET_KEY` for JWT
+  - [ ] Generate new `DB_PASSWORD`
+  - [ ] Generate new `REDIS_PASSWORD`
+  - [ ] Generate new `NETDATA_CLAIM_TOKEN`
 
 **Effort:** 2-4 hours (but requires team coordination)
 
@@ -89,7 +95,7 @@ response.set_cookie(
 **Steps:**
 
 1. Remove CSRF token cookie entirely
-2. Implement Origin/Referer validation:
+1. Implement Origin/Referer validation:
 
    ```python
    # app/api/routes/web.py
@@ -104,9 +110,9 @@ response.set_cookie(
            raise HTTPException(403, "Invalid origin")
    ```
 
-3. Remove `set_csrf_token_cookie()` calls
-4. Update templates to not read CSRF from cookie
-5. Update `validate_csrf_token()` to use Origin validation
+1. Remove `set_csrf_token_cookie()` calls
+1. Update templates to not read CSRF from cookie
+1. Update `validate_csrf_token()` to use Origin validation
 
 **Effort:** 4-6 hours
 
@@ -149,8 +155,8 @@ except JWTError:
        return None
    ```
 
-2. Add `request_id` context var to middleware
-3. Create monitoring alert for >5 failed JWT verifications/minute
+1. Add `request_id` context var to middleware
+1. Create monitoring alert for >5 failed JWT verifications/minute
 
 **Effort:** 2-3 hours
 
@@ -189,11 +195,13 @@ except JWTError:
        return user
    ```
 
-2. Add database migration to set `deleted_at` for any users with `is_active=False` but `deleted_at=NULL`:
+1. Add database migration to set `deleted_at` for any users with `is_active=False` but `deleted_at=NULL`:
+
    ```sql
    UPDATE users SET deleted_at = updated_at WHERE is_active = false AND deleted_at IS NULL;
    ```
-3. Add tests for soft-deleted user authentication rejection
+
+1. Add tests for soft-deleted user authentication rejection
 
 **Effort:** 2-3 hours
 
@@ -261,8 +269,8 @@ except JWTError:
        # Process job...
    ```
 
-2. Keep outbox entries for auditing (don't delete immediately)
-3. Add cleanup job to purge old processed outbox entries (30 days)
+1. Keep outbox entries for auditing (don't delete immediately)
+1. Add cleanup job to purge old processed outbox entries (30 days)
 
 **Effort:** 4-6 hours
 
@@ -281,19 +289,23 @@ except JWTError:
 **Steps:**
 
 1. Add to `app/config.py`:
+
    ```python
    class Settings(BaseSettings):
        job_max_retries: int = Field(default=3, ge=1, le=10)
        job_retry_base_seconds: int = Field(default=60, ge=10)
        job_retry_cap_seconds: int = Field(default=600, ge=60)
    ```
-2. Update `DownloadJob` model to read from settings:
+
+1. Update `DownloadJob` model to read from settings:
+
    ```python
    max_retries: Mapped[int] = mapped_column(
        default=lambda: settings.job_max_retries
    )
    ```
-3. Update worker to use settings for backoff calculation
+
+1. Update worker to use settings for backoff calculation
 
 **Effort:** 2-3 hours
 
@@ -361,10 +373,13 @@ for job in expired_jobs:
 **Steps:**
 
 1. Create Alembic migration:
+
    ```bash
    alembic revision --autogenerate -m "add composite index on download_jobs"
    ```
-2. Edit migration:
+
+1. Edit migration:
+
    ```python
    op.create_index(
        'ix_download_jobs_user_status',
@@ -402,8 +417,8 @@ for job in expired_jobs:
        storage_path: str = Field(default="./downloads")
    ```
 
-2. Update all references to use `settings.YT_DLP_TIMEOUT` etc.
-3. Document each setting in `.env.example`
+1. Update all references to use `settings.YT_DLP_TIMEOUT` etc.
+1. Document each setting in `.env.example`
 
 **Effort:** 3-4 hours
 
@@ -449,7 +464,7 @@ for job in expired_jobs:
                await requeue_stale_jobs()
    ```
 
-2. Add zombie sweeper to detect and requeue stale working jobs
+1. Add zombie sweeper to detect and requeue stale working jobs
 
 **Effort:** 6-8 hours
 
@@ -497,8 +512,8 @@ for job in expired_jobs:
            await self.redis.delete(f"{self.key_prefix}:state")
    ```
 
-2. Replace all `CircuitBreaker` instances with `RedisCircuitBreaker`
-3. Add Redis dependency injection for testability
+1. Replace all `CircuitBreaker` instances with `RedisCircuitBreaker`
+1. Add Redis dependency injection for testability
 
 **Effort:** 6-8 hours
 
@@ -516,6 +531,7 @@ for job in expired_jobs:
 **Steps:**
 
 1. Create `tests/test_worker/` with:
+
    ```python
    # test_outbox_to_queue_flow
    async def test_outbox_entry_gets_enqueued(db, redis):
@@ -523,20 +539,26 @@ for job in expired_jobs:
        # Simulate outbox processor
        # Assert job appears in Redis queue
    ```
-2. Add `test_job_claiming_race_condition`:
+
+1. Add `test_job_claiming_race_condition`:
+
    ```python
    async def test_concurrent_job_claiming(db, redis):
        # Spawn 2 workers simultaneously
        # Both try to claim same job
        # Assert only one succeeds
    ```
-3. Add `test_graceful_shutdown`:
+
+1. Add `test_graceful_shutdown`:
+
    ```python
    async def test_shutdown_requeues_incomplete_jobs(db, redis):
        # Worker processing job, receives SIGTERM
        # Assert job returned to queue
    ```
-4. Add `test_zombie_sweeper_behavior`:
+
+1. Add `test_zombie_sweeper_behavior`:
+
    ```python
    async def test_stale_processing_jobs_get_reset(db, redis):
        # Job stuck in 'processing' > grace period
@@ -564,11 +586,11 @@ for job in expired_jobs:
 **Steps:**
 
 1. Move all shared state to Redis:
-   - [x] Circuit breaker (from Phase 2.7)
-   - [ ] Rate limiter state (currently in slowapi memory)
-   - [ ] Session/refresh token revocation list
-2. Remove any local file-based storage for job state
-3. Ensure all state is recoverable from Redis on restart
+  - [x] Circuit breaker (from Phase 2.7)
+  - [ ] Rate limiter state (currently in slowapi memory)
+  - [ ] Session/refresh token revocation list
+1. Remove any local file-based storage for job state
+1. Ensure all state is recoverable from Redis on restart
 
 **Effort:** 8-10 hours
 
@@ -596,7 +618,7 @@ for job in expired_jobs:
    )
    ```
 
-2. Document pool sizing guidelines for scaling
+1. Document pool sizing guidelines for scaling
 
 **Effort:** 2 hours
 
@@ -611,11 +633,14 @@ for job in expired_jobs:
 **Steps:**
 
 1. Implement `BLOCKING` mode in Redis:
+
    ```python
    # Instead of polling, use blocking pop
    result = await redis.blpop(queue_name, timeout=0)  # Block indefinitely
    ```
-2. Add watchdog to detect worker stalls:
+
+1. Add watchdog to detect worker stalls:
+
    ```python
    async def monitor_worker_health():
        while True:
@@ -638,10 +663,13 @@ for job in expired_jobs:
 **Steps:**
 
 1. Add `is_archived` column to `download_jobs`:
+
    ```python
    is_archived: Mapped[bool] = mapped_column(default=False, index=True)
    ```
-2. Create scheduled job to archive old completed jobs:
+
+1. Create scheduled job to archive old completed jobs:
+
    ```python
    async def archive_old_jobs(db: AsyncSession):
        cutoff = datetime.utcnow() - timedelta(days=7)
@@ -656,7 +684,8 @@ for job in expired_jobs:
        )
        await db.commit()
    ```
-3. Add index on `(is_archived, user_id, created_at)` for efficient archival queries
+
+1. Add index on `(is_archived, user_id, created_at)` for efficient archival queries
 
 **Effort:** 4-5 hours
 
@@ -671,6 +700,7 @@ for job in expired_jobs:
 **Steps:**
 
 1. Add Prometheus alerting rules:
+
    ```yaml
    groups:
      - name: vooglaadija
@@ -683,8 +713,9 @@ for job in expired_jobs:
          - alert: QueueDepthHigh
            expr: redis_queue_length > 1000
    ```
-2. Configure AlertManager to send notifications (email, Slack, PagerDuty)
-3. Add `alert_on` annotations to docker-compose services for health check failures
+
+1. Configure AlertManager to send notifications (email, Slack, PagerDuty)
+1. Add `alert_on` annotations to docker-compose services for health check failures
 
 **Effort:** 4-6 hours
 
@@ -715,18 +746,21 @@ for job in expired_jobs:
 **Steps:**
 
 1. **Extract JS to modules:**
-   ```
+
+   ```text
    app/static/js/
    ├── dashboard.js      # Extracted from dashboard.html
    ├── downloadRow.js    # Single source of truth for row HTML
    └── state.js          # Simple reactive state
    ```
-2. **Fix duplicate HTML:**
-   - Keep `_download_item.html` as single source
-   - Remove duplicate `getRowHTML()` from JS
-   - HTMX responses return partial HTML from template
-   - Initial page load renders from template
-3. **Add minimal bundler:**
+
+1. **Fix duplicate HTML:**
+  - Keep `_download_item.html` as single source
+  - Remove duplicate `getRowHTML()` from JS
+  - HTMX responses return partial HTML from template
+  - Initial page load renders from template
+1. **Add minimal bundler:**
+
    ```json
    {
      "scripts": {
@@ -734,7 +768,9 @@ for job in expired_jobs:
      }
    }
    ```
-4. **Add client-side state:**
+
+1. **Add client-side state:**
+
    ```javascript
    const appState = {
      downloads: new Map(),
@@ -755,10 +791,10 @@ for job in expired_jobs:
 **Steps:**
 
 1. Evaluate Vue vs React vs Svelte
-2. Design API contracts for SPA consumption
-3. Implement backend API versioning strategy
-4. Build new frontend incrementally, routing by feature
-5. Maintain HTMX version in parallel until SPA is complete
+1. Design API contracts for SPA consumption
+1. Implement backend API versioning strategy
+1. Build new frontend incrementally, routing by feature
+1. Maintain HTMX version in parallel until SPA is complete
 
 **Effort:** 6-8 weeks
 
@@ -795,37 +831,37 @@ For each change, define rollback:
 ### Pre-Deployment Validation
 
 1. **Security tests:**
-   - [ ] Verify CSRF bypass is not possible
-   - [ ] Verify deleted users cannot authenticate
-   - [ ] Verify no secrets in git history
-   - [ ] Run `git-secrets` or similar in CI
+  - [ ] Verify CSRF bypass is not possible
+  - [ ] Verify deleted users cannot authenticate
+  - [ ] Verify no secrets in git history
+  - [ ] Run `git-secrets` or similar in CI
 
-2. **Functional tests:**
-   - [ ] All unit tests pass
-   - [ ] All integration tests pass
-   - [ ] Manual smoke test on staging
+1. **Functional tests:**
+  - [ ] All unit tests pass
+  - [ ] All integration tests pass
+  - [ ] Manual smoke test on staging
 
-3. **Performance tests:**
-   - [ ] 100 concurrent download requests
-   - [ ] 1000 jobs in queue
-   - [ ] Database connection pool exhaustion test
+1. **Performance tests:**
+  - [ ] 100 concurrent download requests
+  - [ ] 1000 jobs in queue
+  - [ ] Database connection pool exhaustion test
 
 ### Post-Deployment Monitoring
 
 1. **Week 1:**
-   - Watch error rates closely
-   - Monitor JWT verification failure logs
-   - Monitor queue depth
+  - Watch error rates closely
+  - Monitor JWT verification failure logs
+  - Monitor queue depth
 
-2. **Week 2:**
-   - Performance baseline comparison
-   - Identify any regressions
+1. **Week 2:**
+  - Performance baseline comparison
+  - Identify any regressions
 
 ---
 
 ## DEPENDENCY CHAIN
 
-```
+```text
 Phase 1 (MUST complete before anything else)
 ├── 1.1 Remove secrets from git ←── Nothing else can deploy until this
 ├── 1.2 Fix CSRF ←── Affects all web forms
@@ -858,7 +894,7 @@ Phase 4 (Independent but NOT recommended during high-risk period)
 
 ## SUCCESS CRITERIA
 
-### Phase 1 Complete When:
+### Phase 1 Complete When
 
 - [ ] No secrets in git history
 - [ ] CSRF protected via Origin validation
@@ -866,7 +902,7 @@ Phase 4 (Independent but NOT recommended during high-risk period)
 - [ ] Deleted users rejected at authentication
 - [ ] All security issues from audit resolved
 
-### Phase 2 Complete When:
+### Phase 2 Complete When
 
 - [ ] Jobs never processed twice
 - [ ] Retry behavior configurable via env
@@ -877,7 +913,7 @@ Phase 4 (Independent but NOT recommended during high-risk period)
 - [ ] Circuit breaker works across replicas
 - [ ] Worker has integration test coverage
 
-### Phase 3 Complete When:
+### Phase 3 Complete When
 
 - [ ] API can scale horizontally
 - [ ] Connection pools properly sized
@@ -885,7 +921,7 @@ Phase 4 (Independent but NOT recommended during high-risk period)
 - [ ] Old data archived properly
 - [ ] Alerts fire on issues
 
-### Production Ready When:
+### Production Ready When
 
 - [ ] All Phase 1-3 items complete
 - [ ] Load test passes (100 concurrent users, 1000 queue depth)

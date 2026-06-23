@@ -1,7 +1,7 @@
 #!/bin/bash
 # ===========================================
 # Vooglaadija - VPS Deployment Script
-# For subdomain: youtube.tomabel.ee
+# Domain is supplied with DEPLOY_DOMAIN
 # Target: Ubuntu 25 VPS at 37.114.46.226
 # ===========================================
 #
@@ -25,7 +25,8 @@
 set -euo pipefail
 
 # Configuration
-DOMAIN="youtube.tomabel.ee"
+: "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"
+DOMAIN="$DEPLOY_DOMAIN"
 DEPLOY_DIR="/opt/vooglaadija"
 LETSENCRYPT_DIR="$DEPLOY_DIR/infra/letsencrypt"
 CERTBOT_DATA_DIR="$DEPLOY_DIR/infra/certbot/data"
@@ -47,6 +48,7 @@ log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 # ===========================================
 # PHASE 0: Pre-flight Checks
 # ===========================================
+# shellcheck disable=SC2120
 phase0() {
     log_step "=== Phase 0: Pre-flight Checks ==="
 
@@ -128,6 +130,11 @@ phase1() {
     ufw allow 80/tcp
     ufw allow 443/tcp
     ufw --force enable
+
+    # Enable memory overcommit for Redis background saves (AOF rewrite)
+    log_info "Setting vm.overcommit_memory=1 for Redis..."
+    sysctl -w vm.overcommit_memory=1
+    echo "vm.overcommit_memory = 1" > /etc/sysctl.d/99-redis.conf
 
     log_info "Phase 1 complete - System prepared"
 }
@@ -256,7 +263,8 @@ phase4() {
     log_info "Obtaining Let's Encrypt certificate for $DOMAIN via Cloudflare DNS challenge..."
 
     # Create Cloudflare credentials file with restricted permissions
-    local CF_CREDENTIALS_FILE="$(dirname "$CERTBOT_DATA_DIR")/cloudflare.ini"
+    local CF_CREDENTIALS_FILE
+    CF_CREDENTIALS_FILE="$(dirname "$CERTBOT_DATA_DIR")/cloudflare.ini"
 
     cat > "$CF_CREDENTIALS_FILE" << EOF
 # Cloudflare API credentials
@@ -277,9 +285,9 @@ EOF
 
     log_info "Requesting certificate via certbot --dns-cloudflare..."
 
-    local EMAIL_FLAG=""
+    local -a EMAIL_ARGS=()
     if [[ -n "${CLOUDFLARE_EMAIL:-}" ]]; then
-        EMAIL_FLAG="--email ${CLOUDFLARE_EMAIL} --no-eff-email"
+        EMAIL_ARGS=(--email "${CLOUDFLARE_EMAIL}" --no-eff-email)
     fi
 
     docker run --rm \
@@ -291,7 +299,7 @@ EOF
         --dns-cloudflare-propagation-seconds 30 \
         --non-interactive \
         --agree-tos \
-        ${EMAIL_FLAG} \
+        "${EMAIL_ARGS[@]}" \
         -d "$DOMAIN" \
         --verbose
 
@@ -390,10 +398,12 @@ REDIS_PASSWORD=${REDIS_PASSWORD}
 
 # Security
 SECRET_KEY=${SECRET_KEY}
+SECRET_KEY_PREVIOUS=
 COOKIE_SECURE=True
 
 # CORS - HTTPS required
-CORS_ORIGINS=https://youtube.tomabel.ee
+DEPLOY_DOMAIN=${DEPLOY_DOMAIN}
+CORS_ORIGINS=https://${DEPLOY_DOMAIN}
 
 # Token Expiry
 ACCESS_TOKEN_EXPIRE_MINUTES=15
@@ -403,9 +413,12 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 FILE_EXPIRE_HOURS=24
 STORAGE_PATH=/app/storage
 
-# Observability (disabled for production)
-FEATURE_METRICS_ENABLED=false
-FEATURE_TRACING_ENABLED=false
+# Observability
+FEATURE_METRICS_ENABLED=true
+FEATURE_TRACING_ENABLED=true
+NETDATA_CLAIM_TOKEN=
+NETDATA_CLAIM_URL=https://app.netdata.cloud
+NETDATA_CLAIM_ROOMS=
 
 # ===========================================
 # Cloudflare DNS Challenge Credentials

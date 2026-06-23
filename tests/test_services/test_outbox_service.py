@@ -5,8 +5,8 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.models.outbox import Outbox
 from app.services.outbox_service import write_job_to_outbox
+from core.models.outbox import Outbox
 
 
 @pytest.mark.asyncio

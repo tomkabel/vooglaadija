@@ -1,0 +1,18 @@
+# ShellCheck configuration
+# Reference: https://github.com/koalaman/shellcheck/wiki
+
+# Enable all checks by default (SC2034 is low-value on its own)
+# Common false positives can be disabled per-invocation with inline directives
+# e.g.: # shellcheck disable=SC2086
+
+# Disable checks that are too pedantic for this project
+disable=SC1091  # Not following external source (too many false positives in scripts)
+
+# Enable checks that are not in the default set
+enable=all
+
+# Source paths for external scripts
+source-path=SCRIPTDIR
+
+# Severity level for warnings
+severity=style

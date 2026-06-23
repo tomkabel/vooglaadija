@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from starlette.responses import Response
 
-from app.models.download_job import DownloadJob
+from core.models.download_job import DownloadJob
 
 
 class TestRedisFailureHandling:
@@ -55,7 +55,7 @@ class TestRedisFailureHandling:
         mock_redis = AsyncMock()
         mock_redis.rpop = AsyncMock(side_effect=Exception("Redis connection lost"))
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with patch("worker.job_claimer.redis_client", mock_redis):
             # Should not raise, just log and continue
             await process_next_job()
 
@@ -80,9 +80,9 @@ class TestRedisFailureHandling:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.processor.redis_client", mock_redis),
+            patch("worker.job_executor.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
@@ -119,9 +119,9 @@ class TestRedisFailureHandling:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.processor.redis_client", mock_redis),
+            patch("worker.job_executor.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
@@ -179,7 +179,7 @@ class TestRedisFailureDuringJobProcessing:
         mock_redis.brpop = AsyncMock(return_value=None)
         mock_redis.rpop = AsyncMock(return_value=None)
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with patch("worker.job_claimer.redis_client", mock_redis):
             from worker.processor import process_next_job
 
             # Empty queue - returns None from brpop
@@ -212,9 +212,9 @@ class TestRedisFailureDuringJobProcessing:
         mock_shutdown = asyncio.Event()
 
         with (
-            patch("worker.processor.redis_client", mock_redis),
+            patch("worker.job_executor.redis_client", mock_redis),
             patch(
-                "worker.processor.extract_media_with_circuit_breaker", new_callable=AsyncMock
+                "worker.job_executor.extract_media_with_circuit_breaker", new_callable=AsyncMock
             ) as mock_extract,
             patch("worker.main.shutdown_event", mock_shutdown),
         ):
@@ -244,11 +244,11 @@ class TestRedisHealthChecks:
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(side_effect=Exception("Redis connection refused"))
 
-        with patch("app.api.routes.health.redis_client", mock_redis):
+        with patch("app.api.routes.health.get_redis_client", return_value=mock_redis):
             result = await readiness_check()
 
             # When Redis is down, readiness_check returns a Response with 503
-            assert isinstance(result, (ReadinessResponse, Response))
+            assert isinstance(result, ReadinessResponse | Response)
             if isinstance(result, Response):
                 assert result.status_code == 503
                 data = json.loads(result.body)
@@ -267,12 +267,12 @@ class TestRedisConnectionPooling:
         """Test handling when Redis connection pool is exhausted."""
         import redis.asyncio as redis
 
-        # Simulate pool exhaustion - need to patch at worker.processor level
+        # Simulate pool exhaustion at the queue-pop boundary.
         mock_redis = AsyncMock()
         mock_redis.rpop = AsyncMock(return_value=None)  # Empty queue returns None
         mock_redis.brpop = AsyncMock(side_effect=redis.ConnectionError("Pool exhausted"))
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with patch("worker.job_claimer.redis_client", mock_redis):
             from worker.processor import process_next_job
 
             # Should handle ConnectionError gracefully
@@ -286,7 +286,7 @@ class TestRedisConnectionPooling:
         mock_redis.rpop = AsyncMock(return_value=None)  # Empty queue returns None
         mock_redis.brpop = AsyncMock(side_effect=TimeoutError("Redis timeout"))
 
-        with patch("worker.processor.redis_client", mock_redis):
+        with patch("worker.job_claimer.redis_client", mock_redis):
             from worker.processor import process_next_job
 
             # Should handle timeout gracefully

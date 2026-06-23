@@ -6,22 +6,25 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
+import structlog.contextvars
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from httpx import ASGITransport, AsyncClient
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.main import (
-    UVLOOP_AVAILABLE,
-    _shutdown_state,
-    _sigterm_handler,
-    add_request_id,
-    add_security_headers,
-    app,
+from app.api.exceptions import (
     general_exception_handler,
     http_exception_handler,
-    root,
     validation_exception_handler,
+)
+from app.api.middleware.request_id import add_request_id
+from app.api.middleware.security_headers import add_security_headers
+from app.api.startup import _shutdown_state, _sigterm_handler
+from app.main import (
+    UVLOOP_AVAILABLE,
+    app,
+    lifespan,
+    root,
 )
 
 
@@ -85,6 +88,20 @@ class TestRequestIdMiddleware:
 
         assert result.headers["X-Request-ID"] == request_id_captured
         assert len(request_id_captured) == 36  # UUID format with dashes
+
+    @pytest.mark.asyncio
+    async def test_request_id_unbound_when_downstream_raises(self):
+        """Test that request ID context is cleared when downstream handling fails."""
+        structlog.contextvars.clear_contextvars()
+        mock_request = MagicMock(spec=Request)
+
+        async def mock_call_next(request):
+            raise RuntimeError("downstream failed")
+
+        with pytest.raises(RuntimeError, match="downstream failed"):
+            await add_request_id(mock_request, mock_call_next)
+
+        assert "request_id" not in structlog.contextvars.get_contextvars()
 
 
 class TestHTTPExceptionHandler:
@@ -445,8 +462,6 @@ class TestLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_startup_and_shutdown(self):
         """Test that lifespan context manager runs startup and shutdown."""
-        from app.main import lifespan
-
         startup_events = []
         shutdown_events = []
 

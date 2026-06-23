@@ -1,6 +1,6 @@
 #!/bin/bash
 # PostgreSQL backup script for ytprocessor
-# 
+#
 # Usage:
 #   ./backup.sh                        # Uses environment variables or defaults
 #   ./backup.sh /custom/output/dir     # Custom output directory

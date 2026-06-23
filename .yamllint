@@ -1,0 +1,24 @@
+# yamllint configuration
+# Reference: https://yamllint.readthedocs.io/
+
+extends: default
+
+rules:
+  # 200 chars line length for YAML (Issue templates need more space)
+  line-length:
+    max: 200
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+
+  # These generate many false positives in Docker/Action files - disable checking
+  truthy: disable
+  quoted-strings: disable
+  comments: disable
+  document-start: disable
+  indentation: disable
+
+ignore: |
+  node_modules/
+  .venv/
+  .virtual_documents/
+  pnpm-lock.yaml

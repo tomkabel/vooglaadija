@@ -1,6 +1,8 @@
+import asyncio
+
 from passlib.context import CryptContext
 
-from app.config import settings
+from core.config import settings
 
 # Configure bcrypt with configurable rounds
 pwd_context = CryptContext(
@@ -10,9 +12,13 @@ pwd_context = CryptContext(
 )
 
 
-def hash_password(password: str) -> str:
-    return str(pwd_context.hash(password))
+async def hash_password(password: str) -> str:
+    loop = asyncio.get_running_loop()
+    return str(await loop.run_in_executor(None, pwd_context.hash, password))
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bool(pwd_context.verify(plain_password, hashed_password))
+async def verify_password(plain_password: str, hashed_password: str) -> bool:
+    loop = asyncio.get_running_loop()
+    return bool(
+        await loop.run_in_executor(None, pwd_context.verify, plain_password, hashed_password)
+    )

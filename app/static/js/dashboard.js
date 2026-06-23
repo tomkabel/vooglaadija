@@ -1,0 +1,777 @@
+(() => {
+  const Vooglaadija = window.Vooglaadija;
+  Vooglaadija.state.dashboard = Vooglaadija.state.dashboard || {};
+  const dashboardState = Vooglaadija.state.dashboard;
+  if (dashboardState.initialized) return;
+  dashboardState.initialized = true;
+  dashboardState.sseSource = dashboardState.sseSource || null;
+  dashboardState.htmxPending = dashboardState.htmxPending || new Set();
+
+  // ─── Custom Confirm Modal with Focus Trap ──────────────────────────
+  const modal = document.getElementById('confirm-modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalDesc = document.getElementById('modal-desc');
+  const modalCancel = document.querySelector('[data-modal-cancel]');
+  const modalConfirm = document.querySelector('[data-modal-confirm]');
+  let pendingConfirm = null;
+  let lastFocusedEl = null;
+
+  // Focusable elements within modal
+  const _modalFocusable = null;
+  function getModalFocusable() {
+    if (!modal) return [];
+    return modal.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+  }
+
+  function trapFocus(e) {
+    const focusable = getModalFocusable();
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.key === 'Tab') {
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  document.body.addEventListener('htmx:confirm', (evt) => {
+    if (!evt.detail?.question) return;
+    const elt = evt.detail.elt;
+    if (!elt.getAttribute('hx-confirm')) return;
+    evt.preventDefault();
+    lastFocusedEl = document.activeElement;
+    modalTitle.textContent = evt.detail.question;
+    modalDesc.textContent = 'This action cannot be undone.';
+    modal.classList.remove('hidden');
+    pendingConfirm = evt.detail;
+    // Focus the cancel button
+    setTimeout(() => {
+      const focusable = getModalFocusable();
+      if (focusable.length > 0) focusable[0].focus();
+    }, 50);
+    document.addEventListener('keydown', trapFocus);
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+  });
+
+  function closeModal(confirmed) {
+    modal.classList.add('hidden');
+    if (pendingConfirm) {
+      pendingConfirm.issueRequest(confirmed);
+      pendingConfirm = null;
+    }
+    document.removeEventListener('keydown', trapFocus);
+    document.body.style.overflow = '';
+    if (lastFocusedEl) lastFocusedEl.focus();
+  }
+
+  modalCancel.addEventListener('click', () => {
+    closeModal(false);
+  });
+  modalConfirm.addEventListener('click', () => {
+    closeModal(true);
+  });
+
+  modal.addEventListener('click', (evt) => {
+    if (evt.target === modal) closeModal(false);
+  });
+
+  document.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(false);
+  });
+
+  // ─── Skeleton Loader ─────────────────────────────────────────────────
+  let skeletonObserver = null;
+
+  function stopSkeletonObserver() {
+    if (!skeletonObserver) return;
+    skeletonObserver.disconnect();
+    skeletonObserver = null;
+  }
+
+  function clearSkel() {
+    stopSkeletonObserver();
+    const list = document.getElementById('download-list');
+    if (!list) return;
+    list.classList.remove('download-list-loading');
+    const skel = document.getElementById('download-skeleton');
+    if (skel) skel.remove();
+  }
+
+  function observeSkeletonRows() {
+    const rows =
+      document.getElementById('download-rows') || document.getElementById('download-list');
+    if (!(rows && window.MutationObserver)) return;
+
+    const initialChildCount = rows.childElementCount;
+    skeletonObserver = new MutationObserver(() => {
+      if (rows.childElementCount !== initialChildCount) clearSkel();
+    });
+    skeletonObserver.observe(rows, { childList: true });
+  }
+
+  observeSkeletonRows();
+
+  document.body.addEventListener('htmx:sseOpen', () => {
+    setTimeout(clearSkel, 200);
+  });
+
+  document.body.addEventListener('htmx:sseError', () => {
+    clearSkel();
+  });
+  document.body.addEventListener('htmx:afterSwap', () => {
+    clearSkel();
+    updateStats();
+  });
+
+  // ─── Stats ───────────────────────────────────────────────────────────
+  function updateStats() {
+    const rows = document.querySelectorAll('.download-row');
+    let completed = 0;
+    let inProgress = 0;
+    const total = rows.length;
+    for (const row of rows) {
+      const badge = row.querySelector('.status-badge');
+      if (!badge) continue;
+      const s = badge.textContent.trim().toLowerCase();
+      if (s === 'completed') completed++;
+      else if (s === 'processing' || s === 'pending') inProgress++;
+    }
+    const ce = document.getElementById('stat-completed');
+    const ie = document.getElementById('stat-in-progress');
+    const te = document.getElementById('stat-total');
+    if (ce) ce.textContent = completed;
+    if (ie) ie.textContent = inProgress;
+    if (te) te.textContent = total;
+  }
+
+  // ─── Relative Time ───────────────────────────────────────────────────
+  function formatRelativeTime(dateString) {
+    if (!dateString) return 'Just now';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return 'Just now';
+    const diff = Date.now() - date.getTime();
+    const sec = Math.floor(diff / 1000);
+    if (sec < 10) return 'Just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}d ago`;
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  // ─── SSE ─────────────────────────────────────────────────────────────
+  let lastMsg = Date.now();
+  let reconnectShown = false;
+  let announcementTimer = null;
+  let sseHealthIntervalId = null;
+  const SSE_TIMEOUT = 35000;
+  const SSE_DISCONNECT_BANNER_DELAY = 10000;
+
+  function markSseActivity() {
+    lastMsg = Date.now();
+    const banner = document.getElementById('sse-reconnect-banner');
+    if (banner) {
+      banner.remove();
+      reconnectShown = false;
+    }
+  }
+
+  function announceDownloadUpdate(message) {
+    const announcer = document.getElementById('download-announcer');
+    const announcement = String(message || '').trim();
+    if (!(announcer && announcement)) return;
+
+    announcer.textContent = '';
+    clearTimeout(announcementTimer);
+    announcementTimer = setTimeout(() => {
+      announcer.textContent = announcement;
+    }, 50);
+  }
+
+  function getDownloadTitle(data, row) {
+    const title = data.title || data.url || row.querySelector('.url-text')?.textContent;
+    return String(title || '').trim();
+  }
+
+  function getVisibleDownloadTitle(row, data) {
+    const title = row.querySelector('.url-text')?.textContent || data.title || data.url;
+    return String(title || '').trim();
+  }
+
+  document.body.addEventListener('htmx:afterOnLoad', (evt) => {
+    const elt = evt.detail.elt;
+    const row = elt?.closest ? elt.closest('[data-job-id]') : null;
+    if (row?.dataset.jobId) {
+      dashboardState.htmxPending.add(row.dataset.jobId);
+      setTimeout(() => {
+        dashboardState.htmxPending.delete(row.dataset.jobId);
+      }, 3000);
+    }
+    if (document.getElementById('download-rows')) {
+      const container = document.getElementById('download-rows');
+      const seenJobIds = new Set();
+      const rows = container.querySelectorAll('.download-row[data-job-id]');
+      for (let i = 0; i < rows.length; i++) {
+        const id = rows[i].dataset.jobId;
+        if (id && seenJobIds.has(id)) {
+          rows[i].remove();
+        } else if (id) {
+          seenJobIds.add(id);
+        }
+      }
+      const optRows = container.querySelectorAll('[data-optimistic="true"]');
+      for (let j = 0; j < optRows.length; j++) {
+        optRows[j].remove();
+      }
+    }
+  });
+
+  function handleJobUpdate(event) {
+    clearSkel();
+    markSseActivity();
+    const data = event.detail;
+    if (!data?.id) return;
+    let row = document.querySelector(`[data-job-id="${CSS.escape(data.id)}"]`);
+    if (row) {
+      updateDownloadRow(row, data);
+    } else {
+      if (dashboardState.htmxPending.has(data.id)) return;
+      const optRow = document.querySelector('[data-optimistic="true"]');
+      if (optRow && optRow.querySelector('.url-text').textContent === data.url) return;
+      row = createDownloadRow(data);
+      insertRowSorted(row, data);
+      row.classList.add('fade-in');
+      const title = getDownloadTitle(data, row);
+      if (title) announceDownloadUpdate(`New download: ${title}`);
+    }
+    updateStats();
+  }
+
+  function handleProgressUpdate(event) {
+    clearSkel();
+    markSseActivity();
+    const data = event.detail;
+    if (!data?.id) return;
+    let row = document.querySelector(`[data-job-id="${CSS.escape(data.id)}"]`);
+    if (!row) {
+      const optRow = document.querySelector('[data-optimistic="true"]');
+      if (optRow && data.url && optRow.querySelector('.url-text').textContent === data.url) return;
+      row = createDownloadRow({
+        id: data.id,
+        url: data.url || '',
+        title: null,
+        status: 'processing',
+        created_at: null,
+        file_name: null,
+        error: null,
+        updated_at: null,
+        progress: data.progress,
+      });
+      insertRowSorted(row, data);
+      const title = getDownloadTitle(data, row);
+      if (title) announceDownloadUpdate(`New download: ${title}`);
+    }
+    if (data.progress) updateDownloadProgress(row, data.progress);
+  }
+
+  function attachSSE(source) {
+    if (!source) return;
+    const sseSource = dashboardState.sseSource;
+    if (sseSource === source) return;
+    if (sseSource && sseSource !== source) {
+      sseSource.removeEventListener('job_update', bridgeJobUpdate);
+      sseSource.removeEventListener('progress_update', bridgeProgressUpdate);
+    }
+    source.addEventListener('job_update', bridgeJobUpdate);
+    source.addEventListener('progress_update', bridgeProgressUpdate);
+    dashboardState.sseSource = source;
+  }
+
+  function parseSseData(event) {
+    try {
+      const data = JSON.parse(event.data);
+      if (!data?.id) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function bridgeJobUpdate(event) {
+    const data = parseSseData(event);
+    if (!data) return;
+    Vooglaadija.events.dispatchEvent(new CustomEvent('job-update', { detail: data }));
+  }
+
+  function bridgeProgressUpdate(event) {
+    const data = parseSseData(event);
+    if (!data) return;
+    Vooglaadija.events.dispatchEvent(new CustomEvent('progress-update', { detail: data }));
+  }
+
+  Vooglaadija.events.addEventListener('job-update', handleJobUpdate);
+  Vooglaadija.events.addEventListener('progress-update', handleProgressUpdate);
+
+  document.body.addEventListener('htmx:sseOpen', (evt) => {
+    attachSSE(evt.detail.source);
+  });
+
+  function insertRowSorted(row, data) {
+    const container =
+      document.getElementById('download-rows') || document.getElementById('download-list');
+    if (!container) return;
+    const sk =
+      data._sort_key != null
+        ? data._sort_key
+        : data.created_at
+          ? new Date(data.created_at).getTime() / 1000
+          : Date.now() / 1000;
+    const existing = container.querySelectorAll('.download-row');
+    let before = null;
+    for (let i = 0; i < existing.length; i++) {
+      const ek = Number.parseFloat(existing[i].dataset.sortKey || '0');
+      if (sk > ek) {
+        before = existing[i];
+        break;
+      }
+    }
+    row.dataset.sortKey = String(sk);
+    if (before) container.insertBefore(row, before);
+    else container.appendChild(row);
+  }
+
+  // ─── Optimistic UI ───────────────────────────────────────────────────
+  document
+    .querySelector('form[hx-post="/web/downloads"]')
+    ?.addEventListener('htmx:beforeRequest', () => {
+      const input = document.getElementById('new-download-url');
+      const url = input ? input.value.trim() : '';
+      if (!url) return;
+
+      const existing = document.querySelector('[data-optimistic="true"]');
+      if (existing) {
+        if (existing.querySelector('.url-text').textContent === url) return;
+        existing.remove();
+      }
+
+      const optId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const now = new Date();
+      const optData = {
+        id: optId,
+        url: url,
+        title: null,
+        status: 'pending',
+        file_name: null,
+        error: null,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+        _sort_key: now.getTime() / 1000,
+      };
+      const row = createDownloadRow(optData);
+      row.dataset.optimistic = 'true';
+      insertRowSorted(row, optData);
+      row.classList.add('fade-in');
+      updateStats();
+
+      const replace = (event) => {
+        const realData = event.detail;
+        if (!realData?.url) return;
+        const optRow = document.querySelector('[data-optimistic="true"]');
+        if (!optRow) return;
+        if (optRow.querySelector('.url-text').textContent === realData.url) {
+          optRow.dataset.jobId = realData.id;
+          optRow.removeAttribute('data-optimistic');
+          updateDownloadRow(optRow, realData);
+          Vooglaadija.events.removeEventListener('job-update', replace);
+        }
+      };
+      Vooglaadija.events.addEventListener('job-update', replace);
+      setTimeout(() => {
+        Vooglaadija.events.removeEventListener('job-update', replace);
+      }, 30000);
+    });
+
+  // ─── Submit button disabled state ───────────────────────────────────
+  function getDownloadForm() {
+    return document.querySelector('#download-form, form[hx-post="/web/downloads"]');
+  }
+
+  function isDownloadFormRequest(evt) {
+    const form = getDownloadForm();
+    if (!form) return false;
+    const requestElement = evt.detail?.elt;
+    const target = evt.detail.target;
+    const isFormElement = (element) =>
+      element instanceof Element && (element === form || form.contains(element));
+    return isFormElement(requestElement) || isFormElement(target);
+  }
+
+  getDownloadForm()?.addEventListener('htmx:beforeRequest', function () {
+    const btn = this.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+  });
+
+  document.body.addEventListener('htmx:afterRequest', (evt) => {
+    if (!isDownloadFormRequest(evt)) return;
+    const btn = getDownloadForm()?.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = false;
+  });
+
+  // ─── Inline URL Validation ──────────────────────────────────────────
+  const urlInput = document.getElementById('new-download-url');
+  let validationTimer = null;
+  if (urlInput) {
+    urlInput.addEventListener('input', () => {
+      clearTimeout(validationTimer);
+      validationTimer = setTimeout(() => {
+        const val = urlInput.value.trim();
+        const errorEl = document.getElementById('url-validation-error');
+        if (!val) {
+          if (errorEl) errorEl.remove();
+          return;
+        }
+        const valid = /^https?:\/\/.+/.test(val);
+        if (valid) {
+          if (errorEl) errorEl.remove();
+        } else if (!errorEl) {
+          const err = document.createElement('p');
+          err.id = 'url-validation-error';
+          err.className = 'text-xs text-coral-400 font-body mt-1.5';
+          err.textContent = 'Must start with http:// or https://';
+          urlInput.parentElement.after(err);
+        }
+      }, 300);
+    });
+  }
+
+  document.body.addEventListener('htmx:beforeRequest', () => {
+    const errorEl = document.getElementById('url-validation-error');
+    if (errorEl) errorEl.remove();
+  });
+
+  // ─── SSE Health Monitor ──────────────────────────────────────────────
+  function updateLiveIndicator(elapsed) {
+    const indicator = document.querySelector('.live-indicator');
+    if (!indicator) return;
+    if (elapsed > SSE_TIMEOUT) {
+      indicator.className = 'live-indicator live-indicator--error';
+      indicator.textContent = 'Reconnecting\u2026';
+    } else {
+      indicator.className = 'live-indicator live-indicator--active';
+      indicator.textContent = 'Live';
+    }
+  }
+
+  function showReconnectBanner(elapsed) {
+    if (!(elapsed > SSE_DISCONNECT_BANNER_DELAY)) return;
+
+    let banner = document.getElementById('sse-reconnect-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'sse-reconnect-banner';
+      banner.className =
+        'fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-coral-500/90 backdrop-blur-sm text-white px-5 py-3.5 rounded-xl shadow-2xl border border-white/10 slide-up';
+      document.body.appendChild(banner);
+    }
+
+    if (reconnectShown) return;
+    reconnectShown = true;
+    banner.innerHTML = `<svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-alert" /></svg><span class="text-sm font-medium">Connection lost.</span><button type="button" data-sse-retry class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200">Reconnect</button>`;
+    banner.querySelector('[data-sse-retry]')?.addEventListener('click', () => {
+      window.location.reload();
+    });
+  }
+
+  function removeReconnectBanner() {
+    const banner = document.getElementById('sse-reconnect-banner');
+    if (banner) banner.remove();
+    reconnectShown = false;
+  }
+
+  function removeReconnectBannerIfRecovered() {
+    if (!(Date.now() - lastMsg < SSE_DISCONNECT_BANNER_DELAY)) return;
+
+    removeReconnectBanner();
+  }
+
+  function runSseHealthCheck() {
+    const elapsed = Date.now() - lastMsg;
+    updateLiveIndicator(elapsed);
+    removeReconnectBannerIfRecovered();
+    showReconnectBanner(elapsed);
+  }
+
+  function shouldRunSseHealthMonitor() {
+    return Boolean(document.getElementById('sse-container'));
+  }
+
+  function startSseHealthMonitor() {
+    if (sseHealthIntervalId !== null || !shouldRunSseHealthMonitor()) return;
+    runSseHealthCheck();
+    sseHealthIntervalId = setInterval(runSseHealthCheck, 5000);
+  }
+
+  function stopSseHealthMonitor() {
+    if (sseHealthIntervalId === null) return;
+    clearInterval(sseHealthIntervalId);
+    sseHealthIntervalId = null;
+  }
+
+  function teardownSseHealthMonitor() {
+    stopSseHealthMonitor();
+    removeReconnectBanner();
+  }
+
+  function isDashboardSseElement(element) {
+    return Boolean(
+      element?.matches?.('#sse-container, #download-list') ||
+        element?.querySelector?.('#sse-container, #download-list'),
+    );
+  }
+
+  window.addEventListener('pagehide', stopSseHealthMonitor);
+  window.addEventListener('pageshow', startSseHealthMonitor);
+  window.addEventListener('beforeunload', stopSseHealthMonitor);
+  document.body.addEventListener('htmx:beforeCleanupElement', (evt) => {
+    if (isDashboardSseElement(evt.detail?.elt)) teardownSseHealthMonitor();
+  });
+  document.body.addEventListener('htmx:load', (evt) => {
+    if (isDashboardSseElement(evt.detail?.elt)) startSseHealthMonitor();
+  });
+  startSseHealthMonitor();
+
+  // ─── Row Factory ─────────────────────────────────────────────────────
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const statusBadgeTemplates = loadStatusBadgeTemplates();
+
+  function loadStatusBadgeTemplates() {
+    const script = document.getElementById('status-badge-templates');
+    if (!script) return { known: {} };
+    try {
+      const data = JSON.parse(script.textContent || '{}');
+      return {
+        known: data.known || {},
+      };
+    } catch (_err) {
+      return { known: {} };
+    }
+  }
+
+  function normalizeStatus(status) {
+    const raw = String(status || 'unknown').trim();
+    return raw || 'unknown';
+  }
+
+  function statusClassSuffix(status) {
+    return (
+      normalizeStatus(status)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'unknown'
+    );
+  }
+
+  function createSvgIcon(iconId, className) {
+    const createNode =
+      typeof document.createElementNS === 'function'
+        ? (tagName) => document.createElementNS(SVG_NS, tagName)
+        : (tagName) => document.createElement(tagName);
+    const svg = createNode('svg');
+    svg.setAttribute('class', className);
+    svg.setAttribute('aria-hidden', 'true');
+    const use = createNode('use');
+    use.setAttribute('href', `/static/icons/sprite.svg#${iconId}`);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  function createStatusBadge(status) {
+    const normalized = normalizeStatus(status);
+    const badge = document.createElement('span');
+    const label = statusBadgeTemplates.known[normalized.toLowerCase()] || normalized;
+    badge.className = `status-badge status-${statusClassSuffix(normalized)}`;
+    badge.textContent = label;
+    return badge;
+  }
+
+  function createDownloadRow(data) {
+    const row = document.createElement('div');
+    const titleText = String(data.title || data.url || '');
+    const createdAt = data.created_at ? String(data.created_at) : '';
+    const status = normalizeStatus(data.status);
+    const jobId = String(data.id || '');
+    const jobPathId = encodeURIComponent(jobId);
+
+    row.className = 'download-row';
+    row.dataset.jobId = jobId;
+
+    const main = document.createElement('div');
+    main.className = 'flex-1 min-w-0';
+
+    const mainWrap = document.createElement('div');
+    mainWrap.className = 'flex items-center gap-3';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className =
+      'h-10 w-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center flex-shrink-0';
+    iconWrap.appendChild(createSvgIcon('icon-video', 'h-5 w-5 text-gray-400'));
+
+    const textWrap = document.createElement('div');
+
+    const title = document.createElement('p');
+    title.className = 'url-text';
+    title.setAttribute('hx-disable', '');
+    title.title = titleText;
+    title.textContent = titleText;
+
+    const timestamp = document.createElement('p');
+    timestamp.className = 'timestamp';
+    timestamp.setAttribute('data-timestamp', createdAt);
+    timestamp.textContent = formatRelativeTime(data.created_at);
+
+    textWrap.appendChild(title);
+    textWrap.appendChild(timestamp);
+    mainWrap.appendChild(iconWrap);
+    mainWrap.appendChild(textWrap);
+    main.appendChild(mainWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-3';
+    actions.appendChild(createStatusBadge(status));
+
+    if (status.toLowerCase() === 'completed') {
+      const downloadLink = document.createElement('a');
+      const downloadLabel = document.createElement('span');
+      downloadLink.href = `/web/downloads/${jobPathId}/file`;
+      downloadLink.className = 'download-btn text-xs';
+      downloadLink.setAttribute('download', '');
+      downloadLink.target = '_blank';
+      downloadLink.setAttribute('hx-boost', 'false');
+      downloadLink.appendChild(createSvgIcon('icon-download', 'h-4 w-4'));
+      downloadLabel.textContent = 'Save';
+      downloadLink.appendChild(downloadLabel);
+      actions.appendChild(downloadLink);
+    }
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'btn-danger';
+    deleteButton.setAttribute('hx-delete', `/web/downloads/${jobPathId}`);
+    deleteButton.setAttribute('hx-target', 'closest .download-row');
+    deleteButton.setAttribute('hx-swap', 'outerHTML');
+    deleteButton.setAttribute('hx-confirm', 'Delete this download?');
+    deleteButton.setAttribute('aria-label', 'Delete download');
+    deleteButton.appendChild(createSvgIcon('icon-trash', 'h-5 w-5'));
+    actions.appendChild(deleteButton);
+
+    row.appendChild(main);
+    row.appendChild(actions);
+    htmx.process(row);
+    return row;
+  }
+
+  function updateDownloadRow(row, data) {
+    const badge = row.querySelector('.status-badge');
+    let statusChanged = false;
+    let nextStatus = normalizeStatus(data.status);
+    if (badge) {
+      const old = badge.textContent.trim().toLowerCase();
+      nextStatus = normalizeStatus(data.status);
+      const next = nextStatus.toLowerCase();
+      const replacement = createStatusBadge(data.status);
+      if (replacement) {
+        if (old !== next) {
+          statusChanged = true;
+          replacement.classList.add('status-changed');
+          setTimeout(() => {
+            replacement.classList.remove('status-changed');
+          }, 600);
+        }
+        badge.replaceWith(replacement);
+      } else if (old !== next) {
+        statusChanged = true;
+        badge.classList.remove('status-changed');
+        void badge.offsetWidth;
+        badge.classList.add('status-changed');
+        setTimeout(() => {
+          badge.classList.remove('status-changed');
+        }, 600);
+      }
+    }
+    if (statusChanged) {
+      const title = getVisibleDownloadTitle(row, data);
+      const visibleStatus = row.querySelector('.status-badge')?.textContent?.trim() || nextStatus;
+      if (title) announceDownloadUpdate(`${title} - ${visibleStatus}`);
+    }
+    const ts = row.querySelector('.timestamp');
+    if (ts && data.updated_at) ts.textContent = formatRelativeTime(data.updated_at);
+
+    let dlBtn = row.querySelector('.download-btn');
+    if (normalizeStatus(data.status).toLowerCase() === 'completed') {
+      if (dlBtn) {
+        dlBtn.style.display = 'inline-flex';
+      } else {
+        dlBtn = document.createElement('a');
+        dlBtn.href = `/web/downloads/${encodeURIComponent(String(data.id || ''))}/file`;
+        dlBtn.className = 'download-btn text-xs';
+        dlBtn.download = '';
+        dlBtn.target = '_blank';
+        dlBtn.setAttribute('hx-boost', 'false');
+        dlBtn.innerHTML =
+          '<svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-download" /></svg> Save';
+        dlBtn.style.display = 'inline-flex';
+        const containers = row.querySelectorAll('.flex.items-center.gap-3');
+        const c = containers[containers.length - 1];
+        const del = c.querySelector('button[hx-delete]');
+        if (del) c.insertBefore(dlBtn, del);
+        else c.appendChild(dlBtn);
+      }
+    } else if (dlBtn) {
+      dlBtn.style.display = 'none';
+    }
+  }
+
+  function updateDownloadProgress(row, progress) {
+    let bar = row.querySelector('.progress-bar');
+    if (!bar) {
+      const badge = row.querySelector('.status-badge');
+      if (!badge) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'progress-container';
+      wrap.innerHTML = `<div class="progress-track"><div class="progress-bar" style="width:0%"></div></div>${progress.eta != null ? '<span class="progress-eta"></span>' : ''}`;
+      badge.parentNode.insertBefore(wrap, badge.nextSibling);
+      bar = wrap.querySelector('.progress-bar');
+    }
+    if (bar && progress.percent != null) bar.style.width = `${Math.min(progress.percent, 100)}%`;
+    const eta = row.querySelector('.progress-eta');
+    if (eta && progress.eta != null) {
+      const m = Math.floor(progress.eta / 60);
+      const s = Math.round(progress.eta % 60);
+      eta.textContent = `${m}m ${s}s`;
+    }
+  }
+
+  window.Vooglaadija.dashboard = {
+    formatRelativeTime: formatRelativeTime,
+    updateStats: updateStats,
+  };
+})();

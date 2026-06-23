@@ -12,7 +12,7 @@
 
 x-netdata-common: &netdata-common
   image: netdata/netdata:stable
-  hostname: "{{.Service.Name}}"
+  hostname: '{{.Service.Name}}'
   restart: unless-stopped
   cap_add:
     - SYS_PTRACE
@@ -25,25 +25,20 @@ x-netdata-common: &netdata-common
     - /etc/localtime:/host/etc/localtime:ro
     - /proc:/host/proc:ro
     - /sys:/host/sys:ro
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "10m"
-      max-file: "3"
   networks:
     - ytprocessor-network
   healthcheck:
-    test: ["CMD", "curl", "-f", "http://localhost:19999/api/v1/info"]
+    test: ['CMD', 'curl', '-f', 'http://localhost:19999/api/v1/info']
     interval: 30s
     timeout: 10s
     retries: 5
     start_period: 60s
 
 x-netdata-env: &netdata-env
-  NETDATA_CLAIM_TOKEN: "${NETDATA_CLAIM_TOKEN:-}"
-  NETDATA_CLAIM_URL: "${NETDATA_CLAIM_URL:-https://app.netdata.cloud}"
-  NETDATA_CLAIM_ROOMS: "${NETDATA_CLAIM_ROOM:-}"
-  NETDATA_INSECURE_SKIP_TLS_VERIFY: "false"
+  NETDATA_CLAIM_TOKEN: '${NETDATA_CLAIM_TOKEN:-}'
+  NETDATA_CLAIM_URL: '${NETDATA_CLAIM_URL:-https://app.netdata.cloud}'
+  NETDATA_CLAIM_ROOMS: '${NETDATA_CLAIM_ROOMS:-${NETDATA_CLAIM_ROOM:-}}'
+  NETDATA_INSECURE_SKIP_TLS_VERIFY: 'false'
 
 services:
   # ============================================
@@ -54,7 +49,7 @@ services:
     container_name: ytprocessor-netdata-api
     hostname: vooglaadija-api
     ports:
-      - "127.0.0.1:19999:19999" # Bind to loopback only - access via nginx proxy or localhost
+      - '127.0.0.1:19999:19999' # Bind to loopback only - access via nginx proxy or localhost
     volumes:
       - netdata-api-lib:/var/lib/netdata
       - netdata-api-cache:/var/cache/netdata
@@ -62,7 +57,12 @@ services:
     environment:
       <<: *netdata-env
       # Tell NetData which container to monitor
-      NETDATA_CGROUP_NAME: "ytprocessor-api"
+      NETDATA_CGROUP_NAME: 'ytprocessor-api'
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=netdata-api,container_name=ytprocessor-netdata-api,environment=${ENVIRONMENT:-production},project=ytprocessor'
     depends_on:
       - api
 
@@ -79,7 +79,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       <<: *netdata-env
-      NETDATA_CGROUP_NAME: "ytprocessor-worker"
+      NETDATA_CGROUP_NAME: 'ytprocessor-worker'
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=netdata-worker,container_name=ytprocessor-netdata-worker,environment=${ENVIRONMENT:-production},project=ytprocessor'
     depends_on:
       - worker
 
@@ -96,7 +101,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       <<: *netdata-env
-      NETDATA_CGROUP_NAME: "ytprocessor-db"
+      NETDATA_CGROUP_NAME: 'ytprocessor-db'
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=netdata-db,container_name=ytprocessor-netdata-db,environment=${ENVIRONMENT:-production},project=ytprocessor'
     depends_on:
       - db
 
@@ -113,10 +123,16 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       <<: *netdata-env
-      NETDATA_CGROUP_NAME: "ytprocessor-redis"
+      NETDATA_CGROUP_NAME: 'ytprocessor-redis'
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=netdata-redis,container_name=ytprocessor-netdata-redis,environment=${ENVIRONMENT:-production},project=ytprocessor'
     depends_on:
       - redis
 
+  # yamllint disable rule:comments-indentation
   # ============================================
   # Standalone NetData Parent (optional - for on-prem)
   # ============================================
@@ -180,6 +196,7 @@ services:
   #     interval: 30s
   #     timeout: 10s
   #     retries: 3
+  # yamllint enable rule:comments-indentation
 
 # NetData volumes for persistent configuration and data
 volumes:

@@ -1,0 +1,240 @@
+"""Ensure the alembic migration chain is consistent.
+
+When migrations are squashed/consolidated, the database's alembic_version
+table may reference a revision ID that no longer exists in the codebase.
+This script detects that situation and fails safe by default. An operator
+may explicitly opt into an unsafe stamp-to-head repair, but startup should
+never silently mark a stale schema as current.
+
+This MUST run before any call to ``alembic upgrade head`` because the
+latter will crash if the chain is broken.
+
+Usage::
+
+    python scripts/ensure_migration_chain.py
+
+Environment variables:
+
+    DATABASE_URL  — full asyncpg database URL (required)
+                    e.g. ``postgresql+asyncpg://user:pass@host:5432/db``
+
+Exit codes:
+
+    0  — chain is valid or was intentionally repaired
+    1  — an unexpected error occurred
+"""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ALEMBIC_CFG_PATH = "/app/alembic.ini"
+VERSIONS_DIR = "/app/alembic/versions"
+
+
+class RevisionLookupError(RuntimeError):
+    """Raised when the current Alembic revision cannot be read safely."""
+
+
+def _get_available_revisions(versions_dir: str) -> set[str]:
+    """Extract all revision IDs from migration files in *versions_dir*."""
+    revisions: set[str] = set()
+    versions_path = Path(versions_dir)
+    for f in sorted(versions_path.glob("*.py")):
+        if f.name == "__init__.py":
+            continue
+        content = f.read_text()
+        match = re.search(
+            r'^revision\s*:\s*str\s*=\s*["\']([^"\']+)["\']',
+            content,
+            re.MULTILINE,
+        )
+        if match:
+            revisions.add(match.group(1))
+    return revisions
+
+
+def _sync_connect(database_url: str):
+    """Return a psycopg connection for a *database_url* that may use async drivers."""
+    from urllib.parse import urlparse
+
+    from psycopg import connect
+
+    sync_url = database_url.replace("+asyncpg", "").replace("+aiosqlite", "")
+    parsed = urlparse(sync_url)
+
+    kwargs: dict = {
+        "host": parsed.hostname,
+        "port": parsed.port,
+        "dbname": parsed.path.lstrip("/"),
+        "user": parsed.username,
+        "password": parsed.password,
+    }
+
+    # Strip None values so psycopg uses its defaults
+    return connect(**{k: v for k, v in kwargs.items() if v is not None})
+
+
+def _get_db_revision(database_url: str) -> str | None:
+    """Return the current revision stored in the database, or *None*."""
+    from psycopg.errors import UndefinedTable
+
+    try:
+        conn = _sync_connect(database_url)
+    except Exception as exc:
+        raise RevisionLookupError(f"cannot connect to database — {exc}") from exc
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT version_num FROM alembic_version")
+            row = cur.fetchone()
+            return row[0] if row else None
+    except UndefinedTable:
+        return None
+    except Exception as exc:
+        raise RevisionLookupError(f"cannot read alembic_version — {exc}") from exc
+    finally:
+        conn.close()
+
+
+def _stamp_to_head(database_url: str, head: str) -> None:
+    """Stamp *head* into the database, bypassing Alembic's chain validation."""
+    conn = _sync_connect(database_url)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE TABLE alembic_version")
+            cur.execute(
+                "INSERT INTO alembic_version (version_num) VALUES (%s)",
+                (head,),
+            )
+        conn.commit()
+        print(f"Fixed: database stamped to revision '{head}'")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _unsafe_stamp_allowed() -> bool:
+    value = os.environ.get("ALLOW_MIGRATION_CHAIN_STAMP", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def main() -> int:
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        print(
+            "WARNING: DATABASE_URL not set — skipping migration chain check",
+            file=sys.stderr,
+        )
+        return 0
+
+    # ── Get available revisions from files ──────────────────────────────
+    available = _get_available_revisions(VERSIONS_DIR)
+    if not available:
+        print(
+            "WARNING: no migration files found in %s — skipping",
+            VERSIONS_DIR,
+            file=sys.stderr,
+        )
+        return 0
+
+    # ── Read the current head from the migration tree ───────────────────
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    alembic_cfg = Config(ALEMBIC_CFG_PATH)
+    script = ScriptDirectory.from_config(alembic_cfg)
+    head = script.get_current_head()
+    if head is None:
+        print(
+            "WARNING: no head revision found in migration tree — skipping",
+            file=sys.stderr,
+        )
+        return 0
+
+    # ── Read what the database currently thinks ─────────────────────────
+    try:
+        db_revision = _get_db_revision(database_url)
+    except RevisionLookupError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if db_revision is None:
+        # No revision at all — this is a fresh database; let alembic upgrade
+        # head do its normal thing.
+        print("No existing migration revision found — fresh database")
+        return 0
+
+    if db_revision in available:
+        print(f"OK: database revision '{db_revision}' found in migration files")
+        return 0
+
+    # ── Broken chain — fail safe unless explicitly overridden ───────────
+    print(
+        f"ERROR: database revision '{db_revision}' is not present in migration files.",
+        file=sys.stderr,
+    )
+    print(
+        (
+            "Refusing to stamp alembic_version automatically because that can "
+            "mark a stale schema as current without running the missing DDL. "
+            "Restore the missing revision or repair the database manually."
+        ),
+        file=sys.stderr,
+    )
+    if not _unsafe_stamp_allowed():
+        print(
+            (
+                "If you have independently verified the schema and still want "
+                "to force a stamp, rerun with ALLOW_MIGRATION_CHAIN_STAMP=1."
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"Unsafe override enabled: stamping database to head '{head}'.",
+        file=sys.stderr,
+    )
+
+    try:
+        _stamp_to_head(database_url, head)
+    except Exception as exc:
+        print(f"ERROR: failed to stamp database — {exc}", file=sys.stderr)
+        return 1
+
+    # Now run the actual migrations so DDL isn't skipped.
+    print(
+        "Running alembic upgrade head to apply any missing DDL "
+        "that the previous chain skip might have bypassed.",
+        file=sys.stderr,
+    )
+    upgrade_result = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if upgrade_result.returncode != 0:
+        print(
+            "ERROR: alembic upgrade head failed after stamp — "
+            f"stdout: {upgrade_result.stdout} "
+            f"stderr: {upgrade_result.stderr}",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"alembic upgrade head completed: {upgrade_result.stdout}",
+        file=sys.stderr,
+    )
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

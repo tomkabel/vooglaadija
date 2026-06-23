@@ -1,15 +1,18 @@
 # VOOGLAADIJA: Final Course Video Transcript
+
 ## "Production Reliability Engineering"
+
 ## 8-Minute Technical Presentation
+
 ## Senior Developer Course - TalTech
 
 ---
 
-# VOICE AND TONE SPECIFICATION
+## VOICE AND TONE SPECIFICATION
 
-## Primary Voice Characteristics
+### Primary Voice Characteristics
 
-**Authoritative yet Approachable Senior Engineer**
+## Authoritative yet Approachable Senior Engineer
 
 | Attribute | Specification | Rationale |
 |-----------|---------------|-----------|
@@ -19,7 +22,7 @@
 | Authority Level | Senior (not manager, not junior) | Can make architectural calls, acknowledges trade-offs |
 | Personality | Thoughtful, slightly dry humor acceptable | Shows experience without being condescending |
 
-## Scene-by-Scene Voice Modulation
+### Scene-by-Scene Voice Modulation
 
 | Scene | Voice Style | Pacing | Notes |
 |-------|-------------|--------|-------|
@@ -33,7 +36,7 @@
 | Scene 8: CI/CD | Efficient, informative | Medium-fast | Pipeline is routine, not exciting |
 | Scene 9: Failure | Grim competence | Steady | These are real scenarios, no panic |
 
-## Prohibited Vocal Habits
+### Prohibited Vocal Habits
 
 - NO uptalk (sentences ending in rising pitch)
 - NO filler words ("um", "uh", "like", "you know")
@@ -43,7 +46,7 @@
 - NO rushed delivery of code snippets
 - NO sing-song patterns
 
-## Technical Terms - Pronunciation Guide
+### Technical Terms - Pronunciation Guide
 
 | Term | Pronunciation | Context |
 |------|--------------|---------|
@@ -58,7 +61,7 @@
 | HS256 | "H-S-two-five-six" | JWT algorithm |
 | bcrypt | "bee-crypt" | Hashing algorithm |
 
-## Emotional Arc
+### Emotional Arc
 
 The voice should convey:
 
@@ -72,7 +75,7 @@ SCENE 7: "Here's how we protect — defense in depth"
 SCENE 8: "Here's how we validate — automated rigor"
 SCENE 9: "Here's what breaks — and how we survive"
 
-## Must-Do Checklist for Voice Talent
+### Must-Do Checklist for Voice Talent
 
 - Record in treated space (no echo, no room resonance)
 - Monitor audio levels to -3dB peak, -18dB average
@@ -85,12 +88,13 @@ SCENE 9: "Here's what breaks — and how we survive"
 
 ---
 
-# FULL VIDEO TRANSCRIPT
+## FULL VIDEO TRANSCRIPT
 
 ---
 
-## SCENE 1: THE HOOK
-### Duration: 0:00 - 0:30
+### SCENE 1: THE HOOK
+
+#### Duration: 0:00 - 0:30
 
 [VISUAL: Terminal window showing log entries]
 
@@ -136,12 +140,14 @@ This is what we built: a system that handles chaos so you don't have to.
 
 ---
 
-## SCENE 2: THE PROBLEM
-### Duration: 0:45 - 1:30
+### SCENE 2: THE PROBLEM
+
+#### Duration: 0:45 - 1:30
 
 [VISUAL: Split screen - YouTube Reality vs User Expectation - 0:45-1:00]
 
 LEFT SIDE: "YouTube's Reality"
+
 - Rate limits (429 Too Many Requests)
 - Geo-blocks (Content unavailable in region)
 - Format changes (codec deprecated)
@@ -149,6 +155,7 @@ LEFT SIDE: "YouTube's Reality"
 - Network instability (connection reset)
 
 RIGHT SIDE: "User Expectation"
+
 - Paste link
 - Wait
 - Get video
@@ -185,8 +192,9 @@ We needed to handle all of this automatically.
 
 ---
 
-## SCENE 3A: SYSTEM ARCHITECTURE - THE OUTBOX PATTERN
-### Duration: 1:30 - 2:15
+### SCENE 3A: SYSTEM ARCHITECTURE - THE OUTBOX PATTERN
+
+#### Duration: 1:30 - 2:15
 
 [VISUAL: Animated architecture diagram - Step 1 - 1:30-1:45]
 
@@ -244,8 +252,9 @@ This is the difference between hoping your system survives a crash — and knowi
 
 ---
 
-## SCENE 3B: ATOMIC JOB CLAIMS
-### Duration: 2:15 - 2:45
+### SCENE 3B: ATOMIC JOB CLAIMS
+
+#### Duration: 2:15 - 2:45
 
 [VISUAL: SQL UPDATE statement animation - 2:15-2:30]
 
@@ -299,8 +308,9 @@ The database is the coordination layer.
 
 ---
 
-## SCENE 3C: GRACEFUL SHUTDOWN
-### Duration: 2:45 - 3:15
+### SCENE 3C: GRACEFUL SHUTDOWN
+
+#### Duration: 2:45 - 3:15
 
 [VISUAL: Timeline diagram - 2:45-3:00]
 
@@ -362,8 +372,9 @@ The thirty-second grace period is configurable. You can adjust it based on your 
 
 ---
 
-## SCENE 3D: RETRY WITH EXPONENTIAL BACKOFF AND JITTER
-### Duration: 3:15 - 3:30
+### SCENE 3D: RETRY WITH EXPONENTIAL BACKOFF AND JITTER
+
+#### Duration: 3:15 - 3:30
 
 [VISUAL: Retry formula and timeline - 3:15-3:25]
 
@@ -409,8 +420,9 @@ This is a classic distributed systems pattern. It's in the AWS architecture blog
 
 ---
 
-## SCENE 4: CODE DEEP DIVE
-### Duration: 3:30 - 4:30
+### SCENE 4: CODE DEEP DIVE
+
+#### Duration: 3:30 - 4:30
 
 [VISUAL: outbox_service.py - 3:30-3:50]
 
@@ -490,8 +502,9 @@ Every file reference has a test.
 
 ---
 
-## SCENE 5: LIVE DEMONSTRATION
-### Duration: 4:30 - 5:30
+### SCENE 5: LIVE DEMONSTRATION
+
+#### Duration: 4:30 - 5:30
 
 [VISUAL: Pre-recorded demo segments - 4:30-5:00]
 
@@ -549,10 +562,11 @@ They're scenarios we've measured, tested, and prepared for.
 
 ---
 
-## SCENE 6: OBSERVABILITY STACK
-### Duration: 5:30 - 6:30
+### SCENE 6: OBSERVABILITY STACK
 
-### PART A: STRUCTURED LOGGING (5:30-5:50)
+#### Duration: 5:30 - 6:30
+
+#### PART A: STRUCTURED LOGGING (5:30-5:50)
 
 [VISUAL: JSON log sample - 5:30-5:40]
 
@@ -596,7 +610,7 @@ With it, debugging is systematic.
 
 ---
 
-### PART B: PROMETHEUS METRICS (5:50-6:15)
+#### PART B: PROMETHEUS METRICS (5:50-6:15)
 
 [VISUAL: Metrics endpoint output - 5:50-6:05]
 
@@ -640,7 +654,7 @@ We're leaving buffer room below p99.
 
 ---
 
-### PART C: HEALTH CHECKS (6:15-6:30)
+#### PART C: HEALTH CHECKS (6:15-6:30)
 
 [VISUAL: Health endpoint responses - 6:15-6:25]
 
@@ -682,8 +696,9 @@ We know about the gap. We're fixing it in the next version.
 
 ---
 
-## SCENE 7: SECURITY IMPLEMENTATION
-### Duration: 6:30 - 7:00
+### SCENE 7: SECURITY IMPLEMENTATION
+
+#### Duration: 6:30 - 7:00
 
 [VISUAL: Security layers diagram - 6:30-6:45]
 
@@ -727,8 +742,9 @@ We're aware of the trade-offs, we document them, and we plan improvements.
 
 ---
 
-## SCENE 8: CI/CD AND TESTING
-### Duration: 7:00 - 7:30
+### SCENE 8: CI/CD AND TESTING
+
+#### Duration: 7:00 - 7:30
 
 [VISUAL: Pipeline diagram - 7:00-7:15]
 
@@ -774,8 +790,9 @@ Every test environment matches production as closely as possible.
 
 ---
 
-## SCENE 9: FAILURE SCENARIOS
-### Duration: 7:30 - 8:00
+### SCENE 9: FAILURE SCENARIOS
+
+#### Duration: 7:30 - 8:00
 
 [VISUAL: Scenario 1 - Redis Down - 7:30-7:40]
 
@@ -825,8 +842,9 @@ Because at three AM, hope is not a strategy.
 
 ---
 
-## CLOSING
-### Duration: 8:00
+### CLOSING
+
+#### Duration: 8:00
 
 [VISUAL: Final title card - 8:00]
 
@@ -852,11 +870,11 @@ Built for three AM — so you don't have to be.
 
 ---
 
-# END OF TRANSCRIPT
+## END OF TRANSCRIPT
 
 ---
 
-## APPROXIMATE WORD COUNT
+### APPROXIMATE WORD COUNT
 
 | Section | Words | Duration |
 |---------|-------|----------|

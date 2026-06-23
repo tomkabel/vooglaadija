@@ -1,0 +1,84 @@
+groups:
+  - name: vooglaadija
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(ytprocessor_jobs_completed_total{status="failed"}[5m]))
+            /
+            sum(rate(ytprocessor_jobs_completed_total[5m]))
+          ) > 0.05
+          and
+          sum(rate(ytprocessor_jobs_completed_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Download job failure rate is above 5%'
+          description: >-
+            More than 5% of completed download jobs have failed over the last 5 minutes. Check
+            worker logs, upstream yt-dlp errors, Redis queue health, and recent deployment changes
+            before retrying failed jobs.
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ytprocessor_http_request_duration_seconds_bucket[5m]))
+          ) > 2
+          and
+          sum(rate(ytprocessor_http_request_duration_seconds_count[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'API p95 request latency is above 2 seconds'
+          description: >-
+            The 95th percentile API request latency has stayed above 2 seconds for at least 5
+            minutes. Inspect slow endpoints, database saturation, Redis latency, and application
+            error logs.
+
+      - alert: WorkerBacklog
+        expr: ytprocessor_queue_depth > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Worker queue backlog is above 100 jobs'
+          description: >-
+            More than 100 jobs have remained queued for at least 10 minutes. Confirm the worker is
+            healthy on /metrics, review worker error logs, and scale or restart workers if
+            processing has stalled.
+
+      # TODO: db_connection_pool_available is the ADR-10 alerting contract.
+      # Enable the source metric from app instrumentation or a PostgreSQL exporter
+      # before relying on this alert in production.
+      - alert: DBConnectionPoolExhaustion
+        expr: db_connection_pool_available < 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Available database connections are below 2'
+          description: >-
+            The database pool has fewer than 2 available connections. Inspect API and worker
+            connection usage, slow queries, stuck transactions, and PostgreSQL max connection
+            settings.
+
+      # TODO: redis_memory_used_bytes and redis_memory_max_bytes require an active
+      # Redis exporter scrape target. The current monitoring compose documents the
+      # exporter as optional/commented, so this alert remains inactive until enabled.
+      - alert: RedisMemoryPressure
+        expr: |
+          (redis_memory_used_bytes / redis_memory_max_bytes) > 0.9
+          and
+          redis_memory_max_bytes > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Redis memory usage is above 90%'
+          description: >-
+            Redis memory usage has exceeded 90% of its configured maximum. Inspect queue depth,
+            Redis eviction policy, maxmemory settings, and worker throughput before memory pressure
+            causes queue failures.

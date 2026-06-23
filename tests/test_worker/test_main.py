@@ -1,13 +1,14 @@
 """Tests for worker main module."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
 
-from app.config import settings
-from app.models.download_job import DownloadJob
+from core.config import settings
+from core.models.download_job import DownloadJob
 from worker.main import cleanup_expired_jobs
 
 _DOWNLOADS_DIR = f"{settings.storage_path}/downloads"
@@ -50,16 +51,8 @@ class TestCleanupExpiredJobs:
         db_session.add(job)
         await db_session.commit()
 
-        # Mock file operations: realpath resolves to downloads dir, file exists
-        def mock_realpath(path):
-            if path == settings.storage_path:
-                return settings.storage_path
-            if path == f"{settings.storage_path}/downloads":
-                return f"{settings.storage_path}/downloads"
-            return f"{_DOWNLOADS_DIR}/test.mp4"
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=mock_realpath),
+            patch("worker.main.validate_path", return_value=f"{_DOWNLOADS_DIR}/test.mp4"),
             patch("worker.main.os.path.exists", return_value=True),
         ):
             with patch("worker.main.os.remove") as mock_remove:
@@ -82,23 +75,17 @@ class TestCleanupExpiredJobs:
         db_session.add(job)
         await db_session.commit()
 
-        storage_paths = {settings.storage_path, f"{settings.storage_path}/downloads"}
-
-        def realpath_side_effect(path):
-            if path == "/etc/passwd":
-                return "/etc/passwd"
-            if path in storage_paths:
-                return f"{settings.storage_path}/downloads"
-            return path
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=realpath_side_effect),
+            patch("worker.main.validate_path", side_effect=ValueError("Path traversal detected")),
             patch("worker.main.os.path.exists", return_value=True),
         ):
             with patch("worker.main.os.remove") as mock_remove:
                 count = await cleanup_expired_jobs()
                 assert count == 0
                 mock_remove.assert_not_called()
+
+        await db_session.refresh(job)
+        assert job.status == "completed"
 
     @pytest.mark.unit
     async def test_cleanup_expired_jobs_handles_missing_file(self, db_session):
@@ -115,15 +102,8 @@ class TestCleanupExpiredJobs:
         db_session.add(job)
         await db_session.commit()
 
-        storage_paths = {settings.storage_path, f"{settings.storage_path}/downloads"}
-
-        def mock_realpath(path):
-            if path in storage_paths:
-                return f"{settings.storage_path}/downloads"
-            return f"{_DOWNLOADS_DIR}/nonexistent.mp4"
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=mock_realpath),
+            patch("worker.main.validate_path", return_value=f"{_DOWNLOADS_DIR}/nonexistent.mp4"),
             patch("worker.main.os.path.exists", return_value=False),
         ):
             with patch("worker.main.os.remove") as mock_remove:
@@ -186,19 +166,38 @@ class TestCleanupExpiredJobs:
             db_session.add(job)
         await db_session.commit()
 
-        storage_paths = {settings.storage_path, f"{settings.storage_path}/downloads"}
-
-        def mock_realpath(path):
-            if path in storage_paths:
-                return f"{settings.storage_path}/downloads"
-            return f"{_DOWNLOADS_DIR}/test0.mp4"
-
         with (
-            patch("worker.main.os.path.realpath", side_effect=mock_realpath),
+            patch("worker.main.validate_path", return_value=f"{_DOWNLOADS_DIR}/test0.mp4"),
             patch("worker.main.os.path.exists", return_value=False),
         ):
             count = await cleanup_expired_jobs()
             assert count == 3
+
+    @pytest.mark.unit
+    async def test_cleanup_expired_jobs_rejects_sibling_prefix_path(self, db_session):
+        """Sibling-prefix paths are skipped without deleting the file or DB row."""
+        past_time = datetime.now(UTC) - timedelta(hours=1)
+        job = DownloadJob(
+            id=UUID("550e8400-e29b-41d4-a716-446655440023"),
+            user_id=UUID("550e8400-e29b-41d4-a716-446655440005"),
+            url="https://www.youtube.com/watch?v=test",
+            status="completed",
+            expires_at=past_time,
+            file_path=f"{_DOWNLOADS_DIR}_evil/test.mp4",
+        )
+        db_session.add(job)
+        await db_session.commit()
+
+        with (
+            patch("worker.main.os.path.exists", return_value=True),
+            patch("worker.main.os.remove") as mock_remove,
+        ):
+            count = await cleanup_expired_jobs()
+
+        assert count == 0
+        mock_remove.assert_not_called()
+        await db_session.refresh(job)
+        assert job.status == "completed"
 
 
 class TestWorkerMainStartup:
@@ -232,11 +231,14 @@ class TestWorkerMainStartup:
             patch("worker.main.redis_client", mock_redis),
             patch("worker.main.start_health_server"),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
         ):
+            from worker.main import main as _worker_main
+
             with pytest.raises(ConnectionError, match="Redis unavailable"):
-                await __import__("worker.main", fromlist=["main"]).main()
+                await _worker_main()
 
     @pytest.mark.unit
     async def test_main_raises_when_db_connection_fails(self):
@@ -261,6 +263,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server"),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
         ):
@@ -289,6 +292,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server", return_value=mock_health_server),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
             patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
@@ -326,6 +330,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server", return_value=None),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
             patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
@@ -366,6 +371,7 @@ class TestWorkerMainStartup:
             patch("worker.main.get_async_session_factory", return_value=mock_factory),
             patch("worker.main.start_health_server", return_value=None),
             patch("worker.main.stop_health_server"),
+            patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
             patch("worker.main.update_worker_state"),
             patch("worker.main.write_health_async", new_callable=AsyncMock),
             patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
@@ -377,3 +383,41 @@ class TestWorkerMainStartup:
         assert any("SELECT" in c.upper() or "select" in c for c in db_calls), (
             "Expected a SELECT statement to be executed during DB startup check"
         )
+
+    @pytest.mark.unit
+    async def test_midflight_shutdown_cancels_inflight_job_after_grace(self):
+        """A shutdown that arrives mid-job should still bound the task by grace period."""
+        import importlib
+
+        import worker.main
+
+        importlib.reload(worker.main)
+        worker.main.shutdown_event.clear()
+        worker.main.shutdown_requested_at = None
+        original_grace = worker.main.GRACE_PERIOD_SECONDS
+
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        async def long_running_job():
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        task = asyncio.create_task(long_running_job())
+
+        try:
+            await started.wait()
+            worker.main.GRACE_PERIOD_SECONDS = 0
+            worker.main._signal_handler()
+            await worker.main._await_current_job_with_shutdown_grace(task, "job-123")
+        finally:
+            worker.main.GRACE_PERIOD_SECONDS = original_grace
+            worker.main.shutdown_event.clear()
+            worker.main.shutdown_requested_at = None
+
+        assert cancelled.is_set()
+        assert task.cancelled()

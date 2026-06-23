@@ -29,7 +29,7 @@ This plan produces an **8-minute technical presentation** that demonstrates seni
 
 ---
 
-# Part I: Grading Criteria Mapping
+## Part I: Grading Criteria Mapping
 
 Before diving into the plan, here is how each scene maps to the 5 grading questions:
 
@@ -43,13 +43,14 @@ Before diving into the plan, here is how each scene maps to the 5 grading questi
 
 ---
 
-# Part II: Measurable Claims
+## Part II: Measurable Claims
 
 All senior-level claims in this video are backed by **measured evidence**, not assertions.
 
-## Claim 1: "Jobs Survive API Crashes"
+### Claim 1: "Jobs Survive API Crashes"
 
 **Measurement Protocol:**
+
 ```bash
 # Simulate 1000 crash scenarios
 for i in {1..1000}; do
@@ -60,74 +61,83 @@ done
 ```
 
 **Expected Result:**
-```
+
+```text
 Crash Recovery Test (1000 iterations):
   - Jobs lost (commit before redis): 0
   - Jobs lost (crash before commit): 1000 (by design - transaction rollback)
-  
+
 Conclusion: If job is committed to PostgreSQL, it WILL be processed.
 ```
 
 **Evidence Files:**
+
 - `tests/test_worker/test_outbox_recovery.py::test_outbox_entry_created_with_job`
 - `tests/test_worker/test_outbox_recovery.py::test_sync_outbox_recovers_pending_entries`
 - `tests/test_worker/test_outbox_recovery.py::test_job_created_but_not_enqueued`
 
-## Claim 2: "No Double-Processing"
+### Claim 2: "No Double-Processing"
 
 **Measurement Protocol:**
+
 ```bash
 # Run 10 workers simultaneously, 100 jobs
 # Each job should be processed exactly once
 ```
 
 **Expected Result:**
-```
+
+```text
 Concurrency Test (10 workers, 100 jobs):
   - Jobs processed: 100
   - Duplicate processing events: 0
   - Claim race conditions: 0
-  
+
 Conclusion: FOR UPDATE SKIP LOCKED guarantees exactly-once processing.
 ```
 
 **Evidence Files:**
+
 - `tests/test_worker/test_atomic_claims.py::test_no_double_processing_single_claim`
 - `tests/test_worker/test_atomic_claims.py::test_concurrent_claims_only_one_succeeds`
 - `tests/test_worker/test_atomic_claims.py::test_atomic_claim_returns_zero_for_already_claimed`
 
-## Claim 3: "Graceful Shutdown Preserves Work"
+### Claim 3: "Graceful Shutdown Preserves Work"
 
 **Honest Claim:** "On SIGTERM, the worker finishes its current job OR atomically requeues it. With typical job duration of 30-120 seconds, we use a **30-second grace period** (configurable), after which the job is requeued for another worker."
 
-**This is NOT "zero lost work" — it is "all work is accounted for."**
+## This is NOT "zero lost work" — it is "all work is accounted for."
 
 **Measurement:**
+
 ```bash
 # Send SIGTERM during 50 in-flight jobs
 # Measure: completed vs requeued vs ambiguous
 ```
 
 **Expected Result:**
-```
+
+```text
 Graceful Shutdown Test (50 in-flight jobs):
   - Completed normally: 47 (finished within grace period)
   - Requeued atomically: 3 (grace period exceeded)
   - Jobs lost: 0
   - Duplicate processing: 0
-  
+
 Conclusion: All work is either completed or requeued. Zero loss.
 ```
 
 **Evidence Files:**
+
 - `tests/test_worker/test_graceful_shutdown.py::test_signal_handler_sets_event_and_timestamp`
 - `tests/test_worker/test_graceful_shutdown.py::test_grace_period_timeout_enforced`
 - `tests/test_worker/test_graceful_shutdown.py::test_grace_period_remaining_after_shutdown`
 
-## Claim 4: "Exponential Backoff with Jitter"
+### Claim 4: "Exponential Backoff with Jitter"
 
 **Formula:**
-```
+
+```text
 delay = min(base * 2^attempt, max_delay) + random(0, base)
 
 Example (base=60s, max=600s):
@@ -139,10 +149,12 @@ Example (base=60s, max=600s):
 ```
 
 **Why Jitter Matters:**
+
 - Without jitter: 100 jobs fail → all retry at t=120s → thundering herd
 - With jitter: 100 jobs fail → retry spread across t=120-180s → manageable load
 
 **Implementation Evidence:**
+
 ```python
 # app/services/retry_service.py
 def calculate_delay(attempt: int, base: int = 60, max_delay: int = 600) -> int:
@@ -155,18 +167,18 @@ def calculate_delay(attempt: int, base: int = 60, max_delay: int = 600) -> int:
 
 ---
 
-# Part III: Story Architecture
+## Part III: Story Architecture
 
-## Narrative Tension Principle
+### Narrative Tension Principle
 
 Every scene follows this structure:
 
-```
+```text
 TENSION CREATION → TECHNICAL EXPLANATION → MEASURED EVIDENCE
      (Stakes)            (How it works)         (Proof)
 ```
 
-## The Three Pillars Framework
+### The Three Pillars Framework
 
 The entire video is organized around three questions a senior engineer asks:
 
@@ -178,15 +190,15 @@ The entire video is organized around three questions a senior engineer asks:
 
 ---
 
-# Part IV: Scene-by-Scene Production Plan
+## Part IV: Scene-by-Scene Production Plan
 
-## Scene 1: The Hook (0:00-0:30)
+### Scene 1: The Hook (0:00-0:30)
 
 **Purpose:** Create tension, establish stakes, make the viewer care.
 
-### Visual Script:
+#### Visual Script
 
-```
+```text
 [0:00-0:05] LOG: "2026-04-16 03:47:12 | ERROR | Job #4473 FAILED: YouTube rate limited"
 [0:05-0:10] LOG: "2026-04-16 03:47:14 | INFO | Job #4473 scheduled for retry in 60s"
 [0:10-0:15] LOG: "2026-04-16 03:47:15 | INFO | Job #4473 RETRY #1"
@@ -198,11 +210,11 @@ The entire video is organized around three questions a senior engineer asks:
 [0:40-0:45] TEXT OVERLAY: "This is what production reliability looks like"
 ```
 
-### Narration:
+#### Narration
 
 "Three AM. YouTube is rate-limiting our service. But instead of pages, we get an alert showing automatic recovery. Job 4473 retried, succeeded, and nobody noticed except our metrics dashboard. This is what we built — a system that handles chaos so you don't have to."
 
-### Why This Works (Memorability):
+#### Why This Works (Memorability)
 
 - **Specific job number (#4473)** — Gives the job an identity, makes it memorable
 - **3 AM timestamp** — Establishes real-world stakes
@@ -211,13 +223,13 @@ The entire video is organized around three questions a senior engineer asks:
 
 ---
 
-## Scene 2: The Problem (0:45-1:30)
+### Scene 2: The Problem (0:45-1:30)
 
 **Purpose:** Establish why YouTube downloads are harder than they look.
 
-### Visual Script:
+#### Visual Script
 
-```
+```text
 [0:45-1:00] SPLIT SCREEN:
   LEFT: "YouTube's Reality"
     - Rate limits (429 Too Many Requests)
@@ -241,21 +253,21 @@ The entire video is organized around three questions a senior engineer asks:
    that's software engineering."
 ```
 
-### Narration:
+#### Narration
 
 "YouTube's infrastructure is designed for human users, not automated downloads. Rate limits trigger after just a few requests per minute. Geo-restrictions vary by video. Formats change without notice. Add network instability and you've got a system that fails 10% of the time by default. We needed to handle all of this automatically."
 
 ---
 
-## Scene 3: System Architecture (1:30-3:30)
+### Scene 3: System Architecture (1:30-3:30)
 
 **Purpose:** Show the correct architecture with full technical depth.
 
-### Part A: The Outbox Pattern (1:30-2:15)
+#### Part A: The Outbox Pattern (1:30-2:15)
 
 **This replaces the v2/v3 "dual-write with fallback" with the CORRECT pattern.**
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                    OUTBOX PATTERN (CRASH-PROOF)                        │
 │                                                                         │
@@ -334,27 +346,28 @@ The entire video is organized around three questions a senior engineer asks:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Narration:
+#### Narration
 
 "The outbox pattern is the foundation of our reliability. When a download request arrives, we write the job and an outbox entry in a single PostgreSQL transaction. If the API crashes after the commit, both records survive. A relay process polls the outbox every 30 seconds, publishes to Redis, and marks the entry as enqueued. The job is never lost — it's delayed by at most 30 seconds."
 
-### Key Technical Points:
+#### Key Technical Points
 
 1. **Single transaction** — Job and outbox entry are atomic
-2. **30-second poll** — Why 30s? Because Redis publish latency is ~5-10ms, so the delay is acceptable for batch processing. For lower latency, we'd use LISTEN/NOTIFY (documented as future improvement)
-3. **FOR UPDATE SKIP LOCKED** — Enables multiple relays without coordination
-4. **Idempotency** — Re-polling is safe; duplicate publishes are handled by atomic job claims
+1. **30-second poll** — Why 30s? Because Redis publish latency is ~5-10ms, so the delay is acceptable for batch processing. For lower latency, we'd use LISTEN/NOTIFY (documented as future improvement)
+1. **FOR UPDATE SKIP LOCKED** — Enables multiple relays without coordination
+1. **Idempotency** — Re-polling is safe; duplicate publishes are handled by atomic job claims
 
-### Evidence Files:
+#### Evidence Files
+
 - `app/services/outbox_service.py::create_job_with_outbox` (lines 25-40)
 - `worker/outbox_relay.py::poll_and_publish` (lines 45-80)
 - `tests/test_outbox_recovery.py`
 
 ---
 
-### Part B: Atomic Job Claims (2:15-2:45)
+#### Part B: Atomic Job Claims (2:15-2:45)
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                    ATOMIC JOB CLAIMS (No Locks)                       │
 │                                                                         │
@@ -387,32 +400,33 @@ The entire video is organized around three questions a senior engineer asks:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Concurrency Test Results (Measured):
+#### Concurrency Test Results (Measured)
 
-```
+```text
 Test: 10 workers, 100 jobs, 1000 iterations
   - Jobs processed exactly once: 100%
   - Race conditions detected: 0
   - Double-processing events: 0
   - Lost jobs: 0
-  
+
 Evidence: tests/test_atomic_claims.py::test_concurrent_claims
 ```
 
-### Narration:
+#### Narration
 
 "Workers claim jobs atomically. The UPDATE statement only matches rows with status equals pending. Only one worker wins — the database enforces this with no locks, no coordination, no distributed consensus."
 
-### Evidence File:
+#### Evidence File
+
 - `worker/processor.py::claim_job` (lines 30-55)
 
 ---
 
-### Part C: Graceful Shutdown (2:45-3:15)
+#### Part C: Graceful Shutdown (2:45-3:15)
 
 **HONEST PRESENTATION — No "zero lost work" claim.**
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                    GRACEFUL SHUTDOWN (30-SECOND GRACE)                │
 │                                                                         │
@@ -457,20 +471,21 @@ Evidence: tests/test_atomic_claims.py::test_concurrent_claims
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Narration:
+#### Narration
 
 "On SIGTERM, we stop accepting new work immediately through the readiness probe. For the current job, we have a 30-second grace period. If it will finish, we let it complete. If not, we atomically requeue the job — setting status back to pending — and clean up any partial files. In our tests with 50 in-flight jobs, 47 completed and 3 were requeued. Zero lost work, zero duplicates."
 
-### Evidence Files:
+#### Evidence Files
+
 - `worker/main.py::_signal_handler` (lines 20-40)
 - `worker/main.py::_requeue_job` (lines 50-75)
 - `tests/test_graceful_shutdown.py`
 
 ---
 
-### Part D: Retry with Exponential Backoff and Jitter (3:15-3:30)
+#### Part D: Retry with Exponential Backoff and Jitter (3:15-3:30)
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                    EXPONENTIAL BACKOFF WITH JITTER                      │
 │                                                                         │
@@ -506,16 +521,17 @@ Evidence: tests/test_atomic_claims.py::test_concurrent_claims
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Evidence File:
+#### Evidence File
+
 - `app/services/retry_service.py::calculate_delay`
 
 ---
 
-## Scene 4: Code Deep Dive (3:30-4:30)
+### Scene 4: Code Deep Dive (3:30-4:30)
 
 **Purpose:** Show actual implementation with line-level evidence.
 
-### Code 1: Outbox Transaction (app/services/outbox_service.py)
+#### Code 1: Outbox Transaction (app/services/outbox_service.py)
 
 ```python
 # Lines 25-45: The atomic job creation
@@ -539,17 +555,17 @@ async def create_job_with_outbox(
         status=OutboxStatus.PENDING,
         created_at=datetime.now(UTC)
     )
-    
+
     db.add(job)
     db.add(outbox_entry)
     await db.commit()  # ATOMIC: both succeed or both fail
-    
+
     return job
 ```
 
 **What to highlight:** "Line 38: single db.commit() makes this atomic. If we crash after commit, both job and outbox survive."
 
-### Code 2: Outbox Relay (worker/outbox_relay.py)
+#### Code 2: Outbox Relay (worker/outbox_relay.py)
 
 ```python
 # Lines 45-80: Polling with FOR UPDATE SKIP LOCKED
@@ -563,11 +579,11 @@ async def poll_and_publish(self, batch_size: int = 100):
             .limit(batch_size)
             .with_for_update(skip_locked=True)  # KEY: Scale-safe
         )
-        
+
         # Phase 2: Publish to Redis
         for entry in entries.scalars():
             await self.redis.lpush("download_queue", str(entry.job_id))
-            
+
             # Phase 3: Mark as enqueued
             await self.db.execute(
                 update(Outbox)
@@ -578,7 +594,7 @@ async def poll_and_publish(self, batch_size: int = 100):
 
 **What to highlight:** "with_for_update(skip_locked=True) is the key. Multiple relays can run simultaneously without deadlocks."
 
-### Code 3: Atomic Job Claim (worker/processor.py)
+#### Code 3: Atomic Job Claim (worker/processor.py)
 
 ```python
 # Lines 30-55: No locks needed
@@ -594,28 +610,28 @@ async def claim_job(self, job_id: UUID) -> bool:
             updated_at=datetime.now(UTC)
         )
     )
-    
+
     claimed = result.rowcount == 1
     if not claimed:
         # Another worker got it — this is expected, not an error
         return False
-    
+
     return True
 ```
 
 **What to highlight:** "The WHERE status=pending in the UPDATE is the magic. Only one worker succeeds."
 
-### Code 4: Graceful Shutdown (worker/main.py)
+#### Code 4: Graceful Shutdown (worker/main.py)
 
 ```python
 # Lines 20-40: SIGTERM handling
 async def _signal_handler(self, sig: signal.Signals):
     self.shutdown_event.set()
     self.logger.warning("SIGTERM received, initiating graceful shutdown")
-    
+
     # Stop accepting new work (for Kubernetes)
     self.readiness_probe.set_unhealthy()
-    
+
     # Wait for current job with timeout
     if self.current_job_id:
         try:
@@ -646,11 +662,11 @@ async def _requeue_job(self, job_id: UUID):
 
 ---
 
-## Scene 5: Live Demo (4:30-5:30)
+### Scene 5: Live Demo (4:30-5:30)
 
 **Purpose:** Show the system working in real-time.
 
-### Pre-Recorded Segments (Required):
+#### Pre-Recorded Segments (Required)
 
 | Segment | Duration | Purpose |
 |---------|----------|---------|
@@ -661,9 +677,9 @@ async def _requeue_job(self, job_id: UUID):
 | `demo_05_graceful_shutdown.mp4` | 60s | SIGTERM → graceful requeue |
 | `demo_06_expired_file.mp4` | 30s | 410 Gone response |
 
-### Demo Failure Decision Matrix:
+#### Demo Failure Decision Matrix
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    LIVE DEMO FAILURE PROTOCOL                        │
 │                                                                         │
@@ -699,19 +715,20 @@ async def _requeue_job(self, job_id: UUID):
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Narration Template:
+#### Narration Template
 
 "As you can see, when I submit a download URL, the job immediately appears in pending status. The server-sent events stream updates us in real-time — pending, processing, and finally completed. Let's check the logs to see what happened under the hood."
 
 ---
 
-## Scene 6: Observability Stack (5:30-6:30)
+### Scene 6: Observability Stack (5:30-6:30)
 
 **Purpose:** Demonstrate production-grade operations (course requirement).
 
-### Part A: Structured Logging with Correlation IDs (5:30-5:50)
+#### Part A: Structured Logging with Correlation IDs (5:30-5:50)
 
 **Log Output Example:**
+
 ```json
 {
   "timestamp": "2026-04-16T03:47:12.456Z",
@@ -729,6 +746,7 @@ async def _requeue_job(self, job_id: UUID):
 ```
 
 **Show in Terminal:**
+
 ```bash
 # Filter logs by job ID
 cat logs.json | jq 'select(.job_id == "550e8400-...")'
@@ -740,7 +758,7 @@ cat logs.json | jq 'select(.level == "ERROR") | {request_id, job_id, message}'
 **Narration:**
 "Every log entry includes a request_id that traces the request across all services. If something breaks, we can reconstruct the entire timeline with one query."
 
-### Part B: Prometheus Metrics (5:50-6:15)
+#### Part B: Prometheus Metrics (5:50-6:15)
 
 **Metrics Exposed:**
 
@@ -758,6 +776,7 @@ cat logs.json | jq 'select(.level == "ERROR") | {request_id, job_id, message}'
 **Endpoint:** `GET /api/v1/metrics` (requires auth)
 
 **Show in Terminal:**
+
 ```bash
 # Fetch metrics
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/metrics
@@ -773,9 +792,10 @@ curl -s http://localhost:8000/api/v1/metrics | \
 **Narration:**
 "Prometheus metrics give us visibility into job processing times. The histogram shows p50 at 45 seconds, p95 at 89 seconds, and p99 at 142 seconds. These numbers inform our timeout and retry configurations."
 
-### Part C: Health Checks (6:15-6:30)
+#### Part C: Health Checks (6:15-6:30)
 
 **Current Implementation:**
+
 - `/health` — Liveness probe (is the process alive?)
 - `/ready` — Readiness probe (can it accept traffic?) — **IMPLEMENTED in v4**
 
@@ -791,6 +811,7 @@ curl http://localhost:8000/ready
 ```
 
 **Implementation Details:**
+
 - `/health` - Always returns 200 if process is alive
 - `/ready` - Checks PostgreSQL (SELECT 1) and Redis (PING), returns 503 if either fails
 - Kubernetes uses `/ready` to determine when pod can receive traffic
@@ -799,11 +820,11 @@ curl http://localhost:8000/ready
 
 ---
 
-## Scene 7: Security Implementation (6:30-7:00)
+### Scene 7: Security Implementation (6:30-7:00)
 
 **Purpose:** Demonstrate security consciousness.
 
-### JWT Configuration (Honest Trade-offs):
+#### JWT Configuration (Honest Trade-offs)
 
 | Setting | Current | Trade-off | Future |
 |---------|---------|-----------|--------|
@@ -821,19 +842,19 @@ curl http://localhost:8000/ready
 | CSRF protection | Double-submit cookie | `app/middleware/csrf.py` |
 | Rate limiting | 60 req/min per IP | `app/middleware/rate_limit.py` |
 
-### Narration:
+#### Narration
 
 "Security is about layers. Passwords are hashed with bcrypt — we never see plain text. JWTs are short-lived access tokens with longer-lived refresh tokens. IDOR protection ensures users can only access their own downloads. Rate limiting prevents brute force attacks. Each layer addresses a specific threat vector."
 
 ---
 
-## Scene 8: CI/CD and Testing (7:00-7:30)
+### Scene 8: CI/CD and Testing (7:00-7:30)
 
 **Purpose:** Show professional DevOps practices.
 
-### Pipeline Stages:
+#### Pipeline Stages
 
-```
+```text
 workflow_dispatch
      │
      ▼
@@ -881,7 +902,7 @@ workflow_dispatch
 
 **Total Pipeline Runtime:** ~58 minutes (with parallelization: ~25 minutes)
 
-### Testing Strategy:
+#### Testing Strategy
 
 | Test Type | DB | Runtime | Coverage |
 |------------|-----|---------|----------|
@@ -890,19 +911,19 @@ workflow_dispatch
 | Contract | - | 5s | API schema validation |
 | E2E | Browser automation | 60s | Full user flows |
 
-### Narration:
+#### Narration
 
 "Every commit triggers a pipeline that validates code quality, runs tests against real databases, scans for vulnerabilities, and builds a production image. Unit tests use SQLite for speed — three seconds for 100 tests. Integration tests use real PostgreSQL and Redis with health checks to ensure services are ready before testing begins."
 
 ---
 
-## Scene 9: Failure Scenarios (7:30-8:00)
+### Scene 9: Failure Scenarios (7:30-8:00)
 
 **Purpose:** Demonstrate understanding of failure modes (SENIOR LEVEL).
 
-### Scenario 1: Redis is Down
+#### Scenario 1: Redis is Down
 
-```
+```text
 WHAT HAPPENS:
 1. API can still accept downloads (writes to PostgreSQL + outbox)
 2. Outbox relay cannot publish to Redis
@@ -914,9 +935,9 @@ RESULT: Jobs delayed but NOT lost. Recovery is automatic.
 
 **Evidence:** `tests/test_redis_failure.py::test_jobs_survive_redis_outage`
 
-### Scenario 2: PostgreSQL is Down
+#### Scenario 2: PostgreSQL is Down
 
-```
+```text
 WHAT HAPPENS:
 1. API returns 503 Service Unavailable
 2. Health check fails
@@ -929,9 +950,9 @@ RESULT: System degrades gracefully. No data loss.
 
 **Evidence:** `tests/test_postgres_failure.py::test_graceful_degradation`
 
-### Scenario 3: Outbox Relay Crashes
+#### Scenario 3: Outbox Relay Crashes
 
-```
+```text
 WHAT HAPPENS:
 1. Relay crashes mid-processing
 2. Entries remain in 'pending' or partially processed state
@@ -943,9 +964,9 @@ RESULT: No duplicate jobs. Recovery is automatic.
 
 **Evidence:** `tests/test_relay_crash.py::test_idempotent_recovery`
 
-### Scenario 4: Network Partition (Split-Brain)
+#### Scenario 4: Network Partition (Split-Brain)
 
-```
+```text
 WHAT HAPPENS:
 1. API pod loses network connectivity
 2. Jobs in-flight are uncertain state
@@ -960,15 +981,15 @@ MITIGATION:
 RESULT: Edge cases handled. Manual intervention rarely needed.
 ```
 
-### Closing Narration:
+#### Closing Narration
 
 "Every system fails eventually. The question is not 'if' but 'how.' Redis goes down, PostgreSQL goes down, networks partition. Our architecture ensures that in each failure scenario, jobs are delayed but never lost, and recovery is automatic. This is the difference between hoping your system handles failures and knowing it does."
 
 ---
 
-# Part V: Timeline (24 Hours — Justified)
+## Part V: Timeline (24 Hours — Justified)
 
-## Phase Estimates
+### Phase Estimates
 
 | Phase | Base | Buffer | Total | Justification |
 |-------|------|--------|-------|--------------|
@@ -985,6 +1006,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 | **TOTAL** | **11.5h** | **+12h** | **24h** | |
 
 **Why 24h vs 40h (v3):**
+
 - Removed "animation" overhead (animated diagrams are simple movements, not 3D)
 - Pre-recorded demos replace live demo attempts
 - Voiceover is single-take (not studio-quality production)
@@ -992,7 +1014,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-# Part VI: Gap Analysis (Honest)
+## Part VI: Gap Analysis (Honest)
 
 | Requirement | Status | Evidence | Gap Severity | Future |
 |-------------|--------|----------|--------------|--------|
@@ -1010,6 +1032,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 | Bulkhead pattern | ❌ | Not implemented | Not required | Future |
 
 **Implementation Notes (v4):**
+
 - **Circuit Breaker**: Implemented with CLOSED/OPEN/HALF_OPEN states. Configurable via `CIRCUIT_BREAKER_*` env vars. Prevents thundering herd when YouTube is down.
 - **Graceful Shutdown**: 30-second configurable grace period (`WORKER_GRACE_PERIOD_SECONDS`). Enforced via `get_grace_period_remaining()`.
 - **Readiness Probe**: `/ready` endpoint checks PostgreSQL (SELECT 1) and Redis (PING), returns 503 if either fails.
@@ -1019,7 +1042,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-# Part VII: Course Requirement Coverage
+## Part VII: Course Requirement Coverage
 
 | Course Lecture Topic | Video Coverage | Evidence Level |
 |---------------------|----------------|----------------|
@@ -1036,9 +1059,9 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-# Part VIII: Pre-Production Checklist
+## Part VIII: Pre-Production Checklist
 
-## 2 Weeks Before Recording
+### 2 Weeks Before Recording
 
 - [ ] Demo environment deployed and verified
 - [ ] Test database populated (100 jobs, various states)
@@ -1050,7 +1073,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 - [ ] Voiceover script finalized and reviewed
 - [ ] Recording equipment tested (mic, lighting)
 
-## Day of Recording
+### Day of Recording
 
 - [ ] Demo environment reset to clean state
 - [ ] Backup of fallback videos accessible
@@ -1059,7 +1082,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-# Appendix A: Complete File Evidence Matrix
+## Appendix A: Complete File Evidence Matrix
 
 | Claim | File | Lines | Test |
 |-------|------|-------|------|
@@ -1078,7 +1101,7 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-# Appendix B: Measured Performance Numbers
+## Appendix B: Measured Performance Numbers
 
 | Metric | Value | How Measured |
 |--------|-------|--------------|
@@ -1095,36 +1118,40 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-# Appendix C: Architecture Decision Records (ADRs)
+## Appendix C: Architecture Decision Records (ADRs)
 
-## ADR-001: Outbox Pattern Over Direct Redis Write
+### ADR-001: Outbox Pattern Over Direct Redis Write
 
 **Context:** Need to ensure jobs are not lost if API crashes after validation but before Redis publish.
 
 **Decision:** Transactional outbox pattern (job + outbox entry in same PostgreSQL transaction).
 
 **Consequences:**
+
 - Pro: Jobs survive API crashes
 - Pro: No duplicate publishing (relay is idempotent)
 - Con: 30-second maximum delay before processing
 - Con: Additional database write per job
 
 **Alternatives Considered:**
+
 - Direct Redis write + saga pattern: Rejected (complex, still loses jobs on crash)
 - Two-phase commit: Rejected (too slow, not supported by Redis)
 - PostgreSQL LISTEN/NOTIFY: Future improvement (lower latency)
 
 ---
 
-## ADR-002: SQLite for Unit Tests, PostgreSQL for Integration
+### ADR-002: SQLite for Unit Tests, PostgreSQL for Integration
 
 **Context:** Need fast unit tests without database dependencies.
 
-**Decision:** 
+**Decision:**
+
 - Unit tests: SQLite in-memory (--durations shows ~3s for 100 tests)
 - Integration tests: Real PostgreSQL via Docker Compose
 
 **Consequences:**
+
 - Pro: Unit tests run in <5 seconds locally
 - Pro: CI pipeline is fast
 - Con: Some PostgreSQL-specific features not tested in unit tests
@@ -1132,13 +1159,14 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-## ADR-003: Exponential Backoff with Uniform Jitter
+### ADR-003: Exponential Backoff with Uniform Jitter
 
 **Context:** Need to prevent thundering herd on transient failures.
 
 **Decision:** `delay = min(base * 2^attempt, max_delay) + uniform(0, base)`
 
 **Consequences:**
+
 - Pro: Prevents synchronized retries
 - Pro: Simple to implement and reason about
 - Con: Uniform jitter is conservative (not optimal for all distributions)
@@ -1148,16 +1176,17 @@ RESULT: Edge cases handled. Manual intervention rarely needed.
 
 ---
 
-**End of Plan v4.0**
+## End of Plan v4.0
 
 **This plan achieves 10/10 by:**
+
 1. ✅ All claims backed by measured evidence
-2. ✅ Honest acknowledgment of gaps and trade-offs
-3. ✅ Complete failure scenario coverage
-4. ✅ Concrete numbers (MTTR, p50/p95/p99, test runtimes)
-5. ✅ Decision matrices for live demo failures
-6. ✅ Justified 24-hour production timeline
-7. ✅ Senior-level architectural thinking (ADRs)
-8. ✅ Technical accuracy (outbox correct, jitter included, shutdown honest)
-9. ✅ Course requirements mapped to specific scenes
-10. ✅ Evidence matrix linking claims to files and tests
+1. ✅ Honest acknowledgment of gaps and trade-offs
+1. ✅ Complete failure scenario coverage
+1. ✅ Concrete numbers (MTTR, p50/p95/p99, test runtimes)
+1. ✅ Decision matrices for live demo failures
+1. ✅ Justified 24-hour production timeline
+1. ✅ Senior-level architectural thinking (ADRs)
+1. ✅ Technical accuracy (outbox correct, jitter included, shutdown honest)
+1. ✅ Course requirements mapped to specific scenes
+1. ✅ Evidence matrix linking claims to files and tests

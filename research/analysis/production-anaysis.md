@@ -8,6 +8,7 @@
 ## Executive Summary
 
 After thorough verification against the current branch, **ALL critical blockers have been resolved**. The codebase now implements:
+
 - Zombie Sweeper module with requeue logic
 - Proper Outbox DELETE (not UPDATE)
 - Correct AWS Full Jitter implementation
@@ -20,10 +21,12 @@ This document corrects the previous analysis which incorrectly reported these as
 ## Verified Implementations
 
 ### 1. ✅ Zombie Sweeper Module EXISTS
+
 **Location:** `worker/zombie_sweeper.py`
 **Test File:** `tests/test_worker/test_zombie_sweeper.py`
 
 The zombie sweeper properly implements `requeue_stuck_jobs()` that:
+
 - Reclaims jobs stuck in 'PROCESSING' state for more than 15 minutes
 - Marks them as 'pending' for retry (not 'failed')
 - Uses Redis sorted set for retry queue with timestamp scoring
@@ -33,6 +36,7 @@ The zombie sweeper properly implements `requeue_stuck_jobs()` that:
 ---
 
 ### 2. ✅ Outbox Uses DELETE (Not UPDATE)
+
 **Location:** `worker/processor.py` line 401
 
 ```python
@@ -47,6 +51,7 @@ The implementation correctly DELETES entries after successful publish, keeping t
 ---
 
 ### 3. ✅ AWS Full Jitter Correctly Implemented
+
 **Location:** `app/services/retry_service.py` lines 55-57
 
 ```python
@@ -56,6 +61,7 @@ return datetime.now(UTC) + timedelta(seconds=delay)
 ```
 
 This correctly implements AWS Full Jitter formula:
+
 - `delay = random.uniform(0, min(cap, base * 2^attempt))`
 - Full jitter provides 100% variance at all retry levels
 - Prevents micro-thundering-herds
@@ -65,6 +71,7 @@ This correctly implements AWS Full Jitter formula:
 ---
 
 ### 4. ✅ Grace Period Correctly Set to 25s
+
 **Location:** `worker/main.py` line 30
 
 ```python
@@ -78,6 +85,7 @@ Default is 25s with 5s runway before K8s SIGKILL at 30s, matching the video plan
 ---
 
 ### 5. ✅ Test File Exists
+
 **Location:** `tests/test_worker/test_zombie_sweeper.py`
 
 The test file exists and contains comprehensive tests for zombie sweeper functionality.
@@ -100,6 +108,7 @@ The test file exists and contains comprehensive tests for zombie sweeper functio
 ## Minor Observations (Non-Blocking)
 
 ### 1. Histogram Bucket Mismatch (INFO)
+
 **video-plan-5.md:** `[10, 30, 60, 120, 300, 600]`
 **Actual:** `[1, 5, 10, 30, 60, 120, 300, 600]`
 
@@ -108,6 +117,7 @@ Extra buckets at 1s and 5s are fine - more granularity is not harmful.
 ---
 
 ### 2. Circuit Breaker Half-Open Tracking (INFO)
+
 The half-open state tracking uses `_half_open_calls` which could theoretically allow unlimited concurrent calls. However, the implementation uses a semaphore pattern in practice that limits concurrency. Consider adding explicit decrement on success/failure for defensive coding.
 
 ---
@@ -117,15 +127,17 @@ The half-open state tracking uses `_half_open_calls` which could theoretically a
 ### ✅ PRODUCTION READY
 
 **All critical blockers have been verified as RESOLVED:**
+
 1. ✅ Zombie Sweeper - properly requeues stuck jobs
-2. ✅ Outbox DELETE - prevents table bloat
-3. ✅ AWS Full Jitter - prevents thundering herd
-4. ✅ Grace Period - 25s default with application enforcement
-5. ✅ Test Coverage - zombie sweeper tests exist
+1. ✅ Outbox DELETE - prevents table bloat
+1. ✅ AWS Full Jitter - prevents thundering herd
+1. ✅ Grace Period - 25s default with application enforcement
+1. ✅ Test Coverage - zombie sweeper tests exist
 
 **Required Actions:** NONE - all blockers resolved
 
 **Optional Enhancements:**
+
 - Consider explicit decrement in circuit breaker half-open tracking
 - Consider aligning histogram bucket boundaries with video-plan
 
@@ -144,4 +156,4 @@ The half-open state tracking uses `_half_open_calls` which could theoretically a
 
 ---
 
-*Analysis verified against current branch as of April 26, 2026*
+## Analysis verified against current branch as of April 26, 2026

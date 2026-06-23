@@ -297,12 +297,12 @@ vooglaadija/
 ## Security Considerations Implemented
 
 1. **Authentication**: JWT access (15min) + refresh (7 days) tokens
-2. **Passwords**: bcrypt with 12 rounds, minimum 8 characters
-3. **Cookies**: HttpOnly, Secure, SameSite=Lax
-4. **CSRF**: Dual tokens for HTMX form submissions
-5. **Rate Limiting**: 5/min for auth, 10/min for downloads
-6. **CORS**: Configurable allowed origins
-7. **Path Traversal**: UUID-based paths, realpath validation
-8. **Open Redirect**: Allowlist-based URL validation
-9. **Secret Keys**: Entropy-based validation (>2.9 bits/char, ≥32 chars)
-10. **Security Headers**: CSP, X-Frame-Options, X-Content-Type-Options, etc.
+1. **Passwords**: bcrypt with 12 rounds, minimum 8 characters
+1. **Cookies**: HttpOnly, Secure, SameSite=Lax
+1. **CSRF**: Dual tokens for HTMX form submissions
+1. **Rate Limiting**: 5/min for auth, 10/min for downloads
+1. **CORS**: Configurable allowed origins
+1. **Path Traversal**: UUID-based paths, realpath validation
+1. **Open Redirect**: Allowlist-based URL validation
+1. **Secret Keys**: Entropy-based validation (>2.9 bits/char, ≥32 chars)
+1. **Security Headers**: CSP, X-Frame-Options, X-Content-Type-Options, etc.

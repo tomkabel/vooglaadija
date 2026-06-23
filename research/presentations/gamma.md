@@ -7,10 +7,10 @@
 ### How to Import
 
 1. Go to [gamma.app](https://gamma.app) and create a new Presentation.
-2. Select **Paste** mode.
-3. Paste everything from `# Slide 1` onward.
-4. Theme: **Technical** → **Dark mode, monospace accent**.
-5. Gamma splits cards at `---` separators.
+1. Select **Paste** mode.
+1. Paste everything from `# Slide 1` onward.
+1. Theme: **Technical** → **Dark mode, monospace accent**.
+1. Gamma splits cards at `---` separators.
 
 ### Recommended Plan (April 2026)
 
@@ -37,7 +37,7 @@
 ### Diagrams: Two Methods
 
 1. **Gamma Smart Diagrams** — Type `/smart`, select type, paste node list. Preferred.
-2. **ASCII Art** — Paste into Gamma code blocks as fallback.
+1. **ASCII Art** — Paste into Gamma code blocks as fallback.
 
 ### Export for Video
 
@@ -54,13 +54,13 @@
 
 ---
 
-# Slide 1 — Title
+## Slide 1 — Title
 
-## Resilient by Design
+### Resilient by Design
 
-### A Crash-Proof Distributed YouTube Processor
+#### A Crash-Proof Distributed YouTube Processor
 
-**Job #4473**
+## Job #4473
 
 A single download job. Four services. Six coordinated steps. Three catastrophic failures. One successful recovery.
 
@@ -70,9 +70,9 @@ Production systems fail. This one recovers.
 
 ---
 
-# Slide 2 — The Promise
+## Slide 2 — The Promise
 
-## This is Job #4473
+### This is Job #4473
 
 A user pasted a YouTube link. What they saw was a progress bar. What actually happened was a distributed system executing six coordinated steps across four services.
 
@@ -80,20 +80,20 @@ Then the API crashed. Then Redis went down. Then the worker was killed mid-downl
 
 Job #4473 still finished.
 
-### The Six Steps
+#### The Six Steps
 
 1. User submits URL → API receives request
-2. API writes job + outbox event in **atomic transaction**
-3. Outbox relay publishes to Redis queue
-4. Worker **claims job atomically** from database
-5. Worker downloads via yt-dlp with circuit breaker protection
-6. File delivered. Metrics recorded. Logs prove it.
+1. API writes job + outbox event in **atomic transaction**
+1. Outbox relay publishes to Redis queue
+1. Worker **claims job atomically** from database
+1. Worker downloads via yt-dlp with circuit breaker protection
+1. File delivered. Metrics recorded. Logs prove it.
 
-### Visual: System Flow
+#### Visual: System Flow
 
 Use Gamma Smart Diagram `/smart` → **Flowchart** → paste:
 
-```
+```text
 User
 FastAPI API
 PostgreSQL
@@ -103,9 +103,9 @@ Worker (yt-dlp)
 Storage
 ```
 
-### ASCII Backup
+#### ASCII Backup
 
-```
+```text
                     +---------+
                     |  User   |
                     +----+----+
@@ -139,22 +139,25 @@ Storage
 
 ---
 
-# Slide 3 — The Gap
+## Slide 3 — The Gap
 
-## Why Scripts Fail in Production
+### Why Scripts Fail in Production
 
-### 55 min
+#### 55 min
+
 Average API downtime per week, Q1 2025  
 *Source: Uptrends State of API Reliability 2025 (2B+ checks)*
 
-### +60%
+#### +60%
+
 Year-over-year increase in API downtime
 
-### 51%
+#### 51%
+
 Automated bot traffic share in 2024  
 *Source: Imperva Bad Bot Report 2025 (analyzing 2024 data)*
 
-### The Lesson
+#### The Lesson
 
 A script handles the happy path. A system handles reality.
 
@@ -164,11 +167,11 @@ We did not build a script. We built a system that **expects failure**.
 
 ---
 
-# Slide 4 — The Architecture: Outbox Pattern
+## Slide 4 — The Architecture: Outbox Pattern
 
-## The Birth & The Bridge
+### The Birth & The Bridge
 
-### Atomic Transaction
+#### Atomic Transaction
 
 When Job #4473 is born, it is written to the database twice — once as a job record, once as an outbox event — inside a single transaction.
 
@@ -177,7 +180,7 @@ If it crashes before commit, both disappear.
 
 **There is no partial state.**
 
-### The Code
+#### The Code
 
 File: `app/api/routes/downloads.py:160-162`
 
@@ -188,7 +191,7 @@ await write_job_to_outbox(db, job_id)   # Same session, same transaction
 await db.commit()                       # Atomic: both or neither
 ```
 
-### The Relay: A Bridge, Not a Warehouse
+#### The Relay: A Bridge, Not a Warehouse
 
 Every thirty seconds, the outbox relay asks PostgreSQL: "Give me pending entries, but skip anything another relay is already handling." After publishing to Redis, it **deletes** the outbox entry. The table stays empty. No bloat.
 
@@ -211,13 +214,13 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
     await db.commit()
 ```
 
-### Visual: The Atomic Transaction
+#### Visual: The Atomic Transaction
 
 Use Gamma Smart Diagram `/smart` → **Venn Diagram** → outer circle: **PostgreSQL Transaction**, inner circles: **Job Record** + **Outbox Event**.
 
-### ASCII Backup — Transaction Boundary
+#### ASCII Backup — Transaction Boundary
 
-```
+```text
 +---------------------------------------------------+
 |           PostgreSQL TRANSACTION                  |
 |                                                   |
@@ -239,9 +242,9 @@ Use Gamma Smart Diagram `/smart` → **Venn Diagram** → outer circle: **Postgr
 
 ---
 
-# Slide 5 — The Architecture: Atomic Claims
+## Slide 5 — The Architecture: Atomic Claims
 
-## Exactly-Once Delivery Is a Myth
+### Exactly-Once Delivery Is a Myth
 
 **Exactly-once delivery** is impossible in distributed systems. Redis can deliver the same job twice. What we guarantee is **exactly-once processing** via idempotent state transitions.
 
@@ -249,7 +252,7 @@ Our workers do not ask permission — they **claim** the job with an update that
 
 PostgreSQL's MVCC guarantees that even if two workers execute simultaneously, exactly one wins. The duplicate is not an error. It is expected, and silently discarded.
 
-### The Code
+#### The Code
 
 File: `worker/processor.py:104-124`
 
@@ -268,20 +271,20 @@ if not claimed:
     return False   # Another worker got it — expected behavior
 ```
 
-### At-Least-Once Delivery + Idempotent State Transitions
+#### At-Least-Once Delivery + Idempotent State Transitions
 
 | Delivery | Worker A | Worker B | Outcome |
 |----------|----------|----------|---------|
 | First | Claims job (rowcount=1) | — | Worker A processes |
 | Duplicate | — | Attempts claim (rowcount=0) | Worker B silently exits |
 
-### Visual: The Race
+#### Visual: The Race
 
 Use Gamma Smart Diagram `/smart` → **Sequence Diagram** → actors: `Worker A`, `PostgreSQL`, `Worker B`.
 
-### ASCII Backup — Race Condition Resolution
+#### ASCII Backup — Race Condition Resolution
 
-```
+```text
 Time ->
 
 Worker A                         PostgreSQL                      Worker B
@@ -303,15 +306,15 @@ Result: Exactly one worker processes Job #4473.
 
 ---
 
-# Slide 6 — The Storm: Rate Limits & Backoff
+## Slide 6 — The Storm: Rate Limits & Backoff
 
-## The YouTube API Returns HTTP 429
+### The YouTube API Returns HTTP 429
 
 We do not panic. We calculate an AWS-standard **full jitter backoff**.
 
-### The Formula
+#### The Formula
 
-```
+```text
 delay = random.uniform(0, min(cap, base * 2^attempt))
 ```
 
@@ -325,7 +328,7 @@ delay = random.uniform(0, min(cap, base * 2^attempt))
 
 Every retrying job picks a random point in the window. No thundering herds. No coordinated stampedes. Just statistical dispersion.
 
-### The Code
+#### The Code
 
 File: `app/services/retry_service.py:29-57`
 
@@ -340,19 +343,19 @@ def calculate_retry_with_jitter(retry_count: int) -> datetime:
     return datetime.now(UTC) + timedelta(seconds=delay)
 ```
 
-### References
+#### References
 
 - AWS Architecture Blog: "Exponential Backoff and Jitter"
 - Google SRE Book, Chapter 6 (Handling Overload)
 - Netflix Tech Blog: "HASTINGS Presents: Exponential Backoff"
 
-### Visual: Jitter Timeline
+#### Visual: Jitter Timeline
 
 Use Gamma Smart Diagram `/smart` → **Timeline**.
 
-### ASCII Backup
+#### ASCII Backup
 
-```
+```text
 Attempt 1          Attempt 2              Attempt 3
 |----+----|        |----+----+----+----|  |----+----+----+----+----+----+----|
 0    30s   60s     0        60s     120s  0              120s           240s
@@ -368,11 +371,11 @@ CAP HIT at 600s — all subsequent attempts use 0-600s window
 
 ---
 
-# Slide 7 — The Storm: Catastrophic Recovery
+## Slide 7 — The Storm: Catastrophic Recovery
 
-## SIGKILL & SIGTERM: Two Failure Modes, One Recovery
+### SIGKILL & SIGTERM: Two Failure Modes, One Recovery
 
-### SIGKILL: When Graceful Shutdown Is Impossible
+#### SIGKILL: When Graceful Shutdown Is Impossible
 
 We kill the worker. Not gracefully — `SIGKILL`, like an OOM kill in Kubernetes. The shutdown handler never runs. Job #4473 is stranded in `processing` state.
 
@@ -380,7 +383,7 @@ Fifteen minutes later, the zombie sweeper finds it, marks it `pending`, and anot
 
 **Critical fix:** The original sweeper performed a naked dual-write (DB `UPDATE` then direct Redis `LPUSH`). We fixed this to route recovery through the **transactional outbox**, consistent with the rest of the architecture.
 
-### The Code (Fixed)
+#### The Code (Fixed)
 
 File: `worker/zombie_sweeper.py:68-87`
 
@@ -404,7 +407,7 @@ await db.execute(
 )
 ```
 
-### SIGTERM: The Polite Failure
+#### SIGTERM: The Polite Failure
 
 For planned shutdowns, we handle `SIGTERM` with a 25-second grace period.
 
@@ -417,9 +420,9 @@ For planned shutdowns, we handle `SIGTERM` with a 25-second grace period.
 
 The `_requeue_job` helper also uses the outbox pattern — no direct Redis call.
 
-### ASCII Backup — SIGKILL Recovery (Outbox-Safe)
+#### ASCII Backup — SIGKILL Recovery (Outbox-Safe)
 
-```
+```text
   t=0                    t=30s                   t=15min
    |                        |                        |
    v                        v                        v
@@ -453,13 +456,13 @@ The `_requeue_job` helper also uses the outbox pattern — no direct Redis call.
 
 ---
 
-# Slide 8 — The Operator's View
+## Slide 8 — The Operator's View
 
-## Observability: Three in the Morning Engineering
+### Observability: Three in the Morning Engineering
 
 We do not just build systems. We operate them at three in the morning.
 
-### Custom Histogram Buckets
+#### Custom Histogram Buckets
 
 Default Prometheus buckets top out at 10 seconds. Without custom buckets, p99 for video downloads would be mathematically invalid.
 
@@ -473,7 +476,7 @@ JOB_DURATION_SECONDS = Histogram(
 )
 ```
 
-### Structured Logging with Correlation IDs
+#### Structured Logging with Correlation IDs
 
 Every log carries a `request_id`. Reconstruct Job #4473's entire lifecycle in one `jq` query:
 
@@ -490,7 +493,7 @@ jq 'select(.job_id == "4473")' logs.jsonl
 {"event": "job_completed",     "job_id": "4473", "duration_seconds": 142}
 ```
 
-### Health Checks: Alive vs. Ready
+#### Health Checks: Alive vs. Ready
 
 File: `app/api/routes/health.py`
 
@@ -500,7 +503,7 @@ GET /health/ready → {"status": "ready",    "database": "connected", "redis": "
 # Returns HTTP 503 if dependencies are down — K8s removes pod from service
 ```
 
-### Worker Health
+#### Worker Health
 
 ```python
 GET :8082/health → {
@@ -515,11 +518,11 @@ GET :8082/health → {
 
 ---
 
-# Slide 9 — Trade-Offs & Closing
+## Slide 9 — Trade-Offs & Closing
 
-## Engineering Maturity: Owning the Decisions
+### Engineering Maturity: Owning the Decisions
 
-### Decision Matrix
+#### Decision Matrix
 
 | Decision | What We Chose | What We Sacrificed | Future |
 |----------|---------------|-------------------|--------|
@@ -528,7 +531,7 @@ GET :8082/health → {
 | **Test Database** | SQLite per-worker (fast); PostgreSQL via docker-compose.test.yml (integration) | 5s vs SQLite speed | SKIP LOCKED fidelity |
 | **Circuit Breaker** | 5 failures / 30s reset / 3 successes | Potential false positives | Tuned per endpoint |
 
-### Security Grid
+#### Security Grid
 
 | Feature | Implementation |
 |---------|---------------|
@@ -539,7 +542,7 @@ GET :8082/health → {
 | CSRF + Security headers | CSP, X-Content-Type-Options, X-Frame-Options |
 | Path traversal | `os.path.realpath` prefix validation |
 
-### Gaps & Post-Review Fix
+#### Gaps & Post-Review Fix
 
 What we explicitly did **not** build: RS256 rotation, bulkhead isolation, LISTEN/NOTIFY, multi-region failover.
 
@@ -547,7 +550,7 @@ What we explicitly did **not** build: RS256 rotation, bulkhead isolation, LISTEN
 
 ---
 
-## Job #4473 Made It
+### Job #4473 Made It
 
 Through rate limits. Through a dead Redis. Through a killed worker.
 
@@ -555,21 +558,21 @@ The file is on disk. The metrics confirm it. The logs prove it.
 
 We did not build this to handle the happy path. We built it because **the happy path is a lie**.
 
-### Production systems fail.
+#### Production systems fail
 
-### The question is not whether yours will survive.
+#### The question is not whether yours will survive
 
-### It is whether you designed it to recover.
+#### It is whether you designed it to recover
 
 > **Gamma direction:** Use Studio Mode (Ultra) for cinematic parallax. Fade from dark to slightly lighter `#0A0A0F` gradient.
 
 ---
 
-# Slide 10 — Credits
+## Slide 10 — Credits
 
-## Vooglaadija
+### Vooglaadija
 
-**Resilient by Design**
+## Resilient by Design
 
 ### Built by
 
@@ -581,19 +584,19 @@ We did not build this to handle the happy path. We built it because **the happy 
 **Date:** April 2026  
 **Version:** 1.0.0
 
-### Links
+#### Links
 
 - GitHub Repository: `github.com/tomkabel/team21-vooglaadija`
 - Gamma Leave-Behind Deck: `[Private Gamma Link]`
 - API Docs: `/docs` (Swagger UI)
 - Metrics: `/metrics` (Prometheus)
 
-### Tech Stack
+#### Tech Stack
 
 Python 3.12 · FastAPI · PostgreSQL · Redis · yt-dlp · Docker · Prometheus · Grafana · OpenTelemetry · Sentry
 
 ---
 
-## End of Gamma Deck Content
+### End of Gamma Deck Content
 
 **Import everything above this line into Gamma.app.**

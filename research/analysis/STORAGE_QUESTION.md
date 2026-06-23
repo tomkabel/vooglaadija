@@ -42,12 +42,12 @@ Files expire after **24 hours** by default (`FILE_EXPIRE_HOURS=24`). The worker 
 The current implementation has **no protection against disk exhaustion**:
 
 1. **No pre-download space check** — `yt-dlp` starts downloading blindly. If the disk fills mid-download, the job fails with an I/O error that may be retried, wasting bandwidth and CPU.
-2. **No per-file size limit** — A single 4K/8K video can consume 5–20 GB.
-3. **No per-user quota** — One user could fill the entire shared disk.
-4. **No emergency eviction** — If storage fills before the 24-hour expiration window, new downloads halt for *all* users.
-5. **No disk usage metrics** — Prometheus/Grafana cannot alert on `storage_used_bytes` or `storage_available_bytes`.
-6. **No orphan file sweeper** — `yt-dlp` and `ffmpeg` may leave `.part`, `.temp`, or `ytdl` temp files on crash/OOM that are never referenced by the DB.
-7. **No temp directory cleanup** — `storage/temp/` exists but has no automated cleanup routine.
+1. **No per-file size limit** — A single 4K/8K video can consume 5–20 GB.
+1. **No per-user quota** — One user could fill the entire shared disk.
+1. **No emergency eviction** — If storage fills before the 24-hour expiration window, new downloads halt for *all* users.
+1. **No disk usage metrics** — Prometheus/Grafana cannot alert on `storage_used_bytes` or `storage_available_bytes`.
+1. **No orphan file sweeper** — `yt-dlp` and `ffmpeg` may leave `.part`, `.temp`, or `ytdl` temp files on crash/OOM that are never referenced by the DB.
+1. **No temp directory cleanup** — `storage/temp/` exists but has no automated cleanup routine.
 
 ---
 
@@ -185,20 +185,20 @@ flowchart LR
 **Benefits:**
 
 1. **Infinite scale** — Storage is no longer tied to the worker node's disk size.
-2. **Direct-to-user delivery** — Users download from the CDN / object store, not the API container, freeing API bandwidth.
-3. **No disk exhaustion** — Bucket quotas and lifecycle policies handle expiration automatically.
-4. **Horizontal scaling** — Workers become stateless. You can add 10 worker replicas without storage concerns.
-5. **Cost optimization** — Object storage is cheaper per-GB than block storage (EBS / persistent volumes).
+1. **Direct-to-user delivery** — Users download from the CDN / object store, not the API container, freeing API bandwidth.
+1. **No disk exhaustion** — Bucket quotas and lifecycle policies handle expiration automatically.
+1. **Horizontal scaling** — Workers become stateless. You can add 10 worker replicas without storage concerns.
+1. **Cost optimization** — Object storage is cheaper per-GB than block storage (EBS / persistent volumes).
 
 ### Implementation Approach
 
 1. Add an abstraction layer: `app/services/storage_backend.py` with:
-   - `LocalStorageBackend` (current behavior)
-   - `S3StorageBackend` (new)
-2. Worker uploads the completed file to the configured backend after `yt-dlp` finishes.
-3. Store the object key (or presigned URL) in `DownloadJob.file_path` (or a new `file_url` column).
-4. API redirects (`307 Temporary Redirect`) or streams from the object store when the user hits `GET /downloads/{id}/file`.
-5. Set bucket lifecycle rules to auto-delete objects after 24 hours as a safety net behind the worker cleanup.
+  - `LocalStorageBackend` (current behavior)
+  - `S3StorageBackend` (new)
+1. Worker uploads the completed file to the configured backend after `yt-dlp` finishes.
+1. Store the object key (or presigned URL) in `DownloadJob.file_path` (or a new `file_url` column).
+1. API redirects (`307 Temporary Redirect`) or streams from the object store when the user hits `GET /downloads/{id}/file`.
+1. Set bucket lifecycle rules to auto-delete objects after 24 hours as a safety net behind the worker cleanup.
 
 ### Hybrid Option (Immediate Improvement)
 

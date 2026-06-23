@@ -7,8 +7,8 @@ on:
     branches: [main, develop]
 
 env:
-  PYTHON_VERSION: "3.12"
-  HATCH_VERSION: "1.16.5"
+  PYTHON_VERSION: '3.12'
+  HATCH_VERSION: '1.16.5'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,14 +19,16 @@ jobs:
   # LINT - Code quality checks (fastest, fail first)
   # ============================================
   lint:
-    name: Lint with ruff
+    name: Lint (Python + JS + CSS + Markdown + YAML)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     permissions:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@a0b52019f16c97e3556f720a3c894238c92f87d7
@@ -46,6 +48,36 @@ jobs:
       - name: Run ruff format check
         run: hatch run lint:format-check
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Biome check (JS/CSS/JSON)
+        run: pnpm run lint:js:ci
+
+      - name: Run markdownlint
+        run: pnpm run lint:md:ci
+
+      - name: Run Prettier check (Markdown/YAML)
+        run: pnpm run format:check
+
+      - name: Install yamllint
+        run: uv tool install yamllint
+
+      - name: Run yamllint
+        run: yamllint --config-file .yamllint .github/ infra/ docker-compose*.yml
+
+      - name: Run ShellCheck
+        run: shellcheck --severity=warning scripts/*.sh entrypoint.sh migrate.sh
+
   # ============================================
   # TYPE CHECK - Static type analysis
   # ============================================
@@ -58,7 +90,9 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@a0b52019f16c97e3556f720a3c894238c92f87d7
@@ -87,7 +121,9 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@a0b52019f16c97e3556f720a3c894238c92f87d7
@@ -131,10 +167,7 @@ jobs:
           POSTGRES_PASSWORD: test_pass
           POSTGRES_DB: test_db
         options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
           --health-start-period 10s
         ports:
           - 5432:5432
@@ -142,15 +175,14 @@ jobs:
       redis:
         image: redis:7-alpine
         options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
         ports:
           - 6379:6379
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@a0b52019f16c97e3556f720a3c894238c92f87d7
@@ -177,8 +209,8 @@ jobs:
           uv run python -c "
           import asyncio
           from sqlalchemy.ext.asyncio import create_async_engine
-          from app.database import Base
-          from app.models import User, DownloadJob
+          from core.database import Base
+          from core.models import User, DownloadJob
 
           async def init_db():
               engine = create_async_engine('postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db')
@@ -191,7 +223,7 @@ jobs:
 
       - name: Run API integration tests
         env:
-          CI_INTEGRATION: "true"
+          CI_INTEGRATION: 'true'
         run: hatch run test:integration
 
       - name: Upload integration coverage to Codecov
@@ -214,7 +246,9 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@a0b52019f16c97e3556f720a3c894238c92f87d7
@@ -228,11 +262,27 @@ jobs:
       - name: Install hatch
         run: uv tool install hatch==${{ env.HATCH_VERSION }}
 
+      - name: Run secret scan
+        run: |
+          set -e
+          uv tool install "detect-secrets==1.5.0"
+          hatch run security:scan-secrets
+
       - name: Run Bandit security scan
-        run: hatch run security:scan-bandit || true
+        run: |
+          set -e
+          uv tool install "bandit==1.7.0"
+          hatch run security:scan-bandit
 
       - name: Run Safety dependency check
-        run: hatch run ci:security-safety-check || true
+        env:
+          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
+        run: |
+          if [ -z "$SAFETY_API_KEY" ]; then
+            echo "SAFETY_API_KEY not set — skipping Safety dependency scan"
+          else
+            hatch run ci:security-safety-check
+          fi
 
       - name: Upload security report
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
@@ -254,13 +304,15 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@21162887f0d6e25b4e8eafb0cf44cf9bf7f6acd3
 
       - name: Build API Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           file: ./Dockerfile
@@ -271,7 +323,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build Worker Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           file: ./Dockerfile

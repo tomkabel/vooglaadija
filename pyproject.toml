@@ -19,7 +19,7 @@ dependencies = [
     "passlib[bcrypt]",
     "bcrypt<4.1",
     "pydantic",
-    "pydantic-settings",
+    "pydantic-settings>=2.14.2",
     "email-validator>=2.3.0",
     "sse-starlette>=1.6.0",
     "jinja2",
@@ -27,7 +27,7 @@ dependencies = [
     "prometheus-client>=0.19.0",
     "slowapi>=0.1.9",
     "yt-dlp>=2025.3.0",
-    
+
     # HIGH PRIORITY - Observability & Performance Enhancements
     # Structured logging with structlog
     "structlog>=24.0.0",
@@ -37,17 +37,16 @@ dependencies = [
     "uvloop>=0.19.0; sys_platform != 'win32'",
     # Modern PostgreSQL driver (psycopg3)
     "psycopg[binary]>=3.1.0",
-    
+
     # SECURITY UPDATES - address transitive dependency vulnerabilities
     "ecdsa>=0.19.2",  # Fixes Minerva timing attack and DoS via improper DER validation
     "cryptography>=46.0.7",  # Fixes buffer overflow with non-contiguous buffers
     "pygments>=2.20.0",  # Fixes ReDoS in AdlLexer inefficient regex
-    
+
     # MEDIUM PRIORITY - Reliability & Debugging
     # Battle-tested retry logic
     "tenacity>=8.2.0",
-    # Redis Queue for robust job processing (optional)
-    "rq>=1.15.0",
+
     # Error tracking and performance monitoring
     "sentry-sdk>=1.40.0",
 ]
@@ -90,6 +89,7 @@ type = [
 security = [
     "bandit",
     "safety",
+    "detect-secrets>=1.5.0",
 ]
 dev = [
     "vooglaadija[test,lint,type,security]",
@@ -117,6 +117,7 @@ type-check = [
 security = [
     "bandit>=1.7.0",
     "safety>=2.3.0",
+    "detect-secrets>=1.5.0",
 ]
 # Meta group that includes all other groups
 dev = [
@@ -144,12 +145,12 @@ description = "Default development environment"
 [tool.hatch.envs.default.scripts]
 dev = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 dev-uvloop = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --loop uvloop"
-test = "pytest tests/ -v --cov=app --cov-report=term-missing"
-lint = "ruff check app/ tests/ --output-format=github"
-"lint-format" = "ruff format --check app/ tests/"
-type-check = "mypy app/ --ignore-missing-imports --install-types --non-interactive"
+test = "pytest tests/ -v --cov=app --cov=core --cov-report=term-missing"
+lint = "ruff check app/ core/ tests/ --output-format=github"
+"lint-format" = "ruff format --check app/ core/ tests/"
+type-check = "mypy app/ core/ --ignore-missing-imports --install-types --non-interactive"
 # Coverage convenience scripts
-cov = "pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing --cov-report=html"
+cov = "pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing --cov-report=html"
 "cov-html" = "coverage html"
 # Clean script
 clean = "find . -type d -name __pycache__ -exec rm -rf {} +"
@@ -175,10 +176,48 @@ skip-install = true
 features = ["lint"]
 
 [tool.hatch.envs.lint.scripts]
-check = "ruff check app/ tests/ --output-format=github"
-format-check = "ruff format --check app/ tests/"
-format = "ruff format app/ tests/"
-fix = "ruff check --fix app/ tests/"
+check = "ruff check app/ core/ tests/ --output-format=github"
+format-check = "ruff format --check app/ core/ tests/"
+format = "ruff format app/ core/ tests/"
+fix = "ruff check --fix app/ core/ tests/"
+
+# JS/CSS/JSON linting via Biome
+lint-js = "cd {root} && pnpm run lint:js"
+lint-js-ci = "cd {root} && pnpm run lint:js:ci"
+
+# Markdown linting
+lint-md = "cd {root} && pnpm run lint:md"
+lint-md-ci = "cd {root} && pnpm run lint:md:ci"
+
+# YAML linting via yamllint
+yaml-check = "yamllint --config-file .yamllint .github/ infra/ docker-compose*.yml"
+
+# Shell check
+shell-check = """
+    shellcheck --severity=warning \
+        scripts/cleanup-docker.sh \
+        scripts/claim-netdata.sh \
+        scripts/install-netdata.sh \
+        entrypoint.sh \
+        migrate.sh 2>&1 || true
+"""
+
+# Format all (prettier for md/yaml)
+format-all = "cd {root} && pnpm run format"
+format-all-check = "cd {root} && pnpm run format:check"
+
+# Combined lint runner
+lint-all = """
+    ruff check app/ core/ tests/ --output-format=github && \
+    cd {root} && pnpm run lint:ci
+"""
+
+# All formatting (Python + JS/CSS/JSON + Markdown + YAML)
+format-all-fix = """
+    ruff format app/ core/ tests/ && \
+    cd {root} && pnpm run format && \
+    cd {root} && pnpm run lint:js
+"""
 
 # ============================================
 # TYPE CHECK ENVIRONMENT
@@ -189,7 +228,7 @@ installer = "uv"
 features = ["type"]
 
 [tool.hatch.envs.type.scripts]
-check = "mypy app/ --ignore-missing-imports --install-types --non-interactive"
+check = "mypy app/ core/ --ignore-missing-imports --install-types --non-interactive"
 
 # ============================================
 # TEST ENVIRONMENT WITH MATRIX SUPPORT
@@ -205,12 +244,12 @@ python = ["3.12"]
 db = ["sqlite"]
 
 [tool.hatch.envs.test.scripts]
-unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov-report=xml --cov-report=term-missing -n auto"
-integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov-report=xml --cov-report=term-missing -n auto"
+unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
+integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
 # Run all tests (both unit and integration)
-all = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing -n auto"
+all = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
 # Coverage scripts
-cov = "pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing"
+cov = "pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing"
 "cov-report" = "coverage report --format=terminal --show-missing"
 "cov-html" = "coverage html"
 
@@ -226,16 +265,16 @@ features = ["test", "lint", "type", "security"]
 
 [tool.hatch.envs.ci.scripts]
 # Lint scripts
-lint = "ruff check app/ tests/ --output-format=github"
-"lint-format" = "ruff format --check app/ tests/"
+lint = "ruff check app/ core/ tests/ --output-format=github"
+"lint-format" = "ruff format --check app/ core/ tests/"
 # Type check
-type-check = "mypy app/ --ignore-missing-imports --install-types --non-interactive"
+type-check = "mypy app/ core/ --ignore-missing-imports --install-types --non-interactive"
 # Tests
-unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov-report=xml --cov-report=term-missing -n auto"
-integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov-report=xml --cov-report=term-missing -n auto"
+unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
+integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
 # Security
-"security-safety" = "safety scan --policy-file .safety-policy.yml --output json > security-report.json 2>&1 || true"
-"security-safety-check" = "safety scan --policy-file .safety-policy.yml --output json || true"
+"security-safety" = "safety --stage cicd scan --policy-file .safety-policy.yml --output json > security-report.json"
+"security-safety-check" = "safety --stage cicd scan --policy-file .safety-policy.yml --output json > security-report.json"
 
 # Environment variable overrides for CI
 [tool.hatch.envs.ci.env-vars]
@@ -253,9 +292,10 @@ skip-install = true
 dependency-groups = ["security"]
 
 [tool.hatch.envs.security.scripts]
-scan-bandit = "bandit -r app/ -f screen --confidence-level high --severity-level medium"
+scan-secrets = "detect-secrets-hook --baseline .secrets.baseline $(git ls-files ':!:app/static/js/htmx.min.js' ':!:frontend/css/dist/*' ':!:frontend/pnpm-lock.yaml' ':!:infra/ssl/*' ':!:pnpm-lock.yaml' ':!:uv.lock')"
+scan-bandit = "bandit -r app/ core/ -f screen --confidence-level high --severity-level medium"
 scan-safety = "safety scan --json --output=security-report.json || true"
-"bandit-report" = "bandit -r app/ -f html -o bandit_report.html"
+"bandit-report" = "bandit -r app/ core/ -f html -o bandit_report.html"
 "safety-report" = "safety scan --json --output=security-report.json || true"
 
 # ============================================
@@ -301,7 +341,7 @@ retry-delay = 1
 
 # Override coverage based on environment
 [tool.hatch.envs.hatch-test.overrides]
-env.COVERAGE.run = { value = { source = ["app"], branch = true, omit = ["*/tests/*", "*/migrations/*"] } }
+env.COVERAGE.run = { value = { source = ["app", "core"], branch = true, omit = ["*/tests/*", "*/migrations/*"] } }
 
 # ============================================
 # BUILD ENVIRONMENT CONFIGURATION
@@ -325,6 +365,7 @@ HATCH_BUILD_NO_PERMISSION_WARNING = "1"
 # Include Python source files and non-Python assets
 include = [
     "app/**/*.py",
+    "core/**/*.py",
     "worker/**/*.py",
     "alembic/**/*.py",
     "alembic.ini",
@@ -336,6 +377,7 @@ include = [
 # Include source files and non-Python assets
 include = [
     "app/**/*.py",
+    "core/**/*.py",
     "worker/**/*.py",
     "pyproject.toml",
     "README.md",
@@ -376,7 +418,7 @@ addopts = "-ra -q"
 # COVERAGE CONFIGURATION
 # ============================================
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "core"]
 branch = true
 omit = [
     "*/tests/*",
@@ -449,6 +491,13 @@ ignore = [
     "PLR2004",  # magic value comparison
     "PLC0415",  # import order (required for pytest fixtures in conftest.py)
     "B008",  # function call in default argument (required for FastAPI Depends)
+    "C901",  # too complex (legacy code, will refactor incrementally)
+    "PLR0911",  # too many returns (legacy code)
+    "PLR0912",  # too many branches (legacy code)
+    "PLR0915",  # too many statements (legacy code)
+    "PLW0603",  # global statement (required for lazy singleton pattern)
+    "N802",  # function name case (do_GET required by http.server framework)
+    "PLW0406",  # module imports itself (required for test mocking)
 ]
 
 [tool.ruff.format]
@@ -458,7 +507,7 @@ line-ending = "auto"
 skip-magic-trailing-comma = false
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "worker", "tests"]
+known-first-party = ["app", "core", "worker", "tests"]
 
 # ============================================
 # MYPY CONFIGURATION
@@ -483,6 +532,10 @@ module = "app.*"
 ignore_errors = false
 
 [[tool.mypy.overrides]]
+module = "core.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true
 
@@ -494,7 +547,7 @@ ignore_errors = false
 # BANDIT CONFIGURATION
 # ============================================
 [tool.bandit]
-targets = ["app/", "tests/"]
+targets = ["app/", "core/", "tests/"]
 confidence_level = "HIGH"
 severity_level = "MEDIUM"
 exclude = [

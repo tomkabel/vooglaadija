@@ -1,0 +1,172 @@
+# Demo override for chaos engineering live demo
+# Usage: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+#
+# This override:
+#   1. Enables the Chaos Injection API (FEATURE_CHAOS_API_ENABLED=true)
+#   2. Adds Prometheus scraping API/worker metrics and loading alert rules
+#   3. Adds Grafana with the 4-panel resilience dashboard pre-loaded
+#   4. Seeds demo user + 8 pending download jobs (primed on login via demo-login)
+#
+# Access: Grafana at http://localhost:3000 using GF_SECURITY_ADMIN_USER and
+# GF_SECURITY_ADMIN_PASSWORD from .env or .env.example.
+
+services:
+  api:
+    environment:
+      FEATURE_CHAOS_API_ENABLED: 'true'
+      FEATURE_THROTTLE_PREEMPTIVE_ENABLED: 'true'
+    depends_on:
+      seed-demo-data:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      FEATURE_CHAOS_API_ENABLED: 'true'
+      FEATURE_THROTTLE_PREEMPTIVE_ENABLED: 'true'
+
+  seed-demo-data:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    image: vooglaadija-seed-demo:latest
+    container_name: ytprocessor-seed-demo
+    environment:
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: ${DB_NAME:-ytprocessor}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      STORAGE_PATH: /app/storage
+    volumes:
+      - storage:/app/storage:Z
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      ytprocessor-network:
+        aliases:
+          - seed-demo-data
+    user: '1000:1000'
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges=true
+    read_only: false
+    command: >
+      sh -c " /opt/venv/bin/python -m scripts.seed_demo_data "
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=seed-demo-data,container_name=ytprocessor-seed-demo,environment=${ENVIRONMENT:-production},project=ytprocessor'
+
+  # ============================================
+  # Prometheus - scrapes app metrics and loads alert rules
+  # ============================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ytprocessor-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.enable-lifecycle
+      # 12h retention gives enough historical data for meaningful dashboard visualization
+      # during demo sessions without excessive disk usage (~2-4 GB for 12h at 15s scrape).
+      - --storage.tsdb.retention.time=12h
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - '127.0.0.1:9090:9090'
+    depends_on:
+      - api
+    security_opt:
+      - no-new-privileges=true
+    user: '65534:65534'
+    cap_drop:
+      - ALL
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=prometheus,container_name=ytprocessor-prometheus,environment=${ENVIRONMENT:-production},project=ytprocessor'
+    networks:
+      ytprocessor-network:
+        aliases:
+          - prometheus
+    healthcheck:
+      test:
+        ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:9090/-/healthy']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================
+  # Grafana — 4-panel resilience dashboard
+  # ============================================
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: ytprocessor-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:?GF_SECURITY_ADMIN_USER is required}
+      GF_SECURITY_ADMIN_PASSWORD:
+        ${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD is required}
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/vooglaadija-chaos-demo.json
+      GF_PANELS_DISABLE_SANITIZE_HTML: 'true'
+    volumes:
+      - ./infra/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./infra/grafana/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/dashboard-provider.yml:ro
+      # Demo dashboard — clean 4-panel layout for live presentation
+      - ./monitoring/grafana-dashboard-demo.json:/etc/grafana/provisioning/dashboards/vooglaadija-chaos-demo.json:ro
+      # Full 13-panel dashboard available at: /dashboard/import? (via provisioning folder)
+      - ./monitoring/grafana-dashboard-full.json:/etc/grafana/provisioning/dashboards/vooglaadija-chaos-full.json:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '3000:3000'
+    depends_on:
+      - prometheus
+      - loki
+    security_opt:
+      - no-new-privileges=true
+    user: '472:472'
+    cap_drop:
+      - ALL
+    logging:
+      driver: 'loki'
+      options:
+        loki-url: 'http://localhost:3100/loki/api/v1/push'
+        loki-external-labels: 'service=grafana,container_name=ytprocessor-grafana,environment=${ENVIRONMENT:-production},project=ytprocessor'
+    networks:
+      ytprocessor-network:
+        aliases:
+          - grafana
+    healthcheck:
+      test:
+        ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  prometheus_data:
+    name: ytprocessor-prometheus-data
+  grafana_data:
+    name: ytprocessor-grafana-data

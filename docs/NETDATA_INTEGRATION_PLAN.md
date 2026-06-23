@@ -9,7 +9,9 @@
 
 ## Executive Summary
 
-This plan outlines the integration of **NetData** for real-time observability alongside existing Prometheus metrics, plus implementation of recommended Python library enhancements to improve logging, serialization, async performance, and database operations.
+This plan outlines the integration of **NetData** for real-time observability alongside existing
+Prometheus metrics, plus implementation of recommended Python library enhancements to improve
+logging, serialization, async performance, and database operations.
 
 **Current State:**
 
@@ -23,8 +25,8 @@ This plan outlines the integration of **NetData** for real-time observability al
 **Recommended Approach:**
 
 1. **NetData Cloud** for real-time system/container monitoring (complements Prometheus)
-2. **Keep Prometheus** for application-level metrics (existing implementation)
-3. Implement enhancements in priority order
+1. **Keep Prometheus** for application-level metrics (existing implementation)
+1. Implement enhancements in priority order
 
 ---
 
@@ -62,13 +64,14 @@ This plan outlines the integration of **NetData** for real-time observability al
 
 ### 1.2 NetData Deployment Options
 
-|text Option                    | Description                        | Best For                            |
+| text Option               | Description                        | Best For                            |
 | ------------------------- | ---------------------------------- | ----------------------------------- |
 | **NetData Cloud (SaaS)**  | Free tier, 1-day retention         | Development, small deployments      |
 | **NetData Cloud On-Prem** | Self-hosted, full data sovereignty | Production, compliance requirements |
 | **Standalone Parents**    | Self-hosted central NetData        | Single server, no cloud             |
 
-**Recommendation:** Start with **NetData Cloud (SaaS)** for easiest setup, migrate to On-Prem if compliance requires.
+**Recommendation:** Start with **NetData Cloud (SaaS)** for easiest setup, migrate to On-Prem if
+compliance requires.
 
 ---
 
@@ -210,7 +213,7 @@ echo "Or via NetData Cloud: https://app.netdata.cloud"
 
 **File:** `infra/netdata/go.d.conf` (create directory structure)
 
-```
+```text
 # NetData Collector Configuration
 # Location: /etc/netdata/go.d.conf or mounted volume
 
@@ -1040,10 +1043,10 @@ jobs:
 
 ### A. NetData Cloud Setup
 
-1. **Create Account:** https://app.netdata.cloud
-2. **Create Space:** Organize by environment (dev/staging/prod)
-3. **Create Room:** Specific room for vooglaadija
-4. **Claim Nodes:** Use claim token to connect agents
+1. **Create Account:** <https://app.netdata.cloud>
+1. **Create Space:** Organize by environment (dev/staging/prod)
+1. **Create Room:** Specific room for vooglaadija
+1. **Claim Nodes:** Use claim token to connect agents
 
 ### B. Environment Variables
 
@@ -1171,10 +1174,10 @@ curl -s http://localhost:19999/api/v1/info | jq '.cloud_enabled'
 
 ### Useful Links
 
-- NetData Docs: https://learn.netdata.cloud/docs/
-- Integrations: https://www.netdata.cloud/integrations/
-- GitHub: https://github.com/netdata/netdata
-- Community: https://community.netdata.cloud/
+- NetData Docs: <https://learn.netdata.cloud/docs/>
+- Integrations: <https://www.netdata.cloud/integrations/>
+- GitHub: <https://github.com/netdata/netdata>
+- Community: <https://community.netdata.cloud/>
 
 ---
 

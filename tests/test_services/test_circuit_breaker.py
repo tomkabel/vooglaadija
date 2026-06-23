@@ -109,15 +109,20 @@ class TestCircuitBreakerOpenState:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_state_property_shows_half_open_after_timeout(self):
-        """Mock time.monotonic to simulate timeout elapsed; assert HALF_OPEN."""
+    async def test_state_property_does_not_transition_without_lock(self):
+        """state property returns current _state without OPEN→HALF_OPEN transition.
+
+        The transition only happens under the async lock via can_execute().
+        The state property is read-only and must not mutate state.
+        """
         cb = CircuitBreaker(name="test", failure_threshold=1, reset_timeout=30.0)
         cb._state = CircuitState.OPEN
         cb._last_failure_time = 0.0
 
         with patch("app.services.circuit_breaker.time.monotonic", return_value=31.0):
             state = cb.state
-            assert state == CircuitState.HALF_OPEN
+            # State property returns stored _state without mutating it
+            assert state == CircuitState.OPEN
 
     @pytest.mark.asyncio
     async def test_check_and_transition_to_half_open_under_lock(self):
@@ -130,6 +135,20 @@ class TestCircuitBreakerOpenState:
             await cb.can_execute()
             assert cb._state == CircuitState.HALF_OPEN
             assert cb._last_failure_time is None
+
+    @pytest.mark.asyncio
+    async def test_is_accepting_transitions_open_breaker_for_background_drain(self):
+        """Background drain checks should advance OPEN -> HALF_OPEN after timeout."""
+        cb = CircuitBreaker(name="test", failure_threshold=1, reset_timeout=30.0)
+        cb._state = CircuitState.OPEN
+        cb._last_failure_time = 0.0
+
+        with patch("app.services.circuit_breaker.time.monotonic", return_value=31.0):
+            accepting = await cb.is_accepting()
+
+        assert accepting is True
+        assert cb._state == CircuitState.HALF_OPEN
+        assert cb._last_failure_time is None
 
     @pytest.mark.asyncio
     async def test_open_state_does_not_transition_before_timeout(self):
@@ -323,7 +342,9 @@ class TestExtractMediaWithCircuitBreaker:
                 "https://youtube.com/watch?v=test", "/storage"
             )
             assert result == ("file_path", "title")
-            mock_extract.assert_called_once_with("https://youtube.com/watch?v=test", "/storage")
+            mock_extract.assert_called_once_with(
+                "https://youtube.com/watch?v=test", "/storage", progress_callback=None
+            )
 
     @pytest.mark.asyncio
     async def test_extract_media_logs_circuit_state(self):

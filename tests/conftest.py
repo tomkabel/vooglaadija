@@ -1,4 +1,5 @@
 import os
+import sys
 
 # CRITICAL: Set environment variables BEFORE any other imports
 os.environ["TESTING"] = "1"
@@ -9,11 +10,19 @@ _worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
 _test_db_path = os.path.abspath(f"test_{_worker_id}.db")
 _test_db_url = f"sqlite+aiosqlite:///{_test_db_path}"
 
-# Force reconfigure the database URL before any app imports
-# This ensures the app uses SQLite instead of PostgreSQL
-import app.config  # noqa: E402
+# Remove stale per-worker database from previous runs.
+# create_all skips existing tables so a stale file with an older schema
+# won't be updated to match the current model definitions.
+try:
+    os.remove(_test_db_path)
+except OSError:
+    pass
 
-app.config.settings.database_url = _test_db_url
+# Force reconfigure the database URL before any app imports.
+# This ensures the app uses SQLite instead of PostgreSQL.
+import core.config  # noqa: E402
+
+core.config.settings.database_url = _test_db_url
 
 from collections.abc import AsyncGenerator  # noqa: E402
 
@@ -25,8 +34,10 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 )
 from sqlalchemy.pool import NullPool  # noqa: E402
 
-import app.models  # noqa: E402
-from app.database import Base, get_db  # noqa: E402
+from core import models as core_models  # noqa: E402
+from core.database import Base, get_db  # noqa: E402
+
+_REGISTERED_MODEL_EXPORTS = core_models.__all__
 
 # Now import app - it will use the SQLite URL we set above
 from app.main import app as fastapi_app  # noqa: E402
@@ -74,6 +85,35 @@ async def setup_database() -> AsyncGenerator[None, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def _reset_shutdown_event():
+    """Reset global worker shutdown state before each test.
+
+    Some tests set shutdown_event or shutdown_requested_at to trigger shutdown behavior,
+    which persists across tests in the same xdist worker process.
+    """
+    try:
+        from worker.state import shutdown_event
+
+        shutdown_event.clear()
+    except Exception:
+        pass
+
+    worker_main = sys.modules.get("worker.main")
+    if worker_main is not None:
+        worker_main.shutdown_requested_at = None
+
+
+@pytest.fixture(autouse=True)
+def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid Redis-backed blacklist checks for ordinary authenticated test requests."""
+
+    async def _not_blacklisted(_token_jti: str) -> bool:
+        return False
+
+    monkeypatch.setattr("app.api.dependencies.is_token_blacklisted", _not_blacklisted)
+
+
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Provide a database session for tests."""
@@ -87,16 +127,27 @@ def sample_url() -> str:
 
 
 async def create_test_user_and_login(
-    client, email: str = "downloads@example.com", password: str = "securepassword123"
-) -> dict:
-    """Helper to register and login a test user, returning auth headers."""
+    client,
+    email: str = "downloads@example.com",
+    password: str = "securepassword123",
+    _lock=None,
+) -> str:
+    """Register and login a test user using a unique email per call.
+
+    Uses a UUID prefix on the email to avoid isolation issues with
+    parallel xdist workers. Returns the access token string.
+
+    The optional _lock parameter is unused (kept for API compatibility).
+    """
+    import uuid
+
+    unique_email = f"{uuid.uuid4().hex[:8]}@{email.split('@')[1]}"
     await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password},
+        json={"email": unique_email, "password": password},
     )
     response = await client.post(
         "/api/v1/auth/login",
-        json={"email": email, "password": password},
+        json={"email": unique_email, "password": password},
     )
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    return response.json()["access_token"]

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Docker Engine 20.10+
-- Docker Compose v2.0+ (or docker-compose plugin)
+- Docker Compose v2 plugin (`docker compose`)
 - SSL certificates in `infra/ssl/` directory
 
 ## Quick Start
@@ -12,13 +12,16 @@
 
 ```bash
 # Copy and edit environment file
-cp .env.production .env
+cp .env.example .env
 
 # Generate strong passwords and keys
+# DEPLOY_DOMAIN=your-domain.com
 # DB_PASSWORD=<SET_STRONG_PASSWORD_MIN_32_CHARS>
 # REDIS_PASSWORD=<SET_STRONG_REDIS_PASSWORD>
 # SECRET_KEY=<GENERATE_AND_SET_32_CHAR_SECRET>
 # CORS_ORIGINS=https://your-domain.com
+# FEATURE_METRICS_ENABLED=true
+# FEATURE_TRACING_ENABLED=true
 ```
 
 ### 2. Prepare SSL Certificates
@@ -28,25 +31,23 @@ Place your SSL certificates in `infra/ssl/`:
 - `fullchain.pem` - Full certificate chain
 - `privkey.pem` - Private key
 
-### 3. Update Nginx Configuration
+### 3. Confirm Nginx Domain Configuration
 
-Edit `infra/nginx/nginx.production.conf` and replace `your-domain.com` with your actual domain:
-
-```nginx
-server_name your-domain.com;  # Replace with your actual domain
-```
+`infra/nginx/nginx.production.conf` is a Compose template. The production override mounts it as
+`default.conf.template` and substitutes `${DEPLOY_DOMAIN}` at container startup. Do not hardcode the
+domain in the nginx file; set `DEPLOY_DOMAIN` in `.env`.
 
 ### 4. Deploy
 
 ```bash
 # Build and start all services
-docker-compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 
 # View logs
-docker-compose -f docker-compose.yml -f docker-compose.production.yml logs -f
+docker compose -f docker-compose.yml -f docker-compose.production.yml logs -f
 
 # Check service status
-docker-compose -f docker-compose.yml -f docker-compose.production.yml ps
+docker compose -f docker-compose.yml -f docker-compose.production.yml ps
 ```
 
 ## Service Architecture
@@ -74,17 +75,20 @@ Internet → Nginx (443) → API (8000) → PostgreSQL (5432)
 **CRITICAL**: Production deployment requires BOTH compose files:
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.production.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
 ```
 
 - `docker-compose.yml` - Base configuration with health checks
-- `docker-compose.production.yml` - Production-specific overrides (TLS, ports)
+- `docker-compose.production.yml` - Production-specific overrides (TLS, ports, production CORS,
+  metrics/tracing defaults, and worker DB pool sizing)
 
-Using only `docker-compose.production.yml` will result in 502 errors because the API health check dependency is not included.
+Using only `docker-compose.production.yml` will result in 502 errors because the API health check
+dependency is not included.
 
 ### Health Checks
 
-The API service has a TCP-based health check on port 8000. Nginx will not start routing traffic until the API is healthy.
+The API service has a TCP-based health check on port 8000. Nginx will not start routing traffic
+until the API is healthy.
 
 ### Troubleshooting
 
@@ -115,7 +119,7 @@ docker exec ytprocessor-nginx cat /var/log/nginx/error.log
 #### Restart a specific service
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.production.yml restart api
+docker compose -f docker-compose.yml -f docker-compose.production.yml restart api
 ```
 
 ### Database Migrations
@@ -133,19 +137,19 @@ docker exec ytprocessor-api python -m alembic upgrade head
 git pull origin main
 
 # Rebuild and restart
-docker-compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 ```
 
 ### Stopping
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.production.yml down
+docker compose -f docker-compose.yml -f docker-compose.production.yml down
 ```
 
 To also remove volumes (WARNING: deletes all data):
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.production.yml down -v
+docker compose -f docker-compose.yml -f docker-compose.production.yml down -v
 ```
 
 ## Security Notes
@@ -153,4 +157,8 @@ docker-compose -f docker-compose.yml -f docker-compose.production.yml down -v
 - Change default passwords in `.env`
 - Use HTTPS in production (redirect from HTTP is configured)
 - Review CORS_ORIGINS for your domain
+- Keep `FEATURE_METRICS_ENABLED=true` and `FEATURE_TRACING_ENABLED=true` unless deliberately
+  disabling observability for a controlled test.
+- Tune worker DB pool sizing with `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW` instead of
+  changing application code.
 - Keep Docker and images updated

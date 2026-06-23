@@ -1,0 +1,134 @@
+{
+  "completed_steps": [
+    {
+      "status": "completed",
+      "step": "step_1",
+      "summary": "Classified as monorepo with 4 parts: API Server (backend), Worker (backend), Frontend (web), Infra (infra)",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_2",
+      "summary": "Found 21 existing docs in docs/",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_3",
+      "summary": "Tech stack: FastAPI + yt-dlp + TailwindCSS",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_4",
+      "summary": "Conditional analysis complete: API routes, data models, services, worker architecture",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_5",
+      "summary": "Source tree analysis written",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_6",
+      "summary": "Dev setup and deployment documented",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_7",
+      "summary": "Integration architecture documented",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_8",
+      "summary": "Architecture docs written for 4 parts",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_9",
+      "summary": "All supporting docs written",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_10",
+      "summary": "Master index generated",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_11",
+      "summary": "Validation complete",
+      "timestamp": "2026-06-21T00:00:00Z"
+    },
+    {
+      "status": "completed",
+      "step": "step_12",
+      "summary": "Workflow complete",
+      "timestamp": "2026-06-21T00:00:00Z"
+    }
+  ],
+  "current_step": "completed",
+  "findings": {
+    "existing_docs_count": 21,
+    "project_classification": "monorepo, 4 parts, FastAPI + yt-dlp + TailwindCSS"
+  },
+  "mode": "full_rescan",
+  "outputs_generated": [
+    "project-scan-report.json",
+    "api-contracts-api.md",
+    "data-models-api.md",
+    "source-tree-analysis.md",
+    "architecture-api.md",
+    "architecture-worker.md",
+    "architecture-frontend.md",
+    "architecture-infra.md",
+    "project-overview.md",
+    "development-guide.md",
+    "integration-architecture.md",
+    "component-inventory-api.md",
+    "component-inventory-worker.md",
+    "index.md"
+  ],
+  "project_knowledge": "/home/tomkabel/Documents/team21-vooglaadija/docs",
+  "project_parts": [
+    {
+      "display_name": "API Server",
+      "part_id": "api",
+      "project_type_id": "backend",
+      "root_path": "app/"
+    },
+    {
+      "display_name": "Worker",
+      "part_id": "worker",
+      "project_type_id": "backend",
+      "root_path": "worker/"
+    },
+    {
+      "display_name": "Frontend",
+      "part_id": "frontend",
+      "project_type_id": "web",
+      "root_path": "frontend/"
+    },
+    {
+      "display_name": "Infrastructure",
+      "part_id": "infra",
+      "project_type_id": "infra",
+      "root_path": "infra/"
+    }
+  ],
+  "project_root": "/home/tomkabel/Documents/team21-vooglaadija",
+  "repository_type": "monorepo",
+  "scan_level": "deep",
+  "timestamps": {
+    "completed": "2026-06-21T00:00:00Z",
+    "last_updated": "2026-06-21T00:00:00Z",
+    "started": "2026-06-21T00:00:00Z"
+  },
+  "workflow_version": "1.2.0"
+}

@@ -28,13 +28,12 @@ jobs:
             // These check-run names correspond to the jobs in fastapi-test.yml
             // and docker-compose-test.yml. We poll until they all complete.
             const requiredChecks = [
-              'Lint with ruff',
+              'Lint (Python + JS + CSS + Markdown + YAML)',
               'Type check with mypy',
               'Unit tests',
               'Integration tests',
               'Security scan',
               'Docker build check',
-              'Test Docker Compose Stack'
             ];
 
             const maxAttempts = 30; // 30 * 20s = 10 minutes
@@ -82,13 +81,13 @@ jobs:
     timeout-minutes: 20
     environment:
       name: production
-      url: https://youtube.tomabel.ee
+      url: https://${{ vars.DEPLOY_DOMAIN }}
     permissions:
       contents: read
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
 
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@dc588b651fe13675773604f8950593fbcf303f58
@@ -97,24 +96,67 @@ jobs:
           log-public-key: false
 
       - name: Add known hosts
-        run: mkdir -p ~/.ssh && grep -qF "${{ secrets.SSH_KNOWN_HOSTS }}" ~/.ssh/known_hosts 2>/dev/null || echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$SSH_KNOWN_HOSTS" ]; then
+            echo "SSH_KNOWN_HOSTS secret is empty"
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
+
+          while IFS= read -r host_key; do
+            [ -n "$host_key" ] || continue
+            grep -qF -- "$host_key" ~/.ssh/known_hosts 2>/dev/null || \
+              printf '%s\n' "$host_key" >> ~/.ssh/known_hosts
+          done <<< "$SSH_KNOWN_HOSTS"
+
+      - name: Prepare deploy payload
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          ENV_FILE_PROD: ${{ secrets.ENV_FILE_PROD }}
+        run: |
+          install -m 700 -d .deploy-payload
+          printf '%s' "$GHCR_PAT" > .deploy-payload/ghcr_pat
+          printf '%s' "$ENV_FILE_PROD" > .deploy-payload/.env
+          chmod 600 .deploy-payload/ghcr_pat .deploy-payload/.env
 
       - name: Deploy to server
         env:
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
-          ENV_B64: ${{ secrets.ENV_FILE_PROD }}
           IMAGE_TAG: ${{ github.sha }}
           GHCR_OWNER: ${{ github.repository_owner }}
           GHCR_REPO: ${{ github.event.repository.name }}
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
         run: |
-          ssh ubuntu@${{ secrets.SERVER_IP }} \
-            "GHCR_PAT='$GHCR_PAT' ENV_B64='$ENV_B64' IMAGE_TAG='$IMAGE_TAG' GHCR_OWNER='$GHCR_OWNER' GHCR_REPO='$GHCR_REPO' bash -s" \
-            < infra/deploy/remote-deploy.sh
+          DEPLOY_TMP_DIR="/tmp/vooglaadija-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh "ubuntu@${SERVER_IP}" "mkdir -p '${DEPLOY_TMP_DIR}' && chmod 700 '${DEPLOY_TMP_DIR}'"
+          scp infra/deploy/remote-deploy.sh "ubuntu@${SERVER_IP}:${DEPLOY_TMP_DIR}/remote-deploy.sh"
+          scp .deploy-payload/ghcr_pat "ubuntu@${SERVER_IP}:${DEPLOY_TMP_DIR}/ghcr_pat"
+          scp .deploy-payload/.env "ubuntu@${SERVER_IP}:${DEPLOY_TMP_DIR}/.env"
+          ssh "ubuntu@${SERVER_IP}" "
+            chmod 700 '${DEPLOY_TMP_DIR}/remote-deploy.sh' &&
+            chmod 600 '${DEPLOY_TMP_DIR}/ghcr_pat' '${DEPLOY_TMP_DIR}/.env' &&
+            IMAGE_TAG='${IMAGE_TAG}' \
+            GHCR_OWNER='${GHCR_OWNER}' \
+            GHCR_REPO='${GHCR_REPO}' \
+            DEPLOY_DOMAIN='${DEPLOY_DOMAIN}' \
+            GHCR_PAT_FILE='${DEPLOY_TMP_DIR}/ghcr_pat' \
+            ENV_FILE_PATH='${DEPLOY_TMP_DIR}/.env' \
+            bash '${DEPLOY_TMP_DIR}/remote-deploy.sh';
+            status=\$?;
+            rm -rf '${DEPLOY_TMP_DIR}';
+            exit \$status
+          "
 
       - name: Post-deploy health check
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
         run: |
           for i in {1..12}; do
-            if curl -sf --max-time 10 https://youtube.tomabel.ee/health; then
+            if curl -fsS --max-time 10 "https://${DEPLOY_DOMAIN}/health" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
               echo "Health check passed"
               exit 0
             fi

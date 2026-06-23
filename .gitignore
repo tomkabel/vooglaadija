@@ -39,6 +39,7 @@ build/
 # Environment & Secrets
 # =============================================
 .env
+.env.local
 .env.*
 !.env.example
 *.pem
@@ -52,6 +53,20 @@ infra/certbot/cloudflare.ini
 cloudflare.ini
 
 # =============================================
+# AI Agent / Dev Tooling
+# =============================================
+.claude/
+.codex/
+.commandcode/
+.forge/
+_bmad/
+_bmad-output/
+kilo-exports-*/
+skills.txt
+unoptimized_prompt.md
+critique.md
+
+# =============================================
 # Tooling & CLI Config
 # =============================================
 kilo.json
@@ -62,9 +77,21 @@ skills-lock.json
 AGENTS.md
 
 # =============================================
+# Formatter & linter tool caches
+# =============================================
+.biome/
+*.biome.lock
+.markdownlint-cli2-cache/
+.pre-commit/
+.yamllint-cache/
+.shellcheckrc.tmp
+
+# =============================================
 # Databases & Data
 # =============================================
 *.db
+*.db-journal
+*.db-wal
 *.sqlite
 *.sqlite3
 test_*.db
@@ -150,3 +177,6 @@ vooglaadija-slides/
 .github/project-config.json
 docs/CRITIQUE-ISSUES.md
 .openchange/
+.agents/
+.kilocode/skills/*
+.agents/.story-automator-active

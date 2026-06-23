@@ -7,57 +7,41 @@ job status updates, replacing the polling-based SSE implementation.
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from typing import Any
 
-import redis.asyncio as aioredis
-
-from app.config import settings
-from app.logging_config import get_logger
+from core.logging_config import get_logger
+from core.redis_client import get_redis_client
 
 logger = get_logger(__name__)
 
 CHANNEL_PREFIX = "job_status"
+PROGRESS_CHANNEL_PREFIX = "job_progress"
 
 
 class PubSubService:
-    """Redis Pub/Sub service for job status broadcasting.
+    """Redis Pub/Sub service for job status and progress broadcasting.
 
     This service provides:
     - publish_job_status(): Publishes job status updates to user-specific channels
+    - publish_job_progress(): Publishes download progress updates to a separate channel
     - subscribe(): Async generator that yields job status updates from Redis pub/sub
+    - subscribe_progress(): Async generator that yields download progress updates
 
-    Channel Pattern: job_status:{user_id}
-    Message Format: JSON with job_id, status, url, file_name, error, created_at, updated_at
+    Channel Patterns:
+      - job_status:{user_id} — status transitions (pending/processing/completed/failed)
+      - job_progress:{user_id} — download progress (percent/speed/ETA)
     """
 
-    def __init__(self, redis_url: str | None = None):
-        """Initialize the PubSubService.
-
-        Args:
-            redis_url: Redis connection URL. Defaults to settings.redis_url.
-        """
-        self.redis_url = redis_url or settings.redis_url
-        self._client: aioredis.Redis | None = None
-
-    async def get_client(self) -> aioredis.Redis:
-        """Get or create Redis client with connection pooling.
+    async def get_client(self) -> Any:
+        """Get the shared Redis client.
 
         Returns:
             Redis client instance.
         """
-        if self._client is None:
-            self._client = aioredis.from_url(
-                self.redis_url,
-                decode_responses=True,
-                max_connections=20,
-            )
-        return self._client
+        return get_redis_client()
 
     async def close(self) -> None:
-        """Close the Redis client connection."""
-        if self._client is not None:
-            await self._client.close()
-            self._client = None
+        """Clear PubSubService wrapper state without closing the shared client."""
 
     def get_channel_for_user(self, user_id: uuid.UUID) -> str:
         """Get the pub/sub channel name for a user.
@@ -69,6 +53,17 @@ class PubSubService:
             Channel name in format 'job_status:{user_id}'.
         """
         return f"{CHANNEL_PREFIX}:{user_id}"
+
+    def get_progress_channel_for_user(self, user_id: uuid.UUID) -> str:
+        """Get the pub/sub channel name for progress updates.
+
+        Args:
+            user_id: The user's UUID.
+
+        Returns:
+            Channel name in format 'job_progress:{user_id}'.
+        """
+        return f"{PROGRESS_CHANNEL_PREFIX}:{user_id}"
 
     async def publish_job_status(self, user_id: uuid.UUID, job_data: dict) -> int:
         """Publish a job status update to a user's channel.
@@ -93,76 +88,145 @@ class PubSubService:
             subscribers=result,
         )
 
-        return result
+        return int(result)
 
-    @asynccontextmanager
-    async def subscription(
-        self, user_id: uuid.UUID
-    ) -> AsyncGenerator[aioredis.client.PubSub, None]:
-        """Create a subscription context for a user's channel.
+    async def publish_job_progress(self, user_id: uuid.UUID, job_data: dict) -> int:
+        """Publish a download progress update to a user's progress channel.
 
         Args:
-            user_id: The user's UUID to subscribe to.
+            user_id: The user's UUID to publish to.
+            job_data: Dictionary containing job_id and progress info (percent, speed, eta, etc.)
 
-        Yields:
-            PubSub client instance.
+        Returns:
+            Number of subscribers that received the message.
         """
         client = await self.get_client()
-        channel = self.get_channel_for_user(user_id)
+        channel = self.get_progress_channel_for_user(user_id)
+        message = json.dumps(job_data, default=str)
+        result = await client.publish(channel, message)
+
+        logger.debug(
+            "pubsub_progress_published",
+            channel=channel,
+            job_id=job_data.get("id"),
+            percent=job_data.get("progress", {}).get("percent"),
+            subscribers=result,
+        )
+
+        return int(result)
+
+    async def _check_pool_health(self) -> bool:
+        """Check shared Redis connection pool utilization.
+
+        Returns True if pool has sufficient headroom. Logs a warning
+        if >80% of connections are in use, which can happen under
+        reconnect storms with many concurrent SSE subscriptions.
+        Falls back silently on any error (fail-open).
+        """
+        try:
+            client = await self.get_client()
+            pool = client.connection_pool
+            free = getattr(pool, "_available_connections", None)
+            in_use = getattr(pool, "_in_use_connections", None)
+            if free is not None and in_use is not None:
+                total = len(free) + len(in_use)
+                if total > 0 and (len(in_use) / total) > 0.8:
+                    logger.warning(
+                        "pubsub_pool_near_capacity",
+                        used=len(in_use),
+                        total=total,
+                    )
+                    return False
+            return True
+        except Exception:
+            # Fail-open on introspection errors
+            return True
+
+    async def _listen(
+        self,
+        channel: str,
+        log_name: str,
+        yield_raw: bool = False,
+    ) -> AsyncGenerator[dict, None]:
+        """Shared listener loop for any pub/sub channel.
+
+        Args:
+            channel: The Redis pub/sub channel to subscribe to.
+            log_name: Short label used in log messages (e.g. "status", "progress").
+            yield_raw: If True, yield a fallback dict when the payload is not a dict.
+
+        Yields:
+            Parsed JSON dict from each pub/sub message.
+        """
+        client = await self.get_client()
+        if not await self._check_pool_health():
+            logger.warning(
+                "pubsub_pool_low_creating_subscription_anyway",
+                channel=channel,
+                name=log_name,
+            )
         pubsub = client.pubsub()
         await pubsub.subscribe(channel)
 
-        logger.debug("pubsub_subscription_started", channel=channel)
+        logger.debug("pubsub_subscription_started", channel=channel, name=log_name)
 
         try:
-            yield pubsub
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                try:
+                    data = json.loads(message["data"])
+                    if isinstance(data, dict):
+                        logger.debug(
+                            "pubsub_message_received",
+                            channel=message["channel"],
+                            name=log_name,
+                            job_id=data.get("id"),
+                        )
+                        yield data
+                    elif yield_raw:
+                        logger.warning(
+                            "pubsub_non_dict_payload",
+                            channel=message["channel"],
+                            name=log_name,
+                            payload_type=type(data).__name__,
+                            payload=str(data)[:200],
+                        )
+                        yield {"job_id": None, "_raw": data}
+                    else:
+                        logger.warning(
+                            "pubsub_non_dict_payload_skipped",
+                            channel=message["channel"],
+                            name=log_name,
+                            payload_type=type(data).__name__,
+                        )
+                except json.JSONDecodeError as e:
+                    logger.error(
+                        "pubsub_invalid_json",
+                        channel=message["channel"],
+                        name=log_name,
+                        error=str(e),
+                        data=message["data"][:200],
+                    )
         finally:
             try:
                 await pubsub.unsubscribe(channel)
             except Exception as e:
-                logger.exception("pubsub_unsubscribe_failed", channel=channel, error=str(e))
+                logger.exception(
+                    "pubsub_unsubscribe_failed", channel=channel, name=log_name, error=str(e)
+                )
             await pubsub.close()
-            logger.debug("pubsub_subscription_ended", channel=channel)
+            logger.debug("pubsub_subscription_ended", channel=channel, name=log_name)
 
-    async def subscribe(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
-        """Subscribe to a user's job status channel.
+    def subscribe(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
+        """Subscribe to a user's job status channel."""
+        channel = self.get_channel_for_user(user_id)
+        return self._listen(channel, "status", yield_raw=True)
 
-        This is an async generator that yields job status updates
-        as they are published to the user's channel.
-
-        Args:
-            user_id: The user's UUID to subscribe to.
-
-        Yields:
-            Dictionary containing job information.
-        """
-        async with self.subscription(user_id) as pubsub:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    try:
-                        data = json.loads(message["data"])
-                        if isinstance(data, dict):
-                            logger.debug(
-                                "pubsub_message_received",
-                                channel=message["channel"],
-                                job_id=data.get("id"),
-                            )
-                            yield data
-                        else:
-                            logger.warning(
-                                "pubsub_non_dict_payload",
-                                channel=message["channel"],
-                                payload_type=type(data).__name__,
-                                payload=str(data)[:200],
-                            )
-                            yield {"job_id": None, "_raw": data}
-                    except json.JSONDecodeError as e:
-                        logger.error(
-                            "pubsub_invalid_json",
-                            channel=message["channel"],
-                            error=str(e),
-                            data=message["data"][:200],
-                        )
+    def subscribe_progress(self, user_id: uuid.UUID) -> AsyncGenerator[dict, None]:
+        """Subscribe to a user's download progress channel."""
+        channel = self.get_progress_channel_for_user(user_id)
+        return self._listen(channel, "progress", yield_raw=False)
 
     async def health_check(self) -> bool:
         """Check if Redis connection is healthy.
@@ -188,15 +252,15 @@ def get_pubsub_service() -> PubSubService:
     Returns:
         The global PubSubService instance.
     """
-    global _pubsub_service  # noqa: PLW0603
+    global _pubsub_service
     if _pubsub_service is None:
         _pubsub_service = PubSubService()
     return _pubsub_service
 
 
 async def close_pubsub_service() -> None:
-    """Close the global PubSubService instance."""
-    global _pubsub_service  # noqa: PLW0603
+    """Clear the global PubSubService wrapper instance."""
+    global _pubsub_service
     if _pubsub_service is not None:
         await _pubsub_service.close()
         _pubsub_service = None

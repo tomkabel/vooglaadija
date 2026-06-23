@@ -3,13 +3,15 @@
 ## Development Workflow
 
 1. Fork the repository.
-2. Create a branch from `main`:
-   - `feature/<short-description>` — new features
-   - `fix/<short-description>` — bug fixes
-   - `hotfix/<short-description>` — critical production fixes
-3. Commit changes following [Conventional Commits](https://www.conventionalcommits.org/).
-4. Push to your fork and open a Pull Request.
-5. Ensure CI checks pass before requesting review.
+1. Create a branch from `main`:
+
+- `feature/<short-description>` — new features
+- `fix/<short-description>` — bug fixes
+- `hotfix/<short-description>` — critical production fixes
+
+1. Commit changes following [Conventional Commits](https://www.conventionalcommits.org/).
+1. Push to your fork and open a Pull Request.
+1. Ensure CI checks pass before requesting review.
 
 Direct commits to `main` are prohibited.
 
@@ -22,7 +24,8 @@ Direct commits to `main` are prohibited.
 
 ## Running Tests
 
-This project uses [Hatch](https://hatch.pypa.io/) as the environment manager. Commands use Hatch's `env:script` syntax (`hatch run <env>:<script>`).
+This project uses [Hatch](https://hatch.pypa.io/) as the environment manager. Commands use Hatch's
+`env:script` syntax (`hatch run <env>:<script>`).
 
 ```bash
 # Unit tests only

@@ -1,22 +1,22 @@
 {
-  "name": "vooglaadija-frontend",
-  "version": "1.0.0",
-  "description": "Frontend assets for YouTube Link Processor",
-  "scripts": {
-    "dev": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ./css/dist/styles.css --watch",
-    "build": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ./css/dist/styles.css --minify",
-    "deploy": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ./css/dist/styles.css --minify && cp ./css/dist/styles.css ../app/static/css/styles.css",
-    "watch:deploy": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ../app/static/css/styles.css --watch"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.4.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.5.10",
-    "prettier": "^3.0.0"
-  },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
   "dependencies": {
     "htmx.org": "^1.9.12",
     "update-browserslist-db": "^1.2.3"
-  }
+  },
+  "description": "Frontend assets for YouTube Link Processor",
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.10",
+    "prettier": "^3.0.0",
+    "tailwindcss": "^3.4.0"
+  },
+  "name": "vooglaadija-frontend",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ./css/dist/styles.css --minify",
+    "deploy": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ./css/dist/styles.css --minify && cp ./css/dist/styles.css ../app/static/css/styles.css",
+    "dev": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ./css/dist/styles.css --watch",
+    "watch:deploy": "tailwindcss -c ./tailwind.config.js -i ./css/src/styles.css -o ../app/static/css/styles.css --watch"
+  },
+  "version": "1.0.0"
 }
