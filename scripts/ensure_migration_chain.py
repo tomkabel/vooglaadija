@@ -26,6 +26,7 @@ Exit codes:
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -205,6 +206,31 @@ def main() -> int:
     except Exception as exc:
         print(f"ERROR: failed to stamp database — {exc}", file=sys.stderr)
         return 1
+
+    # Now run the actual migrations so DDL isn't skipped.
+    print(
+        "Running alembic upgrade head to apply any missing DDL "
+        "that the previous chain skip might have bypassed.",
+        file=sys.stderr,
+    )
+    upgrade_result = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if upgrade_result.returncode != 0:
+        print(
+            "ERROR: alembic upgrade head failed after stamp — "
+            f"stdout: {upgrade_result.stdout} "
+            f"stderr: {upgrade_result.stderr}",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"alembic upgrade head completed: {upgrade_result.stdout}",
+        file=sys.stderr,
+    )
 
     return 0
 
