@@ -218,6 +218,7 @@ def main() -> int:
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     if upgrade_result.returncode != 0:
         print(
