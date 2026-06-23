@@ -63,9 +63,6 @@ def test_security_ci_runs_secret_scan_without_masking_failures():
     """CI should run secret scanning in the blocking security job."""
     workflow = read_project_file(".github", "workflows", "fastapi-test.yml")
 
-    assert "hatch run security:scan-secrets" in workflow
-    assert "set -e" in workflow
-    assert "uv tool install detect-secrets" in workflow
     # Verify ordering: secret scan comes before bandit scan
     assert workflow.index("Run secret scan") < workflow.index("Run Bandit security scan")
     assert "hatch run security:scan-secrets || true" not in workflow
@@ -75,4 +72,8 @@ def test_security_ci_runs_secret_scan_without_masking_failures():
         workflow,
     )
     assert secret_scan_step is not None
-    assert "continue-on-error: true" not in secret_scan_step.group("body")
+    body = secret_scan_step.group("body")
+    assert "set -e" in body, "Secret scan step missing fail-fast (set -e)"
+    assert "uv tool install" in body, "Secret scan step missing tool install"
+    assert "hatch run security:scan-secrets" in body, "Secret scan step missing scan command"
+    assert "continue-on-error: true" not in body

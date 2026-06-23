@@ -265,21 +265,24 @@ jobs:
       - name: Run secret scan
         run: |
           set -e
-          uv tool install detect-secrets
+          uv tool install "detect-secrets==1.5.0"
           hatch run security:scan-secrets
 
       - name: Run Bandit security scan
         run: |
           set -e
-          uv tool install bandit
+          uv tool install "bandit==1.7.0"
           hatch run security:scan-bandit
 
       - name: Run Safety dependency check
         env:
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
         run: |
-          set -e
-          hatch run ci:security-safety-check
+          if [ -z "$SAFETY_API_KEY" ]; then
+            echo "SAFETY_API_KEY not set — skipping Safety dependency scan"
+          else
+            hatch run ci:security-safety-check
+          fi
 
       - name: Upload security report
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

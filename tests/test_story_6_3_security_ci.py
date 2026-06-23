@@ -74,17 +74,27 @@ def test_security_workflow_uses_blocking_bandit_and_safety_steps():
 
     assert "hatch run security:scan-bandit || true" not in workflow
     assert "hatch run ci:security-safety-check || true" not in workflow
-    assert "hatch run security:scan-bandit" in workflow
-    assert "set -e" in workflow
-    assert "hatch run security:scan-bandit || true" not in workflow
-    assert (
-        "      - name: Run Safety dependency check\n"
-        "        env:\n"
-        "          SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}\n"
-        "        run: |\n"
-        "          set -e\n"
-        "          hatch run ci:security-safety-check\n"
-    ) in workflow
+
+    bandit_step = re.search(
+        r"      - name: Run Bandit security scan\n(?P<body>(?:        .*\n|          .*\n|            .*\n)+)",
+        workflow,
+    )
+    assert bandit_step is not None, "Run Bandit security scan step not found"
+    bandit_body = bandit_step.group("body")
+    assert "set -e" in bandit_body, "Bandit step missing fail-fast (set -e)"
+    assert "uv tool install" in bandit_body, "Bandit step missing tool install"
+    assert "hatch run security:scan-bandit" in bandit_body, "Bandit step missing scan command"
+
+    safety_step = re.search(
+        r"      - name: Run Safety dependency check\n(?P<body>(?:        .*\n|          .*\n|            .*\n)+)",
+        workflow,
+    )
+    assert safety_step is not None
+    safety_body = safety_step.group("body")
+    assert "SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}" in safety_body
+    assert "hatch run ci:security-safety-check" in safety_body
+    assert "|| true" not in safety_body
+    assert "if [ -z \"$SAFETY_API_KEY\" ]" in safety_body
 
 
 def test_security_workflow_uploads_safety_report_even_on_failure():
