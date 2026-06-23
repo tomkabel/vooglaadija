@@ -43,9 +43,7 @@ def test_active_checkout_steps_disable_persisted_git_credentials():
     """Repository checkout steps should not leave GitHub tokens in git config."""
     workflow = read_project_file(".github", "workflows", "fastapi-test.yml")
 
-    checkout_steps = workflow.count(
-        "uses: actions/checkout@"
-    )
+    checkout_steps = workflow.count("uses: actions/checkout@")
     persist_flags = workflow.count("persist-credentials: false")
 
     assert checkout_steps >= 6
