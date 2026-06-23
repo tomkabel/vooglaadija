@@ -94,7 +94,7 @@ def test_security_workflow_uses_blocking_bandit_and_safety_steps():
     assert "SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}" in safety_body
     assert "hatch run ci:security-safety-check" in safety_body
     assert "|| true" not in safety_body
-    assert "if [ -z \"$SAFETY_API_KEY\" ]" in safety_body
+    assert 'if [ -z "$SAFETY_API_KEY" ]' in safety_body
 
 
 def test_security_workflow_uploads_safety_report_even_on_failure():
