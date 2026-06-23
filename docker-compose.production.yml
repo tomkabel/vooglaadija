@@ -97,8 +97,9 @@ services:
           while :; do
             current_marker="$(stat -c %Y /etc/letsencrypt/.nginx-reload-required 2>/dev/null || true)";
             if [ -n "$current_marker" ] && [ "$current_marker" != "$last_reload_marker" ]; then
-              nginx -s reload;
-              last_reload_marker="$current_marker";
+              if nginx -s reload; then
+                last_reload_marker="$current_marker";
+              fi
             fi
             sleep 60;
           done
