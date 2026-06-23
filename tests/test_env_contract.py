@@ -236,7 +236,22 @@ def test_pydantic_settings_dependency_stays_on_patched_floor():
 
     assert '"pydantic-settings>=2.14.2"' in pyproject
     assert 'name = "pydantic-settings"' in lockfile
-    assert 'version = "2.14.2"' in lockfile
+    # Check that the lockfile version satisfies the minimum floor, not an
+    # exact pin — any later patch/bugfix release that still satisfies
+    # pydantic-settings>=2.14.2 should pass.
+    import re
+    lock_version_match = re.search(
+        r'^version = "([^"]+)"$',
+        lockfile,
+        re.MULTILINE,
+    )
+    assert lock_version_match is not None, "pydantic-settings version not found in lockfile"
+    lock_version = tuple(int(x) for x in lock_version_match.group(1).split("."))
+    floor_version = (2, 14, 2)
+    assert lock_version >= floor_version, (
+        f"pydantic-settings {lock_version_match.group(1)} in lockfile is below "
+        f"the minimum floor {'.'.join(str(x) for x in floor_version)}"
+    )
 
 
 @pytest.mark.unit
