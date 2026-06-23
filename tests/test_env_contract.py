@@ -235,17 +235,12 @@ def test_pydantic_settings_dependency_stays_on_patched_floor():
     lockfile = (REPO_ROOT / "uv.lock").read_text()
 
     assert '"pydantic-settings>=2.14.2"' in pyproject
-    assert 'name = "pydantic-settings"' in lockfile
-    # Check that the lockfile version satisfies the minimum floor, not an
-    # exact pin — any later patch/bugfix release that still satisfies
-    # pydantic-settings>=2.14.2 should pass.
+    # Scope the regex to the pydantic-settings package block so we don't
+    # accidentally match a different package's version.
     import re
 
-    lock_version_match = re.search(
-        r'^version = "([^"]+)"$',
-        lockfile,
-        re.MULTILINE,
-    )
+    marker = r'name = "pydantic-settings"\nversion = "([^"]+)"'
+    lock_version_match = re.search(marker, lockfile)
     assert lock_version_match is not None, "pydantic-settings version not found in lockfile"
     lock_version = tuple(int(x) for x in lock_version_match.group(1).split("."))
     floor_version = (2, 14, 2)

@@ -47,8 +47,13 @@ def test_broken_chain_can_be_explicitly_overridden(monkeypatch):
         patch("alembic.config.Config"),
         patch("alembic.script.ScriptDirectory.from_config") as script_dir,
         patch.object(ensure_migration_chain, "_stamp_to_head") as stamp_mock,
+        patch("subprocess.run") as subprocess_mock,
     ):
         script_dir.return_value.get_current_head.return_value = "003"
+        # Mock the alembic upgrade head call that follows stamping
+        subprocess_mock.return_value.returncode = 0
+        subprocess_mock.return_value.stdout = ""
+        subprocess_mock.return_value.stderr = ""
         exit_code = ensure_migration_chain.main()
 
     assert exit_code == 0
