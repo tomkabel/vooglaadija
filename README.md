@@ -6,6 +6,8 @@ _Pronounced voo-gla-tee-ya_ — Media Link Processor
 
 Async video media extraction API with job queue and real-time status streaming.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-youtube.tomabel.ee-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtube.tomabel.ee)
+
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-A41E35?style=for-the-badge&logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0.html)
 [![Version](https://img.shields.io/badge/Version-1.0.0-22D3EE?style=for-the-badge)](https://github.com/tomkabel/team21-vooglaadija)
