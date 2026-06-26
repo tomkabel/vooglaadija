@@ -97,7 +97,7 @@ def register_docs_routes(app: FastAPI) -> None:
 def _inject_inline_script_nonce(html: str, nonce: str) -> str:
     """Add the request nonce to FastAPI's generated inline docs script."""
     return html.replace(
-        "<script>\n    const ui =", f'<script nonce="{nonce}">\n    const ui ='
+        "<script>\n    const ui =", f'<script nonce="{nonce}">\n    const ui =',
     ).replace("<script>\nconst ui =", f'<script nonce="{nonce}">\nconst ui =')
 
 

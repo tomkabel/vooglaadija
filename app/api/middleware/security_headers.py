@@ -18,15 +18,16 @@ async def add_security_headers(request: Request, call_next: Any) -> Any:
     if "Content-Security-Policy" not in response.headers:
         response.headers["Content-Security-Policy"] = (
             f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' 'unsafe-hashes' "
+            f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic' 'unsafe-hashes' "
             f"{FONT_ONLOAD_HANDLER_HASH}; "
-            f"style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; "
+            f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
             f"font-src 'self' https://fonts.gstatic.com; "
             f"img-src 'self' data: blob:; "
             f"connect-src 'self'; "
             f"frame-ancestors 'none'; "
             f"base-uri 'self'; "
-            f"form-action 'self'"
+            f"form-action 'self'; "
+            f"object-src 'none'"
         )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"

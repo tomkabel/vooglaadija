@@ -52,5 +52,5 @@ async def presentation_slides(request: Request) -> TemplateResponse:
     return templates.TemplateResponse(
         request,
         "slides/presentation.html",
-        {},
+        {"nonce": getattr(request.state, "nonce", "")},
     )
