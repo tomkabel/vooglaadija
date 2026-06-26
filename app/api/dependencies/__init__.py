@@ -77,7 +77,7 @@ async def get_current_user_from_cookie(
     if credentials is not None:
         token = credentials.credentials
     else:
-        token = request.cookies.get("access_token")
+        token = request.cookies.get("__Host-access_token")
     return await _resolve_user_from_token(db, token, expected_type=ACCESS_TOKEN_TYPE)
 
 

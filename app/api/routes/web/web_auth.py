@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
+from starlette.templating import _TemplateResponse as TemplateResponse
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
@@ -68,7 +69,7 @@ async def login_page(
     request: Request,
     return_url: str = "/web/downloads",
     error: Annotated[str | None, Query(max_length=100)] = None,
-):
+) -> TemplateResponse:
     """Render login page."""
     token = get_csrf_token(request)
     error_message, field_errors = _resolve_login_errors(error)
@@ -87,7 +88,7 @@ async def login_page(
     return response
 
 
-@router.post("/login")
+@router.post("/login", response_model=None)
 @limiter.limit("5/minute")
 async def login_form(
     request: Request,
@@ -96,7 +97,7 @@ async def login_form(
     email: Annotated[str, Form(max_length=255)],
     password: Annotated[str, Form(max_length=255)],
     return_url: Annotated[str | None, Form(max_length=500)] = None,
-):
+) -> HTMLResponse | RedirectResponse:
     """Handle login form submission via HTMX or regular POST."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
@@ -110,7 +111,7 @@ async def login_form(
         )
     if not user.is_active:
         return _htmx_or_redirect(
-            request, 401, _error_html("Account is inactive"), "/web/login?error=inactive"
+            request, 401, _error_html("Invalid email or password"), "/web/login?error=1"
         )
     access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
@@ -122,7 +123,7 @@ async def login_form(
 async def register_page(
     request: Request,
     error: Annotated[str | None, Query(max_length=100)] = None,
-):
+) -> TemplateResponse:
     """Render register page."""
     token = get_csrf_token(request)
     error_message, field_errors = _resolve_register_errors(error)
@@ -137,7 +138,7 @@ async def register_page(
     return response
 
 
-@router.post("/register")
+@router.post("/register", response_model=None)
 @limiter.limit("5/minute")
 async def register_form(
     request: Request,
@@ -145,29 +146,29 @@ async def register_form(
     password: Annotated[str, Form(max_length=255)],
     password_confirm: Annotated[str, Form(max_length=255)],
     db: DbSession,
-):
+) -> HTMLResponse | RedirectResponse:
     """Handle registration form submission via HTMX or regular POST."""
     user, error_response = await _register_user_or_error_response(
         request, email, password, password_confirm, db
     )
     if error_response is not None:
         return error_response
-    assert user is not None
+    assert user is not None  # noqa: S101
     access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
     return _register_success_response(request, access_token, refresh_token)
 
 
-@router.post("/demo-login")
+@router.post("/demo-login", response_model=None)
 @limiter.limit("3/minute")
-async def demo_login(request: Request, db: DbSession):
+async def demo_login(request: Request, db: DbSession) -> HTMLResponse | RedirectResponse:
     """Authenticate as the pre-seeded demo user and redirect to downloads."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
         )
     user = await _demo_user_or_raise(db, DEMO_EMAIL)
-    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
     try:
         await _prime_demo_jobs(user.id, db)
@@ -179,21 +180,21 @@ async def demo_login(request: Request, db: DbSession):
     return redirect
 
 
-@router.post("/logout")
-async def logout(request: Request):
+@router.post("/logout", response_model=None)
+async def logout(request: Request) -> HTMLResponse | RedirectResponse:
     """Clear auth cookies and redirect to login."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf"
         )
-    await _blacklist_token_cookie(request.cookies.get("access_token"))
-    await _blacklist_token_cookie(request.cookies.get("refresh_token"))
+    await _blacklist_token_cookie(request.cookies.get("__Host-access_token"))
+    await _blacklist_token_cookie(request.cookies.get("__Host-refresh_token"))
     redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
     clear_token_cookies(redirect)
     return redirect
 
 
-@router.post("/settings/password")
+@router.post("/settings/password", response_model=None)
 @limiter.limit("10/minute")
 async def change_password(
     request: Request,
@@ -202,7 +203,7 @@ async def change_password(
     new_password_confirm: Annotated[str, Form(max_length=255)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse | RedirectResponse:
     """Change current user's password and rotate CSRF after success."""
     return await _change_password_response(
         request,

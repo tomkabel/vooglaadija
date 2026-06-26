@@ -37,12 +37,9 @@ def _make_token(
 
 def create_access_token(
     subject: UUID | str,
-    email: str | None = None,
     token_version: int = 1,
 ) -> str:
     extra: dict[str, Any] = {"user_id": str(subject)}
-    if email:
-        extra["email"] = email
     if token_version > 1:
         extra["ver"] = token_version
     return _make_token(
@@ -128,7 +125,7 @@ def set_token_cookies(
     response: "Response", access_token: str, refresh_token: str, secure: bool = True
 ) -> None:
     response.set_cookie(
-        key="access_token",
+        key="__Host-access_token",
         value=access_token,
         httponly=True,
         secure=secure,
@@ -137,7 +134,7 @@ def set_token_cookies(
         max_age=settings.access_token_expire_minutes * 60,
     )
     response.set_cookie(
-        key="refresh_token",
+        key="__Host-refresh_token",
         value=refresh_token,
         httponly=True,
         secure=secure,
@@ -148,5 +145,5 @@ def set_token_cookies(
 
 
 def clear_token_cookies(response: "Response") -> None:
-    response.delete_cookie(key="access_token", path="/")
-    response.delete_cookie(key="refresh_token", path="/")
+    response.delete_cookie(key="__Host-access_token", path="/")
+    response.delete_cookie(key="__Host-refresh_token", path="/")

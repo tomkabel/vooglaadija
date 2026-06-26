@@ -254,7 +254,7 @@ async def test_authenticated_dashboard_and_settings_render_accessible_controls()
     """Authenticated pages render keyboard-reachable controls without gray-500 text."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         access_token = await create_test_user_and_login(client)
-        cookies = {"access_token": access_token}
+        cookies = {"__Host-access_token": access_token}
         dashboard_response = await client.get("/web/downloads", cookies=cookies)
         settings_response = await client.get("/web/settings", cookies=cookies)
 
@@ -297,7 +297,7 @@ async def test_settings_error_state_renders_accessible_error_contract():
         access_token = await create_test_user_and_login(client)
         response = await client.get(
             "/web/settings?error=bad_current_password",
-            cookies={"access_token": access_token},
+            cookies={"__Host-access_token": access_token},
         )
 
     assert response.status_code == 200

@@ -157,10 +157,10 @@ async def test_settings_page_username_update_and_delete_account_smoke_flow():
     ) as client:
         await do_register(client, email, password)
         csrf_token = await do_login(client, email, password)
-        access_token = client.cookies.get("access_token", "")
+        access_token = client.cookies.get("__Host-access_token", "")
 
         settings_response = await client.get(
-            "/web/settings", cookies={"access_token": access_token}
+            "/web/settings", cookies={"__Host-access_token": access_token}
         )
         csrf_token = get_csrf_from_response(settings_response) or csrf_token
 
@@ -168,11 +168,11 @@ async def test_settings_page_username_update_and_delete_account_smoke_flow():
             "/web/settings/username",
             data={"username": "  story33-user  "},
             headers={"X-CSRF-Token": csrf_token},
-            cookies={"access_token": access_token},
+            cookies={"__Host-access_token": access_token},
         )
 
         settings_after_update = await client.get(
-            "/web/settings", cookies={"access_token": access_token}
+            "/web/settings", cookies={"__Host-access_token": access_token}
         )
         csrf_token = get_csrf_from_response(settings_after_update) or csrf_token
 
@@ -180,7 +180,7 @@ async def test_settings_page_username_update_and_delete_account_smoke_flow():
             "/web/settings/delete-account",
             data={"password": password, "confirm_text": "DELETE"},
             headers={"X-CSRF-Token": csrf_token},
-            cookies={"access_token": access_token},
+            cookies={"__Host-access_token": access_token},
         )
 
     assert settings_response.status_code == 200
@@ -202,10 +202,10 @@ async def test_settings_username_htmx_error_returns_fragment():
     ) as client:
         await do_register(client, email, password)
         csrf_token = await do_login(client, email, password)
-        access_token = client.cookies.get("access_token", "")
+        access_token = client.cookies.get("__Host-access_token", "")
 
         settings_response = await client.get(
-            "/web/settings", cookies={"access_token": access_token}
+            "/web/settings", cookies={"__Host-access_token": access_token}
         )
         csrf_token = get_csrf_from_response(settings_response) or csrf_token
 
@@ -213,7 +213,7 @@ async def test_settings_username_htmx_error_returns_fragment():
             "/web/settings/username",
             data={"username": "ab"},
             headers={"HX-Request": "true", "X-CSRF-Token": csrf_token},
-            cookies={"access_token": access_token},
+            cookies={"__Host-access_token": access_token},
         )
 
     assert username_response.status_code == 400
@@ -232,7 +232,7 @@ async def test_delete_account_cleanup_failure_preserves_user_and_jobs(tmp_path):
     ) as client:
         await do_register(client, email, password)
         csrf_token = await do_login(client, email, password)
-        access_token = client.cookies.get("access_token", "")
+        access_token = client.cookies.get("__Host-access_token", "")
 
         async with TestingSessionLocal() as session:
             user_result = await session.execute(select(User).where(User.email == email))
@@ -250,7 +250,7 @@ async def test_delete_account_cleanup_failure_preserves_user_and_jobs(tmp_path):
             job_id = job.id
 
         settings_response = await client.get(
-            "/web/settings", cookies={"access_token": access_token}
+            "/web/settings", cookies={"__Host-access_token": access_token}
         )
         csrf_token = get_csrf_from_response(settings_response) or csrf_token
 
@@ -260,7 +260,7 @@ async def test_delete_account_cleanup_failure_preserves_user_and_jobs(tmp_path):
                 "/web/settings/delete-account",
                 data={"password": password, "confirm_text": "DELETE"},
                 headers={"X-CSRF-Token": csrf_token},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
     async with TestingSessionLocal() as session:

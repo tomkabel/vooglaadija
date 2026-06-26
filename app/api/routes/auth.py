@@ -1,6 +1,7 @@
 """Authentication endpoints (REST API)."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -144,7 +145,7 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     set_token_cookies(response, access_token, refresh_token, secure=settings.cookie_secure)
@@ -152,7 +153,7 @@ async def login(
     return Token(
         access_token=access_token,
         refresh_token=refresh_token,
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106
     )
 
 
@@ -203,7 +204,7 @@ async def refresh(
     # This allows JS-free refresh via credentials: 'include' sending the cookie
     refresh_token_str = token_refresh.refresh_token if token_refresh else None
     if not refresh_token_str:
-        refresh_token_str = request.cookies.get("refresh_token")
+        refresh_token_str = request.cookies.get("__Host-refresh_token")
 
     if not refresh_token_str:
         raise HTTPException(
@@ -256,7 +257,7 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    access_token = create_access_token(user.id, token_version=user.token_version)
     new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     # Set JWT tokens as HttpOnly cookies for HTMX/browser auth
@@ -265,7 +266,7 @@ async def refresh(
     return Token(
         access_token=access_token,
         refresh_token=new_refresh_token,
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106
     )
 
 
@@ -290,8 +291,8 @@ async def me(current_user: CurrentUser) -> UserResponse:
 
 async def _blacklist_token_cookie(
     token_str: str | None,
-    verify_fn,
-    blacklist_fn,
+    verify_fn: Any,
+    blacklist_fn: Any,
 ) -> None:
     """Extract jti from a token cookie and blacklist it if valid."""
     if not token_str:
@@ -307,7 +308,7 @@ async def _blacklist_token_cookie(
 
 
 @router.post("/logout")
-async def logout(request: Request):
+async def logout(request: Request) -> RedirectResponse:
     """Clear auth cookies and redirect to login.
 
     Logout is a POST action to prevent CSRF from logout links.
@@ -317,12 +318,12 @@ async def logout(request: Request):
     from app.services.token_blacklist import blacklist_token
 
     await _blacklist_token_cookie(
-        request.cookies.get("access_token"),
+        request.cookies.get("__Host-access_token"),
         verify_token,
         blacklist_token,
     )
     await _blacklist_token_cookie(
-        request.cookies.get("refresh_token"),
+        request.cookies.get("__Host-refresh_token"),
         verify_token,
         blacklist_token,
     )

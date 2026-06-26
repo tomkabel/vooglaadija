@@ -133,7 +133,7 @@ app.include_router(web_router)
 @app.get("/")
 async def root(request: Request) -> RedirectResponse:
     """Redirect root to login or dashboard based on auth status."""
-    token = request.cookies.get("access_token")
+    token = request.cookies.get("__Host-access_token")
     if token and verify_token(token) is not None:
         return RedirectResponse(url="/web/downloads", status_code=303)
     return RedirectResponse(url="/web/login", status_code=303)
