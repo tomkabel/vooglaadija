@@ -17,18 +17,15 @@ Each error category has its own retry policy:
 
 import re
 import secrets
-
-# Use a SystemRandom instance for uniform() while still exposing the name
-# `random` so tests can patch `app.services.error_classifier.random.uniform`.
-random = secrets.SystemRandom()
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 
 from redis.asyncio import Redis
 
-# Backwards-compatible alias used by callers/tests via patching
-# `app.services.error_classifier.random.uniform`.
+# Use a SystemRandom instance for uniform() while still exposing the name
+# `random` so tests can patch `app.services.error_classifier.random.uniform`.
+random = secrets.SystemRandom()
 
 
 class ErrorCategory(Enum):
