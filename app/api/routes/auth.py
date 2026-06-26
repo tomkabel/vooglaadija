@@ -41,7 +41,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
             {"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "email": "user@example.com"},
         ),
         409: error_response_doc(
-            "Email already registered", ErrorCode.RESOURCE_CONFLICT, "Email already registered"
+            "Email already registered", ErrorCode.RESOURCE_CONFLICT, "Email already registered",
         ),
         422: error_response_doc(
             "Validation error",
@@ -260,6 +260,14 @@ async def refresh(
     access_token = create_access_token(user.id, token_version=user.token_version)
     new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
+    # Blacklist the consumed refresh token's jti to prevent reuse
+    from app.services.token_blacklist import blacklist_token
+
+    old_jti = payload.get("jti")
+    if old_jti:
+        remaining = max(int(payload.get("exp", 0)) - int(datetime.now(UTC).timestamp()), 60)
+        await blacklist_token(old_jti, ttl_seconds=remaining)
+
     # Set JWT tokens as HttpOnly cookies for HTMX/browser auth
     set_token_cookies(response, access_token, new_refresh_token, secure=settings.cookie_secure)
 
@@ -281,7 +289,7 @@ async def refresh(
             {"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "email": "user@example.com"},
         ),
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials"
+            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials",
         ),
     },
 )

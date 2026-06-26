@@ -34,7 +34,7 @@ from core.redis_client import get_redis_client
 async def _prime_demo_jobs(user_id: uuid.UUID, db: DbSession) -> None:
     """Prime pending demo jobs for processing."""
     pending_result = await db.execute(
-        select(DownloadJob).where(DownloadJob.user_id == user_id, DownloadJob.status == "pending")
+        select(DownloadJob).where(DownloadJob.user_id == user_id, DownloadJob.status == "pending"),
     )
     pending_jobs = pending_result.scalars().all()
     if not pending_jobs:
@@ -80,7 +80,7 @@ async def _change_password_response(
     if error is not None:
         status_code, error_message, error_code = error
         return _error_response(
-            request, status_code, error_message, f"/web/settings?error={error_code}"
+            request, status_code, error_message, f"/web/settings?error={error_code}",
         )
 
     try:
@@ -137,14 +137,14 @@ async def _register_user_or_error_response(
     if error is not None:
         status_code, error_message, error_code = error
         return None, _error_response(
-            request, status_code, error_message, f"/web/register?error={error_code}"
+            request, status_code, error_message, f"/web/register?error={error_code}",
         )
 
     try:
         user = await UserService(db=db).register(email, password)
     except DuplicateEmailError:
         return None, _error_response(
-            request, 409, "Email already registered", "/web/register?error=email_exists"
+            request, 409, "Email already registered", "/web/register?error=email_exists",
         )
     except InvalidPasswordError as exc:
         resolved_message, _ = _resolve_register_errors(exc.code)

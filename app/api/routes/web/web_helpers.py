@@ -46,14 +46,14 @@ _SETTINGS_ERRORS: _ErrorMap = {
     "bad_current_password": _field_error("Current password is incorrect", "current_password"),
     "password_mismatch": _field_error("New passwords do not match", "new_password_confirm"),
     "password_too_short": _field_error(
-        "New password must be at least 8 characters", "new_password"
+        "New password must be at least 8 characters", "new_password",
     ),
     "password_too_long": _field_error(
-        "New password must be at most 128 characters", "new_password"
+        "New password must be at most 128 characters", "new_password",
     ),
     "bad_password": _field_error("Password is incorrect", "delete_password"),
     "delete_confirmation": _field_error(
-        "Please type DELETE to confirm account deletion", "confirm_text"
+        "Please type DELETE to confirm account deletion", "confirm_text",
     ),
     "file_cleanup": ("Unable to remove all downloaded files. Account was not deleted.", {}),
     "csrf": ("Invalid CSRF token", {}),
@@ -136,7 +136,7 @@ def rotate_csrf_token(response: Response) -> str:
 
 
 def get_template_context(
-    request: Request, csrf_token: str | None = None, **extra_context: object
+    request: Request, csrf_token: str | None = None, **extra_context: object,
 ) -> dict[str, object]:
     context: dict[str, object] = {
         "request": request,
@@ -167,7 +167,7 @@ async def validate_csrf_token(request: Request) -> bool:
         form_token = (await request.form()).get("csrf_token")
     except Exception:
         return False
-    return bool(form_token and str(form_token) == cookie_token)
+    return bool(form_token and secrets.compare_digest(str(form_token), cookie_token))
 
 
 def _resolve_error(error_code: str | None, mapping: _ErrorMap) -> tuple[str | None, dict[str, str]]:
@@ -199,7 +199,7 @@ def _htmx_or_redirect(
 
 
 def _error_response(
-    request: Request, status_code: int, message: str, redirect_url: str
+    request: Request, status_code: int, message: str, redirect_url: str,
 ) -> HTMLResponse | RedirectResponse:
     return _htmx_or_redirect(request, status_code, _error_html(message), redirect_url)
 
@@ -232,7 +232,7 @@ def _login_success_response(
 
 
 def _register_success_response(
-    request: Request, access_token: str, refresh_token: str
+    request: Request, access_token: str, refresh_token: str,
 ) -> HTMLResponse | RedirectResponse:
     return _auth_success_response(request, access_token, refresh_token, "/web/downloads")
 

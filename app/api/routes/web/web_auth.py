@@ -101,17 +101,17 @@ async def login_form(
     """Handle login form submission via HTMX or regular POST."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
+            request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf",
         )
     result = await db.execute(select(User).where(User.email == email, not_deleted()))
     user = result.scalar_one_or_none()
     if user is None or not await verify_password(password, user.password_hash):
         return _htmx_or_redirect(
-            request, 401, _error_html("Invalid email or password"), "/web/login?error=1"
+            request, 401, _error_html("Invalid email or password"), "/web/login?error=1",
         )
     if not user.is_active:
         return _htmx_or_redirect(
-            request, 401, _error_html("Invalid email or password"), "/web/login?error=1"
+            request, 401, _error_html("Invalid email or password"), "/web/login?error=1",
         )
     access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
@@ -131,7 +131,7 @@ async def register_page(
         request,
         "register.html",
         get_template_context(
-            request, csrf_token=token, error=error_message, field_errors=field_errors
+            request, csrf_token=token, error=error_message, field_errors=field_errors,
         ),
     )
     set_csrf_token_cookie(response, token)
@@ -149,7 +149,7 @@ async def register_form(
 ) -> HTMLResponse | RedirectResponse:
     """Handle registration form submission via HTMX or regular POST."""
     user, error_response = await _register_user_or_error_response(
-        request, email, password, password_confirm, db
+        request, email, password, password_confirm, db,
     )
     if error_response is not None:
         return error_response
@@ -165,7 +165,7 @@ async def demo_login(request: Request, db: DbSession) -> HTMLResponse | Redirect
     """Authenticate as the pre-seeded demo user and redirect to downloads."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
+            request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf",
         )
     user = await _demo_user_or_raise(db, DEMO_EMAIL)
     access_token = create_access_token(user.id, token_version=user.token_version)
@@ -185,7 +185,7 @@ async def logout(request: Request) -> HTMLResponse | RedirectResponse:
     """Clear auth cookies and redirect to login."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf"
+            request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf",
         )
     await _blacklist_token_cookie(request.cookies.get("__Host-access_token"))
     await _blacklist_token_cookie(request.cookies.get("__Host-refresh_token"))
