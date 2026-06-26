@@ -291,7 +291,22 @@ def _get_platform(url: str) -> str:
         return "tiktok"
     if _host_matches(_INSTAGRAM_HOSTS):
         return "instagram"
-    return "unknown"
+    # Subdomain-bypass detection: a hostname like youtube.com.evil.com
+    # contains a platform domain but doesn't end with a valid suffix.
+    # Truly unknown domains (e.g. example.com) default to "youtube"
+    # since yt-dlp handles most URLs.
+    all_platform_domains = (
+        youtube_all
+        | _VIMEO_HOSTS
+        | _DAILYMOTION_HOSTS
+        | _TWITCH_HOSTS
+        | _TIKTOK_HOSTS
+        | _INSTAGRAM_HOSTS
+    )
+    for domain in all_platform_domains:
+        if domain in hostname:
+            return "unknown"
+    return "youtube"
 
 
 # Alias for backward compatibility — throttle-tracking uses the same platform key.
