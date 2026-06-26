@@ -180,3 +180,15 @@ docs/CRITIQUE-ISSUES.md
 .agents/
 .kilocode/skills/*
 .agents/.story-automator-active
+
+# Local scan and audit artifacts (not checked in)
+.betterleaks.toml
+.betterleaksignore
+betterleaks-setup.md
+betterleaks.sarif
+SOTA-AUDIT-REPORT.md
+fail-console.md
+fail-result.md
+fail.har
+# HAR files and local exports that are ephemeral
+notegpt-clone/
