@@ -37,6 +37,7 @@ class PubSubService:
 
         Returns:
             Redis client instance.
+
         """
         return get_redis_client()
 
@@ -51,6 +52,7 @@ class PubSubService:
 
         Returns:
             Channel name in format 'job_status:{user_id}'.
+
         """
         return f"{CHANNEL_PREFIX}:{user_id}"
 
@@ -62,6 +64,7 @@ class PubSubService:
 
         Returns:
             Channel name in format 'job_progress:{user_id}'.
+
         """
         return f"{PROGRESS_CHANNEL_PREFIX}:{user_id}"
 
@@ -74,6 +77,7 @@ class PubSubService:
 
         Returns:
             Number of subscribers that received the message.
+
         """
         client = await self.get_client()
         channel = self.get_channel_for_user(user_id)
@@ -99,6 +103,7 @@ class PubSubService:
 
         Returns:
             Number of subscribers that received the message.
+
         """
         client = await self.get_client()
         channel = self.get_progress_channel_for_user(user_id)
@@ -157,6 +162,7 @@ class PubSubService:
 
         Yields:
             Parsed JSON dict from each pub/sub message.
+
         """
         client = await self.get_client()
         if not await self._check_pool_health():
@@ -213,7 +219,7 @@ class PubSubService:
                 await pubsub.unsubscribe(channel)
             except Exception as e:
                 logger.exception(
-                    "pubsub_unsubscribe_failed", channel=channel, name=log_name, error=str(e)
+                    "pubsub_unsubscribe_failed", channel=channel, name=log_name, error=str(e),
                 )
             await pubsub.close()
             logger.debug("pubsub_subscription_ended", channel=channel, name=log_name)
@@ -233,6 +239,7 @@ class PubSubService:
 
         Returns:
             True if Redis is reachable, False otherwise.
+
         """
         try:
             client = await self.get_client()
@@ -251,6 +258,7 @@ def get_pubsub_service() -> PubSubService:
 
     Returns:
         The global PubSubService instance.
+
     """
     global _pubsub_service
     if _pubsub_service is None:

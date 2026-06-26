@@ -95,7 +95,7 @@ def _downloads_base_path() -> str:
 
 
 def _cleanup_job_files(
-    jobs: list[DownloadJob], service_logger: BoundLogger = logger
+    jobs: list[DownloadJob], service_logger: BoundLogger = logger,
 ) -> tuple[bool, list[str]]:
     """Clean download files for account deletion before database rows are removed."""
     file_cleanup_failures: list[str] = []
@@ -143,7 +143,7 @@ class UserService:
         self._validate_new_password(password)
         result = await self.db.execute(select(User).where(User.email == email, not_deleted()))
         if result.scalar_one_or_none() is not None:
-            raise DuplicateEmailError()
+            raise DuplicateEmailError
 
         user = User(
             id=uuid.uuid4(),
@@ -156,7 +156,7 @@ class UserService:
             await self.db.commit()
         except IntegrityError as exc:
             await self.db.rollback()
-            raise DuplicateEmailError() from exc
+            raise DuplicateEmailError from exc
         except Exception:
             await self.db.rollback()
             raise
@@ -172,7 +172,7 @@ class UserService:
         """Change the current user's password and invalidate existing tokens."""
         user = self._current_user()
         if not await verify_password(current_password, user.password_hash):
-            raise InvalidCurrentPasswordError()
+            raise InvalidCurrentPasswordError
         if new_password_confirm is not None and new_password != new_password_confirm:
             raise PasswordMismatchError("New passwords do not match")
         self._validate_new_password(new_password)
@@ -192,7 +192,7 @@ class UserService:
         user = self._current_user()
         clean_username = username.strip()
         if len(clean_username) < 3:
-            raise InvalidUsernameError()
+            raise InvalidUsernameError
 
         user.username = clean_username
         try:
@@ -211,7 +211,7 @@ class UserService:
         """Delete the current user account after password and file-cleanup checks."""
         user = self._current_user()
         if confirm_text is not None and confirm_text.strip().upper() != "DELETE":
-            raise DeleteConfirmationError()
+            raise DeleteConfirmationError
         if not await verify_password(password, user.password_hash):
             raise InvalidCurrentPasswordError("Password is incorrect")
 
@@ -233,7 +233,7 @@ class UserService:
 
     def _current_user(self) -> User:
         if self.user is None or not self.user.is_active or self.user.deleted_at is not None:
-            raise UserNotAvailableError()
+            raise UserNotAvailableError
         return self.user
 
     @staticmethod

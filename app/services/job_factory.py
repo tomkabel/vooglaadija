@@ -36,6 +36,7 @@ async def create_demo_job(
 
     Returns:
         The created DownloadJob, or None on failure
+
     """
     import asyncio
 
@@ -89,8 +90,8 @@ async def create_demo_jobs_bulk(
 
     Returns:
         List of successfully created DownloadJob objects
-    """
 
+    """
     created: list[DownloadJob] = []
 
     for i, url in enumerate(urls):

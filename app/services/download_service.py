@@ -158,7 +158,7 @@ class DownloadService:
     async def list(self, page: int, per_page: int) -> DownloadPage:
         """Return user-owned downloads ordered newest first."""
         count_result = await self.db.execute(
-            select(func.count()).where(DownloadJob.user_id == self.user_id)
+            select(func.count()).where(DownloadJob.user_id == self.user_id),
         )
         total = count_result.scalar_one()
         result = await self.db.execute(
@@ -166,7 +166,7 @@ class DownloadService:
             .where(DownloadJob.user_id == self.user_id)
             .order_by(DownloadJob.created_at.desc())
             .offset((page - 1) * per_page)
-            .limit(per_page)
+            .limit(per_page),
         )
         return DownloadPage(
             jobs=list(result.scalars().all()),
@@ -182,11 +182,11 @@ class DownloadService:
             select(DownloadJob).where(
                 DownloadJob.id == job_uuid,
                 DownloadJob.user_id == self.user_id,
-            )
+            ),
         )
         job: DownloadJob | None = result.scalars().one_or_none()
         if job is None:
-            raise DownloadNotFoundError()
+            raise DownloadNotFoundError
         return job
 
     async def retry(self, job_id: str | uuid.UUID) -> DownloadJob:
@@ -222,7 +222,7 @@ class DownloadService:
             raise DownloadFileMissingError("File not found on disk", code="missing_on_disk")
 
         if job.expires_at and self._as_utc(job.expires_at) < datetime.now(UTC):
-            raise DownloadFileExpiredError()
+            raise DownloadFileExpiredError
 
         return DownloadFilePath(path=safe_path, filename=job.file_name)
 
@@ -255,14 +255,14 @@ class DownloadService:
                 except OSError as exc:
                     logger.warning("failed_to_delete_file", file_path=job.file_path, error=str(exc))
                     if fail_on_file_delete:
-                        raise DownloadFileDeleteFailedError() from exc
+                        raise DownloadFileDeleteFailedError from exc
 
         await self.db.delete(job)
         await self.db.commit()
         return DeleteOutcome(file_deleted=file_deleted)
 
     async def resolve_errors(
-        self, page: int, per_page: int, category: str | None = None
+        self, page: int, per_page: int, category: str | None = None,
     ) -> FailedJobPage:
         """Return paginated user-owned failed jobs."""
         query = select(FailedJob).where(FailedJob.user_id == self.user_id)
@@ -274,7 +274,7 @@ class DownloadService:
         count_result = await self.db.execute(count_query)
         total = count_result.scalar_one()
         result = await self.db.execute(
-            query.order_by(FailedJob.failed_at.desc()).offset((page - 1) * per_page).limit(per_page)
+            query.order_by(FailedJob.failed_at.desc()).offset((page - 1) * per_page).limit(per_page),
         )
         return FailedJobPage(
             failed_jobs=list(result.scalars().all()),
@@ -284,7 +284,7 @@ class DownloadService:
         )
 
     async def list_failed(
-        self, page: int, per_page: int, category: str | None = None
+        self, page: int, per_page: int, category: str | None = None,
     ) -> FailedJobPage:
         """Alias for failed-job listing."""
         return await self.resolve_errors(page, per_page, category)
@@ -339,7 +339,7 @@ class DownloadService:
                 select(DownloadJob).where(
                     DownloadJob.id.in_(original_ids),
                     DownloadJob.user_id == self.user_id,
-                )
+                ),
             )
             for original in original_result.scalars().all():
                 originals_by_id[original.id] = original
@@ -380,7 +380,7 @@ class DownloadService:
                 sqlalchemy_delete(Outbox).where(
                     Outbox.job_id == job_id,
                     Outbox.status == "pending",
-                )
+                ),
             )
             await self.db.commit()
         except Exception:
@@ -394,11 +394,11 @@ class DownloadService:
             select(FailedJob).where(
                 FailedJob.id == failed_uuid,
                 FailedJob.user_id == self.user_id,
-            )
+            ),
         )
         failed_job: FailedJob | None = result.scalars().one_or_none()
         if failed_job is None:
-            raise FailedJobNotFoundError()
+            raise FailedJobNotFoundError
         return failed_job
 
     async def _get_original_for_failed_job(self, original_job_id: uuid.UUID) -> DownloadJob | None:
@@ -406,7 +406,7 @@ class DownloadService:
             select(DownloadJob).where(
                 DownloadJob.id == original_job_id,
                 DownloadJob.user_id == self.user_id,
-            )
+            ),
         )
         original_job: DownloadJob | None = result.scalars().one_or_none()
         return original_job
@@ -416,7 +416,7 @@ class DownloadService:
             from core.metrics import DLQ_DEPTH
 
             count_result = await self.db.execute(
-                select(func.count()).where(FailedJob.user_id == self.user_id)
+                select(func.count()).where(FailedJob.user_id == self.user_id),
             )
             DLQ_DEPTH.set(float(count_result.scalar() or 0))
         except Exception:
@@ -426,7 +426,7 @@ class DownloadService:
         try:
             return validate_path(self._downloads_base_path(), file_path)
         except (ValueError, PermissionError) as exc:
-            raise UnsafeDownloadPathError() from exc
+            raise UnsafeDownloadPathError from exc
 
     @staticmethod
     def _downloads_base_path() -> str:

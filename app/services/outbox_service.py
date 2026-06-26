@@ -25,7 +25,7 @@ async def write_job_to_outbox(
         select(Outbox).where(
             Outbox.job_id == job_id,
             Outbox.status == "pending",
-        )
+        ),
     )
     existing = result.scalars().one_or_none()
     if existing is not None:
