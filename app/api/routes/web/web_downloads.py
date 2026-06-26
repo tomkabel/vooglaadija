@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from starlette.templating import _TemplateResponse as TemplateResponse
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
@@ -13,7 +14,6 @@ from app.api.routes.web.web_helpers import (
     get_csrf_token,
     get_template_context,
     logger,
-    rotate_csrf_token,
     set_csrf_token_cookie,
     templates,
     validate_csrf_token,
@@ -64,7 +64,7 @@ async def dashboard_page(
     request: Request,
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> TemplateResponse:
     """Render main dashboard page with download list."""
     result = await DownloadService(db, current_user.id).list(page=1, per_page=50)
     token = get_csrf_token(request)
@@ -82,14 +82,14 @@ async def dashboard_page(
     return response
 
 
-@router.post("/downloads")
+@router.post("/downloads", response_model=None)
 @limiter.limit("10/minute")
 async def create_download_form(
     request: Request,
     url: Annotated[str, Form(max_length=2000)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse | TemplateResponse:
     """HTMX endpoint for form submissions. Returns HTML fragment."""
     if not await validate_csrf_token(request):
         return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
@@ -109,18 +109,17 @@ async def create_download_form(
     resp = templates.TemplateResponse(
         request, "partials/_download_item.html", get_template_context(request, job=job)
     )
-    rotate_csrf_token(resp)
     return resp
 
 
-@router.post("/downloads/full")
+@router.post("/downloads/full", response_model=None)
 @limiter.limit("10/minute")
 async def create_download_full_page(
     request: Request,
     url: Annotated[str, Form(max_length=2000)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse | RedirectResponse:
     """Full-page handler for form submissions (non-HTMX fallback)."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
@@ -156,7 +155,7 @@ async def delete_download_form(
     job_id: str,
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse:
     """HTMX endpoint for deleting a download."""
     if not await validate_csrf_token(request):
         return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
@@ -183,7 +182,6 @@ async def delete_download_form(
         )
 
     resp = HTMLResponse(content="")
-    rotate_csrf_token(resp)
     return resp
 
 
@@ -193,7 +191,7 @@ async def download_file(
     job_id: str,
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> FileResponse:
     """Download the file for a completed job using cookie authentication."""
     try:
         file_result = await DownloadService(db, current_user.id).get_file_path(job_id)

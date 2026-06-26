@@ -3,6 +3,7 @@
 import os
 import posixpath
 import re
+import secrets
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -135,7 +136,7 @@ def rotate_csrf_token(response: Response) -> str:
 
 
 def get_template_context(
-    request: Request, csrf_token: str | None = None, **extra_context
+    request: Request, csrf_token: str | None = None, **extra_context: object
 ) -> dict[str, object]:
     context: dict[str, object] = {
         "request": request,
@@ -158,7 +159,7 @@ async def validate_csrf_token(request: Request) -> bool:
     if not cookie_token:
         return False
     header_token = request.headers.get("X-CSRF-Token")
-    if header_token == cookie_token:
+    if header_token and secrets.compare_digest(header_token, cookie_token):
         return True
     if header_token:
         return False
