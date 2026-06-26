@@ -13,13 +13,13 @@ def validate_path(base_path: str, target_path: str, check_writable: bool = False
     except ValueError as exc:
         raise ValueError(
             f"Path traversal detected: resolved path {resolved_target} "
-            f"is outside allowed directory {resolved_base}"
+            f"is outside allowed directory {resolved_base}",
         ) from exc
 
     if not contained:
         raise ValueError(
             f"Path traversal detected: resolved path {resolved_target} "
-            f"is outside allowed directory {resolved_base}"
+            f"is outside allowed directory {resolved_base}",
         )
 
     if check_writable:

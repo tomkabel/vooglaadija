@@ -1,5 +1,4 @@
-"""
-Pool of demo video URLs for live demo auto-submission.
+"""Pool of demo video URLs for live demo auto-submission.
 
 These are well-known, stable URLs used to demonstrate the download pipeline
 during live presentations. URLs are sourced from publicly available content.

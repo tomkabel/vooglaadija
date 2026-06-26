@@ -1,5 +1,4 @@
-"""
-Circuit Breaker pattern for external API calls.
+"""Circuit Breaker pattern for external API calls.
 
 Based on 2026 industry best practices for resilience engineering.
 Prevents thundering herd problem when external services (like YouTube) are down.
@@ -46,13 +45,12 @@ class CircuitBreakerOpenError(Exception):
         self.reset_timeout = reset_timeout
         super().__init__(
             f"Circuit breaker is OPEN for {service_name}. "
-            f"Service will be retried after {reset_timeout}s cooldown."
+            f"Service will be retried after {reset_timeout}s cooldown.",
         )
 
 
 class CircuitBreaker:
-    """
-    Circuit breaker implementation for external service calls.
+    """Circuit breaker implementation for external service calls.
 
     Tracks failures and opens the circuit when threshold is exceeded,
     preventing cascading failures and thundering herd problems.
@@ -69,8 +67,7 @@ class CircuitBreaker:
         half_open_max_calls: int = 3,
         use_redis_distributed: bool = False,
     ):
-        """
-        Initialize circuit breaker.
+        """Initialize circuit breaker.
 
         Args:
             name: Service name for logging
@@ -81,6 +78,7 @@ class CircuitBreaker:
             use_redis_distributed: If True, share failure count and half-open
                 slot state across all worker processes via Redis. Requires that
                 the redis_client imported at the top of this module is connected.
+
         """
         self.name = name
         self.failure_threshold = failure_threshold
@@ -428,8 +426,7 @@ class CircuitBreaker:
                     CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
 
     async def execute(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
-        """
-        Execute a function with circuit breaker protection.
+        """Execute a function with circuit breaker protection.
 
         Cancellation is treated as a slot release, NOT a failure — this
         prevents asyncio.CancelledError from falsely reopening the circuit
@@ -446,6 +443,7 @@ class CircuitBreaker:
         Raises:
             CircuitBreakerOpenError: If circuit is open
             Exception: Re-raises any exception from func
+
         """
         if not await self.can_execute():
             raise CircuitBreakerOpenError(self.name, self.reset_timeout)
@@ -507,8 +505,7 @@ async def extract_media_with_circuit_breaker(
     storage_path: str,
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, str, str | None]:
-    """
-    Extract media URL with circuit breaker protection.
+    """Extract media URL with circuit breaker protection.
 
     Wraps extract_media_url with circuit breaker to prevent
     hammering YouTube during outages.
@@ -522,6 +519,7 @@ async def extract_media_with_circuit_breaker(
 
     Returns:
         tuple of (file_path, file_name, title).
+
     """
     cb = get_youtube_circuit_breaker()
 

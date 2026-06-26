@@ -237,7 +237,7 @@ _COMMON_PASSWORDS = frozenset(
         "admin123",
         "test1234",
         "changeme",
-    }
+    },
 )
 
 

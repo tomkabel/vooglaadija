@@ -142,7 +142,7 @@ except Exception as e:
             )
 
             stdout_bytes, _ = await asyncio.wait_for(
-                process.communicate(), timeout=YT_DLP_METADATA_TIMEOUT
+                process.communicate(), timeout=YT_DLP_METADATA_TIMEOUT,
             )
 
         if process.returncode != 0:
@@ -176,6 +176,7 @@ async def _kill_process_group(process: asyncio.subprocess.Process, graceful: boo
         graceful: If True, sends SIGTERM first and waits 5s for clean shutdown.
                   If False, skips straight to SIGKILL (for use when SIGTERM
                   was already sent by the caller, e.g. the timeout handler).
+
     """
     if process.returncode is not None:
         return
@@ -212,7 +213,7 @@ async def _walk_and_kill_orphaned_children(process: asyncio.subprocess.Process) 
         children_text: str | None = None
         try:
             children_text = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: open(children_path).read()
+                None, lambda: open(children_path).read(),
             )
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             return
@@ -236,7 +237,7 @@ def _extract_error_message(error_msg: str, fallback: str) -> str:
         stripped = error_line.strip()
         if "ERROR" in stripped or "error" in stripped.lower():
             return stripped
-    return fallback if fallback else error_msg
+    return fallback or error_msg
 
 
 def _sanitize_title(title: str) -> str:
@@ -251,7 +252,7 @@ def _sanitize_title(title: str) -> str:
 
 
 _YOUTUBE_DOMAINS = frozenset(
-    {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}
+    {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"},
 )
 _YOUTUBE_SHORT_DOMAINS = frozenset({"youtu.be"})
 _YOUTUBE_NOCOOKIE = frozenset({"youtube-nocookie.com", "www.youtube-nocookie.com"})
@@ -366,8 +367,7 @@ async def _extract_via_subprocess(
     output_template: str,
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> dict:
-    """
-    Extract media info via subprocess that can be forcibly killed on timeout.
+    """Extract media info via subprocess that can be forcibly killed on timeout.
 
     This runs yt-dlp as a separate OS process so that on TimeoutError,
     process.kill() can terminate it immediately rather than leaving a thread running.
@@ -572,7 +572,7 @@ sys.exit(1)
             return result
 
         if process.returncode != 0:
-            error_msg = stderr_text if stderr_text else "Unknown error"
+            error_msg = stderr_text or "Unknown error"
             error_msg = _extract_error_message(error_msg, "")
             if not error_msg:
                 error_msg = "Unknown error"
@@ -590,8 +590,7 @@ async def extract_media_url(
     storage_path: str,
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, str, str | None]:
-    """
-    Extract media from a video URL using yt-dlp.
+    """Extract media from a video URL using yt-dlp.
 
     Supports YouTube, Vimeo, Dailymotion, Twitch, TikTok, and Instagram.
     Non-YouTube platforms (especially TikTok and Instagram) may require
@@ -610,6 +609,7 @@ async def extract_media_url(
         StorageError: If the download directory cannot be created or path is invalid.
         SSRFError: If the URL resolves to a private/internal IP address.
         asyncio.TimeoutError: If the extraction takes longer than YT_DLP_TIMEOUT.
+
     """
     download_dir = os.path.join(storage_path, "downloads")
     try:
@@ -626,13 +626,13 @@ async def extract_media_url(
     # Extraction semaphore prevents OOM from N concurrent ~50-100MB processes.
     async with _EXTRACTION_SEMAPHORE:
         info = await _extract_via_subprocess(
-            url, output_template, progress_callback=progress_callback
+            url, output_template, progress_callback=progress_callback,
         )
 
     title: str | None = info.get("title") or None
     ext = info.get("ext") or "mp4"
     # Sanitize title for display only — never used in filesystem path
-    safe_title = _sanitize_title(str(title if title else file_id))
+    safe_title = _sanitize_title(str(title or file_id))
     file_name = f"{safe_title}.{ext}"
     file_path = os.path.join(download_dir, f"{file_id}.{ext}")
 

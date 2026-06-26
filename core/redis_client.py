@@ -57,7 +57,7 @@ def get_redis_client() -> aioredis.Redis:
     redis-py's connection pool is not fork/process-safe.
     """
     if _redis_state["client"] is not None:
-        return cast(aioredis.Redis, _redis_state["client"])
+        return cast("aioredis.Redis", _redis_state["client"])
 
     from core.config import settings
 
@@ -68,7 +68,7 @@ def get_redis_client() -> aioredis.Redis:
         socket_timeout=5,
         retry_on_timeout=False,
     )
-    return cast(aioredis.Redis, _redis_state["client"])
+    return cast("aioredis.Redis", _redis_state["client"])
 
 
 def reset_redis_client() -> None:
@@ -79,7 +79,7 @@ def reset_redis_client() -> None:
 async def close_redis_client() -> None:
     """Close the shared Redis client connection pool."""
     if _redis_state["client"] is not None:
-        await cast(aioredis.Redis, _redis_state["client"]).close()
+        await cast("aioredis.Redis", _redis_state["client"]).close()
         _redis_state["client"] = None
 
 
@@ -94,6 +94,7 @@ async def check_worker_health() -> bool:
     Returns:
         True if at least one worker health key exists (worker is alive).
         False if no health keys found or Redis is unreachable.
+
     """
     try:
         client = get_redis_client()
