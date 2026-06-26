@@ -4,7 +4,7 @@ import datetime
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, and_, text
+from sqlalchemy import Boolean, ColumnElement, DateTime, Index, Integer, String, and_, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import column, func
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from core.models.download_job import DownloadJob
 
 
-def not_deleted():
+def not_deleted() -> ColumnElement[bool]:
     """Return a filter condition for non-deleted users."""
     return and_(User.deleted_at.is_(None))
 

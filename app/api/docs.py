@@ -30,7 +30,7 @@ def register_docs_routes(app: FastAPI) -> None:
     """Register custom Swagger UI and ReDoc routes."""
 
     @app.get("/docs", include_in_schema=False)
-    async def custom_docs(request: Request):
+    async def custom_docs(request: Request) -> HTMLResponse:
         nonce = request.state.nonce
         swagger_dir = APP_DIR / "static" / "swagger"
         if swagger_dir.exists():
@@ -69,7 +69,7 @@ def register_docs_routes(app: FastAPI) -> None:
         return docs_response
 
     @app.get("/redoc", include_in_schema=False)
-    async def custom_redoc(request: Request):
+    async def custom_redoc(request: Request) -> HTMLResponse:
         nonce = request.state.nonce
         redoc_dir = APP_DIR / "static" / "redoc"
         if redoc_dir.exists():

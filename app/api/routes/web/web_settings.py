@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.templating import _TemplateResponse as TemplateResponse
 
 from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
@@ -38,7 +39,7 @@ async def settings_page(
     request: Request,
     current_user: CurrentUserFromCookie,
     error: Annotated[str | None, Query(max_length=100)] = None,
-):
+) -> TemplateResponse:
     """Render settings page for the current user."""
     token = get_csrf_token(request)
     username = current_user.username or _default_username_from_email(current_user.email)
@@ -59,14 +60,14 @@ async def settings_page(
     return response
 
 
-@router.post("/settings/username")
+@router.post("/settings/username", response_model=None)
 @limiter.limit("10/minute")
 async def update_username(
     request: Request,
     username: Annotated[str, Form(max_length=64)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse | RedirectResponse:
     """Update current user's username."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
@@ -91,7 +92,7 @@ async def update_username(
     )
 
 
-@router.post("/settings/delete-account")
+@router.post("/settings/delete-account", response_model=None)
 @limiter.limit("3/minute")
 async def delete_account(
     request: Request,
@@ -99,7 +100,7 @@ async def delete_account(
     confirm_text: Annotated[str, Form(max_length=16)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse | RedirectResponse:
     """Delete current user's account and associated downloads."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(

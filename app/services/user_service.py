@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.stdlib import BoundLogger
 
 from app.services.auth_service import hash_password, verify_password
 from app.utils.username import default_username_from_email
@@ -93,7 +94,9 @@ def _downloads_base_path() -> str:
     return os.path.join(settings.storage_path, "downloads")
 
 
-def _cleanup_job_files(jobs: list[DownloadJob], service_logger=logger) -> tuple[bool, list[str]]:
+def _cleanup_job_files(
+    jobs: list[DownloadJob], service_logger: BoundLogger = logger
+) -> tuple[bool, list[str]]:
     """Clean download files for account deletion before database rows are removed."""
     file_cleanup_failures: list[str] = []
     for job in jobs:

@@ -87,11 +87,26 @@ async def resolve_video_title(url: str) -> str | None:
         return None
 
     url_json = json.dumps(url)
+    platform = _get_platform(url)
+    cookies_opts = _build_cookies_opts()
+    cookies_opts_json = json.dumps(cookies_opts)
+
+    if platform in _COOKIE_REQUIRED_PLATFORMS and not cookies_opts:
+        logger.info(
+            "metadata_without_cookies",
+            platform=platform,
+            url=url[:80],
+            hint="Set YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER to enable cookies for this platform",
+        )
+
     script = f"""
 import sys
 import json
 import yt_dlp
 url = {url_json}
+cookies_opts = {cookies_opts_json}
+if "cookiesfrombrowser" in cookies_opts and isinstance(cookies_opts["cookiesfrombrowser"], list):
+    cookies_opts["cookiesfrombrowser"] = tuple(cookies_opts["cookiesfrombrowser"])
 try:
     ydl_opts = {{
         "quiet": True,
@@ -100,6 +115,7 @@ try:
         "socket_timeout": 10,
         "retries": 1,
     }}
+    ydl_opts.update(cookies_opts)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         sanitized = ydl.sanitize_info(info)
@@ -234,27 +250,101 @@ def _sanitize_title(title: str) -> str:
     return sanitized or "download"
 
 
-def _service_from_url(url: str) -> str:
-    """Derive throttle-tracking service name from a URL.
+_YOUTUBE_DOMAINS = frozenset(
+    {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"}
+)
+_YOUTUBE_SHORT_DOMAINS = frozenset({"youtu.be"})
+_YOUTUBE_NOCOOKIE = frozenset({"youtube-nocookie.com", "www.youtube-nocookie.com"})
+_VIMEO_HOSTS = frozenset({"vimeo.com", "www.vimeo.com"})
+_DAILYMOTION_HOSTS = frozenset({"dailymotion.com", "www.dailymotion.com"})
+_TWITCH_HOSTS = frozenset({"twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"})
+_TIKTOK_HOSTS = frozenset({"tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com"})
+_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com"})
 
-    This is a best-effort extraction for metric labels only (not security-critical).
-    Defaults to 'youtube' for backward compatibility.
+
+def _get_platform(url: str) -> str:
+    """Detect the media platform from a URL hostname using exact domain matching.
+
+    Returns a string key used for throttling metrics, extractor args,
+    format chains, and cookie requirements. Defaults to 'youtube'.
     """
-    hostname = urlparse(url).hostname or ""
-    hostname = hostname.lower()
-    if "youtube" in hostname or "youtu.be" in hostname:
+    hostname = (urlparse(url).hostname or "").lower()
+    if hostname in _YOUTUBE_DOMAINS | _YOUTUBE_SHORT_DOMAINS | _YOUTUBE_NOCOOKIE:
         return "youtube"
-    if "vimeo" in hostname:
+    if hostname in _VIMEO_HOSTS:
         return "vimeo"
-    if "dailymotion" in hostname:
+    if hostname in _DAILYMOTION_HOSTS:
         return "dailymotion"
-    if "twitch" in hostname:
+    if hostname in _TWITCH_HOSTS:
         return "twitch"
-    if "tiktok" in hostname:
+    if hostname in _TIKTOK_HOSTS:
         return "tiktok"
-    if "instagram" in hostname:
+    if hostname in _INSTAGRAM_HOSTS:
         return "instagram"
     return "youtube"
+
+
+# Alias for backward compatibility — throttle-tracking uses the same platform key.
+_service_from_url = _get_platform
+
+
+def _build_cookies_opts() -> dict:
+    """Build cookies-related yt-dlp options from environment configuration.
+
+    Supports two modes (checked in order):
+    1. YT_DLP_COOKIES_FILE — path to a Netscape-format cookies file
+    2. YT_DLP_COOKIES_BROWSER — browser name for cookiesfrombrowser (e.g. chrome, firefox)
+
+    Returns an empty dict if neither is configured or the cookie file doesn't exist.
+    Logs a warning when the configured cookie file path is absent from disk.
+    """
+    opts: dict = {}
+    cookies_file = os.environ.get("YT_DLP_COOKIES_FILE", "").strip()
+    cookies_browser = os.environ.get("YT_DLP_COOKIES_BROWSER", "").strip()
+
+    if cookies_file:
+        resolved = os.path.abspath(cookies_file)
+        if os.path.isfile(resolved):
+            opts["cookiefile"] = resolved
+        else:
+            logger.warning(
+                "cookies_file_not_found",
+                configured=cookies_file,
+                resolved=resolved,
+                hint="Set YT_DLP_COOKIES_FILE to an existing Netscape-format cookies file",
+            )
+    elif cookies_browser:
+        opts["cookiesfrombrowser"] = (cookies_browser,)
+
+    return opts
+
+
+# Non-YouTube platforms use single-stream formats with no merging semantics.
+_GENERIC_FORMAT_CHAIN: list[dict] = [
+    {"format": "best", "format_sort": ["quality"]},
+]
+
+_PLATFORM_FORMAT_CHAINS: dict[str, list[dict]] = {
+    "youtube": FORMAT_FALLBACK_CHAIN,
+    "tiktok": _GENERIC_FORMAT_CHAIN,
+    "instagram": _GENERIC_FORMAT_CHAIN,
+    "vimeo": _GENERIC_FORMAT_CHAIN,
+    "dailymotion": _GENERIC_FORMAT_CHAIN,
+    "twitch": _GENERIC_FORMAT_CHAIN,
+}
+
+# Extractor args per platform. Only YouTube benefits from player-client hints.
+_PLATFORM_EXTRACTOR_ARGS: dict[str, dict] = {
+    "youtube": {
+        "youtube": {
+            "player_client": ["tv", "web", "default", "mobile"],
+        },
+    },
+}
+
+# Platforms that require cookies for reliable extraction. Cookies are included
+# automatically when configured via YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER.
+_COOKIE_REQUIRED_PLATFORMS = frozenset({"tiktok", "instagram"})
 
 
 async def _check_throttle(stderr_text: str, service: str = "youtube") -> None:
@@ -282,8 +372,10 @@ async def _extract_via_subprocess(
     This runs yt-dlp as a separate OS process so that on TimeoutError,
     process.kill() can terminate it immediately rather than leaving a thread running.
 
-    Uses a format fallback chain to handle "Requested format is not available" errors
-    that occur when YouTube doesn't have the exact formats needed for merging.
+    Uses a platform-specific format fallback chain. For YouTube this handles
+    "Requested format is not available" errors when the platform lacks the
+    exact formats needed for merging. Non-YouTube platforms use simple
+    single-stream format selection.
 
     When progress_callback is provided, the subprocess emits download progress JSON
     lines via stdout, which are parsed and forwarded to the callback in real time.
@@ -292,7 +384,22 @@ async def _extract_via_subprocess(
 
     url_json = json.dumps(url)
     output_template_json = json.dumps(output_template)
-    fallback_chain_json = json.dumps(FORMAT_FALLBACK_CHAIN)
+    platform = _get_platform(url)
+    platform_json = json.dumps(platform)
+    cookies_opts = _build_cookies_opts()
+    cookies_opts_json = json.dumps(cookies_opts)
+    fallback_chain = _PLATFORM_FORMAT_CHAINS.get(platform, FORMAT_FALLBACK_CHAIN)
+    fallback_chain_json = json.dumps(fallback_chain)
+    extractor_args = _PLATFORM_EXTRACTOR_ARGS.get(platform, {})
+    extractor_args_json = json.dumps(extractor_args)
+
+    if platform in _COOKIE_REQUIRED_PLATFORMS and not cookies_opts:
+        logger.info(
+            "extraction_without_cookies",
+            platform=platform,
+            url=url[:80],
+            hint="Set YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER to enable cookies for this platform",
+        )
 
     output_fields_json = json.dumps(list(_OUTPUT_FIELDS))
 
@@ -303,8 +410,14 @@ import yt_dlp
 
 url = {url_json}
 output_template = {output_template_json}
+platform = {platform_json}
 fallback_chain = {fallback_chain_json}
+extractor_args = {extractor_args_json}
+cookies_opts = {cookies_opts_json}
 output_fields = {output_fields_json}
+
+if "cookiesfrombrowser" in cookies_opts and isinstance(cookies_opts["cookiesfrombrowser"], list):
+    cookies_opts["cookiesfrombrowser"] = tuple(cookies_opts["cookiesfrombrowser"])
 
 last_error = None
 _last_progress_pct = -1.0
@@ -328,7 +441,7 @@ def _progress_hook(d):
         }}), flush=True)
 
 for i, format_spec in enumerate(fallback_chain):
-    _last_progress_pct = -1.0  # reset so each fallback attempt reports fresh progress
+    _last_progress_pct = -1.0
     ydl_opts = {{
         "format": format_spec["format"],
         "format_sort": format_spec.get("format_sort", []),
@@ -338,15 +451,14 @@ for i, format_spec in enumerate(fallback_chain):
         "noprogress": True,
         "socket_timeout": 60,
         "retries": 3,
-        "prefer_free_formats": True,
-        "check_formats": "missable",
         "progress_hooks": [_progress_hook],
-        "extractor_args": {{
-            "youtube": {{
-                "player_client": ["tv", "web", "default", "mobile"],
-            }},
-        }},
     }}
+    if platform == "youtube":
+        ydl_opts["prefer_free_formats"] = True
+        ydl_opts["check_formats"] = "missable"
+    ydl_opts.update(cookies_opts)
+    if extractor_args:
+        ydl_opts["extractor_args"] = extractor_args
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -368,7 +480,7 @@ for i, format_spec in enumerate(fallback_chain):
 
 attempted_formats = [spec["format"] for spec in fallback_chain]
 print(json.dumps({{
-    "error": f"All formats failed. Last error: {{last_error}}. Attempted formats: {{attempted_formats}}"
+    "error": f"[{{platform}}] All formats failed. Last error: {{last_error}}. Attempted formats: {{attempted_formats}}"
 }}))
 sys.exit(1)
 """
@@ -388,8 +500,10 @@ sys.exit(1)
             limit=_STREAM_READER_LIMIT,
         )
 
-        async def _read_stdout():
+        async def _read_stdout() -> None:
             nonlocal result, error_result
+            if process.stdout is None:
+                return
             async for line_bytes in process.stdout:
                 line = line_bytes.decode().strip()
                 if not line:
@@ -405,7 +519,9 @@ sys.exit(1)
                 except json.JSONDecodeError:
                     logger.warning("stdout_non_json_line", line=line[:200])
 
-        async def _read_stderr():
+        async def _read_stderr() -> None:
+            if process.stderr is None:
+                return
             async for line_bytes in process.stderr:
                 stderr_lines.append(line_bytes.decode().strip())
 
@@ -475,7 +591,11 @@ async def extract_media_url(
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, str, str | None]:
     """
-    Extract media URL from a YouTube URL using yt-dlp.
+    Extract media from a video URL using yt-dlp.
+
+    Supports YouTube, Vimeo, Dailymotion, Twitch, TikTok, and Instagram.
+    Non-YouTube platforms (especially TikTok and Instagram) may require
+    cookies configured via YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER.
 
     Args:
         url: The video URL to extract.

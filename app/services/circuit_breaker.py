@@ -427,7 +427,7 @@ class CircuitBreaker:
                     self._state = CircuitState.OPEN
                     CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
 
-    async def execute(self, func, *args, **kwargs) -> Any:
+    async def execute(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
         """
         Execute a function with circuit breaker protection.
 

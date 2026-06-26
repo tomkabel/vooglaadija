@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.yt_dlp_service import extract_media_url
+from app.services.yt_dlp_service import _get_platform, extract_media_url
 from app.utils.exceptions import StorageError
 from app.utils.validators import is_youtube_url
 
@@ -661,3 +661,135 @@ class TestFormatFallbackChain:
         """Verify the script contains error handling that continues to next format on 'not available'."""
         assert '"Requested format" in err_str and "not available" in err_str' in captured_script
         assert "continue" in captured_script
+
+
+class TestGetPlatform:
+    """Tests for _get_platform platform detection function."""
+
+    def test_youtube_watch_url(self) -> None:
+        assert _get_platform("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "youtube"
+
+    def test_youtube_short_url(self) -> None:
+        assert _get_platform("https://youtu.be/dQw4w9WgXcQ") == "youtube"
+
+    def test_youtube_music_url(self) -> None:
+        assert _get_platform("https://music.youtube.com/watch?v=abc") == "youtube"
+
+    def test_youtube_nocookie_url(self) -> None:
+        assert _get_platform("https://www.youtube-nocookie.com/watch?v=abc") == "youtube"
+
+    def test_youtube_mobile_url(self) -> None:
+        assert _get_platform("https://m.youtube.com/watch?v=abc") == "youtube"
+
+    def test_vimeo_url(self) -> None:
+        assert _get_platform("https://vimeo.com/76979871") == "vimeo"
+
+    def test_dailymotion_url(self) -> None:
+        assert _get_platform("https://www.dailymotion.com/video/x84sh87") == "dailymotion"
+
+    def test_twitch_url(self) -> None:
+        assert _get_platform("https://clips.twitch.tv/SmilingPluckySashimiBibleThump") == "twitch"
+
+    def test_tiktok_url(self) -> None:
+        assert (
+            _get_platform("https://www.tiktok.com/@khaby.lame/video/7008477449723292934")
+            == "tiktok"
+        )
+
+    def test_instagram_url(self) -> None:
+        assert _get_platform("https://www.instagram.com/reel/DGcoPAktJAT/") == "instagram"
+
+    def test_unknown_domain_defaults_to_youtube(self) -> None:
+        assert _get_platform("https://example.com/video") == "youtube"
+
+    def test_subdomain_bypass_rejected_for_youtube(self) -> None:
+        """Exact domain matching prevents fake subdomains from matching."""
+        assert _get_platform("https://youtube.com.evil.com/watch?v=abc") != "youtube"
+
+    def test_subdomain_bypass_rejected_for_tiktok(self) -> None:
+        assert _get_platform("https://tiktok.com.evil.com/video/123") != "tiktok"
+
+    def test_empty_url_returns_youtube(self) -> None:
+        assert _get_platform("not-a-url") == "youtube"
+
+
+class TestPlatformFormatChains:
+    """Tests verifying platform-specific format chains are routed correctly."""
+
+    @pytest.fixture
+    async def captured_script_tiktok(self) -> str:
+        """Capture the generated script for a TikTok URL."""
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        captured_scripts: list[str] = []
+
+        async def capturing_subprocess_exec(*args, **kwargs):
+            captured_scripts.append(args[2])
+            return _make_process(pid=12346)
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                capturing_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        ):
+            await _extract_via_subprocess("https://www.tiktok.com/@test/video/123", "/tmp/out")
+
+        return captured_scripts[0]
+
+    @pytest.fixture
+    async def captured_script_instagram(self) -> str:
+        """Capture the generated script for an Instagram URL."""
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        captured_scripts: list[str] = []
+
+        async def capturing_subprocess_exec(*args, **kwargs):
+            captured_scripts.append(args[2])
+            return _make_process(pid=12347)
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                capturing_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        ):
+            await _extract_via_subprocess("https://www.instagram.com/reel/test/", "/tmp/out")
+
+        return captured_scripts[0]
+
+    @pytest.mark.asyncio
+    async def test_tiktok_excludes_youtube_specific_opts(self, captured_script_tiktok: str) -> None:
+        """TikTok extraction must NOT include YouTube-only format options."""
+        assert '"prefer_free_formats"' not in captured_script_tiktok
+        assert '"check_formats"' not in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_tiktok_excludes_youtube_player_clients(
+        self, captured_script_tiktok: str
+    ) -> None:
+        """TikTok extraction must NOT include YouTube player_client extractor args."""
+        assert '"player_client"' not in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_tiktok_uses_simple_format_chain(self, captured_script_tiktok: str) -> None:
+        """TikTok extraction uses simple best format, not the 5-entry YouTube chain."""
+        assert '"bestvideo*+bestaudio/best"' not in captured_script_tiktok
+        assert '"bestvideo+bestaudio/best"' not in captured_script_tiktok
+        assert '"res:1080"' not in captured_script_tiktok
+        assert '"best"' in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_platform_in_error_message(self, captured_script_tiktok: str) -> None:
+        """Failure message includes platform prefix like [tiktok]."""
+        assert "[{platform}]" in captured_script_tiktok or "[tiktok]" in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_instagram_excludes_youtube_specific_opts(
+        self, captured_script_instagram: str
+    ) -> None:
+        """Instagram extraction must NOT include YouTube-only format options."""
+        assert '"prefer_free_formats"' not in captured_script_instagram
+        assert '"check_formats"' not in captured_script_instagram

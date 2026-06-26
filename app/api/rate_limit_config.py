@@ -2,6 +2,8 @@
 
 import os
 import re
+from collections.abc import Callable
+from typing import Any
 
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -19,15 +21,17 @@ is_testing = os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
 class NoOpLimiter:
     """A no-op limiter that doesn't enforce rate limits."""
 
-    def limit(self, *args, **kwargs):
+    def limit(
+        self, *args: Any, **kwargs: Any
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Return a no-op decorator."""
 
-        def noop_decorator(func):
+        def noop_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             return func
 
         return noop_decorator
 
-    async def __call__(self, request, *args, **kwargs):
+    async def __call__(self, request: Request, *args: Any, **kwargs: Any) -> None:
         """Allow all requests."""
 
 

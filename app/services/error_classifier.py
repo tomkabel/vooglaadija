@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 
+from redis.asyncio import Redis
+
 
 class ErrorCategory(Enum):
     RATE_LIMITED = "rate_limited"
@@ -300,7 +302,7 @@ def _max_ratio() -> float:
     return _MAX_RETRY_RATIO
 
 
-async def check_retry_budget(redis_client) -> bool:
+async def check_retry_budget(redis_client: Redis) -> bool:
     """Check if retry budget allows another retry.
 
     Returns True if budget OK, False if retries should be shed.
@@ -323,7 +325,7 @@ async def check_retry_budget(redis_client) -> bool:
     return bool((retries / total) < max_ratio)
 
 
-async def record_retry_budget_request(redis_client, is_retry: bool = False) -> None:
+async def record_retry_budget_request(redis_client: Redis, is_retry: bool = False) -> None:
     retry_key, total_key = _retry_budget_keys()
     window = _budget_window()
     now = datetime.now(UTC).timestamp()

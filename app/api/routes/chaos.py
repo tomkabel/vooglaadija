@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -17,7 +19,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chaos", tags=["chaos"])
 
 
-def _require_feature_flag():
+def _require_feature_flag() -> None:
     """Raise 404 if chaos API is disabled."""
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -44,13 +46,13 @@ def _scenario_key(scenario: str) -> str:
     return SCENARIO_KEY_MAP.get(scenario, f"chaos:{scenario}")
 
 
-@router.post("/inject")
+@router.post("/inject", response_model=None)
 async def inject_chaos(
     request: Request,
     _user: CurrentUserFromCookie,
     scenario: str = Form(...),
     duration_seconds: int = Form(30),
-):
+) -> dict[str, Any] | JSONResponse:
     _require_feature_flag()
     if not await validate_csrf_token(request):
         return JSONResponse(
@@ -72,7 +74,7 @@ async def inject_chaos(
         spike_data: dict[str, float] = {}
         for i in range(15):
             spike_data[str(now - i * 2)] = now - i * 2
-        await r.zadd("throttle:window:youtube", spike_data)
+        await r.zadd("throttle:window:youtube", spike_data)  # type: ignore[arg-type]
         await r.expire("throttle:window:youtube", settings.throttle_window_seconds * 2)
         THROTTLE_RISK_SCORE.labels(service="youtube", provider="yt-dlp").set(1.0)
 
@@ -93,11 +95,11 @@ async def inject_chaos(
     }
 
 
-@router.post("/reset")
+@router.post("/reset", response_model=None)
 async def reset_chaos(
     request: Request,
     _user: CurrentUserFromCookie,
-):
+) -> dict[str, Any] | JSONResponse:
     _require_feature_flag()
     if not await validate_csrf_token(request):
         return JSONResponse(
@@ -119,7 +121,7 @@ async def reset_chaos(
 async def chaos_status(
     request: Request,
     _user: CurrentUserFromCookie,
-):
+) -> dict[str, Any]:
     _require_feature_flag()
 
     from core.redis_client import KEY_TO_SCENARIO_FIELD
@@ -133,13 +135,13 @@ async def chaos_status(
     return {"data": status.model_dump()}
 
 
-@router.post("/submit-videos")
+@router.post("/submit-videos", response_model=None)
 async def chaos_submit_videos(
     request: Request,
     _user: CurrentUserFromCookie,
     db: DbSession,
     count: int = Form(default=10),
-):
+) -> dict[str, Any] | JSONResponse:
     """Bulk submit demo video URLs for chaos lab.
 
     Creates N random download jobs from the demo URL pool.

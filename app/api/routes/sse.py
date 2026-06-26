@@ -12,10 +12,11 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Request
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app.api.dependencies import CurrentUserFromCookie
-from app.services.pubsub_service import get_pubsub_service
+from app.services.pubsub_service import PubSubService, get_pubsub_service
 from core.database import get_async_session_factory
 from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/web", tags=["sse"])
 logger = get_logger(__name__)
 
 MAX_SEEN_JOBS = 100
-POLL_INTERVAL_SECONDS = 15
+POLL_INTERVAL_SECONDS = 10
 MAX_PUBSUB_RECONNECT_ATTEMPTS = 3
 PUBSUB_RECONNECT_DELAY_SECONDS = 1
 # Cap on buffered pub/sub events during the initial subscription window.
@@ -53,7 +54,7 @@ async def _job_to_sse_data(job: DownloadJob) -> dict:
 
 
 async def _emit_initial_snapshot(
-    session_factory,
+    session_factory: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
     seen_initial: OrderedDict[str, str],
 ) -> list[ServerSentEvent]:
@@ -106,7 +107,7 @@ async def _replay_buffered_events(
 
 
 async def _subscribe_to_pubsub(
-    pubsub,
+    pubsub: PubSubService,
     user_id: uuid.UUID,
     last_seen_job_ids: OrderedDict[str, str],
 ) -> AsyncGenerator[ServerSentEvent, None]:
@@ -131,7 +132,7 @@ async def _subscribe_to_pubsub(
 
 
 async def _subscribe_to_progress_pubsub(
-    pubsub,
+    pubsub: PubSubService,
     user_id: uuid.UUID,
 ) -> AsyncGenerator[ServerSentEvent, None]:
     """Inner generator that yields progress events from pubsub subscription."""
@@ -223,7 +224,10 @@ async def _merge_generators(
     """Merge two SSE generators with backpressure via bounded queue + coalescing."""
     queue: asyncio.Queue[ServerSentEvent | None] = asyncio.Queue(maxsize=128)
 
-    async def _drain(source, src_name):
+    async def _drain(
+        source: AsyncGenerator[ServerSentEvent, None],
+        src_name: str,
+    ) -> None:
         try:
             async for event in source:
                 # Status events (job_update) are never dropped — they
@@ -268,7 +272,7 @@ async def _merge_generators(
 
 async def fallback_polling_generator(
     request: Request,
-    session_factory,
+    session_factory: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
     seen_jobs: OrderedDict[str, str] | None = None,
 ) -> AsyncGenerator[ServerSentEvent, None]:
@@ -348,7 +352,7 @@ async def _disconnect_monitor(
 
 async def event_generator(
     request: Request,
-    session_factory,
+    session_factory: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
 ) -> AsyncGenerator[ServerSentEvent, None]:
     """SSE event generator that prioritizes Pub/Sub with polling fallback."""
@@ -360,7 +364,7 @@ async def event_generator(
     reconnect_attempts = 0
     buffer_task: asyncio.Task | None = None
 
-    async def _buffer_pubsub_events():
+    async def _buffer_pubsub_events() -> None:
         """Buffer pub/sub events before DB snapshot."""
         nonlocal reconnect_attempts
         while reconnect_attempts < MAX_PUBSUB_RECONNECT_ATTEMPTS:
@@ -448,7 +452,7 @@ async def event_generator(
 async def download_status_stream(
     request: Request,
     current_user: CurrentUserFromCookie,
-):
+) -> EventSourceResponse:
     """Server-Sent Events endpoint for real-time download status and progress updates."""
     return EventSourceResponse(
         event_generator(request, get_async_session_factory(), current_user.id),

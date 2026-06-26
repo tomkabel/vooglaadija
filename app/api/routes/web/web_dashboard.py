@@ -1,6 +1,7 @@
 """Dashboard and demo web page routes."""
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.templating import _TemplateResponse as TemplateResponse
 
 from app.api.routes.web.web_helpers import (
     get_csrf_token,
@@ -15,7 +16,7 @@ router = APIRouter(tags=["web"])
 
 
 @router.get("/chaos-lab")
-async def chaos_lab_page(request: Request):
+async def chaos_lab_page(request: Request) -> TemplateResponse:
     """Render the chaos engineering lab page for live demo."""
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -31,7 +32,7 @@ async def chaos_lab_page(request: Request):
 
 
 @router.get("/chaos-lab/status")
-async def chaos_lab_status(request: Request):
+async def chaos_lab_status(request: Request) -> TemplateResponse:
     """HTMX partial: return current chaos flag status for polling."""
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -46,7 +47,7 @@ async def chaos_lab_status(request: Request):
 
 
 @router.get("/slides")
-async def presentation_slides(request: Request):
+async def presentation_slides(request: Request) -> TemplateResponse:
     """Render the TOP1 demo presentation slides."""
     return templates.TemplateResponse(
         request,

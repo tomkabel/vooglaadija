@@ -8,6 +8,12 @@ redis-py's from_url() manages an internal connection pool internally,
 so connections are reused rather than created per call.
 """
 
+from __future__ import annotations
+
+from typing import cast
+
+import redis.asyncio as aioredis
+
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -40,7 +46,7 @@ KEY_TO_SCENARIO_FIELD: dict[str, str] = {
 }
 
 
-def get_redis_client():
+def get_redis_client() -> aioredis.Redis:
     """Get or create the shared Redis client singleton.
 
     Returns the same client instance on every call. The client manages
@@ -51,9 +57,7 @@ def get_redis_client():
     redis-py's connection pool is not fork/process-safe.
     """
     if _redis_state["client"] is not None:
-        return _redis_state["client"]
-
-    import redis.asyncio as aioredis
+        return cast(aioredis.Redis, _redis_state["client"])
 
     from core.config import settings
 
@@ -64,18 +68,18 @@ def get_redis_client():
         socket_timeout=5,
         retry_on_timeout=False,
     )
-    return _redis_state["client"]
+    return cast(aioredis.Redis, _redis_state["client"])
 
 
-def reset_redis_client():
+def reset_redis_client() -> None:
     """Reset the singleton (for testing only)."""
     _redis_state["client"] = None
 
 
-async def close_redis_client():
+async def close_redis_client() -> None:
     """Close the shared Redis client connection pool."""
     if _redis_state["client"] is not None:
-        await _redis_state["client"].close()
+        await cast(aioredis.Redis, _redis_state["client"]).close()
         _redis_state["client"] = None
 
 

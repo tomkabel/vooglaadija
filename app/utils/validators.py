@@ -3,6 +3,7 @@ import ipaddress
 import socket
 import urllib.error
 import urllib.request
+from typing import Any
 from urllib.parse import urlparse
 
 from core.logging_config import get_logger
@@ -147,11 +148,19 @@ async def _check_redirect_target(url: str) -> bool:
     """
 
     class _NoFollowRedirects(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
-            req._redirect_target = newurl  # stash for inspection
+        def redirect_request(
+            self,
+            req: urllib.request.Request,
+            fp: Any,
+            code: int,
+            msg: str,
+            headers: Any,
+            newurl: str,
+        ) -> urllib.request.Request | None:
+            req._redirect_target = newurl  # type: ignore[attr-defined]
             raise urllib.error.HTTPError(url, code, "SSRF redirect check", headers, fp)
 
-    def _check():
+    def _check() -> bool:
         opener = urllib.request.build_opener(_NoFollowRedirects)
         req = urllib.request.Request(url, method="HEAD")
         req.add_header("User-Agent", "Mozilla/5.0")
@@ -167,7 +176,7 @@ async def _check_redirect_target(url: str) -> bool:
                     if target:
                         addrs = socket.getaddrinfo(target, None, type=socket.SOCK_STREAM)
                         for _family, _type, _proto, _cname, sockaddr in addrs:
-                            if _is_private_ip(sockaddr[0]):
+                            if _is_private_ip(str(sockaddr[0])):
                                 return False
             # Non-redirect HTTP errors are fine — doesn't affect SSRF check
         except (urllib.error.URLError, TimeoutError, OSError):
