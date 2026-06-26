@@ -15,7 +15,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
     """Middleware to collect HTTP metrics."""
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         if request.url.path == "/metrics":
             return await call_next(request)

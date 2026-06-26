@@ -56,7 +56,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 
 
 async def validation_exception_handler(
-    request: Request, exc: RequestValidationError
+    request: Request, exc: RequestValidationError,
 ) -> JSONResponse:
     """Handle validation errors with standardized error response."""
     request_id = getattr(request.state, "request_id", "unknown")
@@ -107,10 +107,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     """Register rate-limit and global exception handlers."""
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     app.add_exception_handler(
-        StarletteHTTPException, cast(ExceptionHandler, http_exception_handler)
+        StarletteHTTPException, cast("ExceptionHandler", http_exception_handler),
     )
     app.add_exception_handler(
         RequestValidationError,
-        cast(ExceptionHandler, validation_exception_handler),
+        cast("ExceptionHandler", validation_exception_handler),
     )
-    app.add_exception_handler(Exception, cast(ExceptionHandler, general_exception_handler))
+    app.add_exception_handler(Exception, cast("ExceptionHandler", general_exception_handler))

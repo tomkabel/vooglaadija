@@ -71,7 +71,7 @@ async def update_username(
     """Update current user's username."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
+            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf",
         )
 
     try:
@@ -104,7 +104,7 @@ async def delete_account(
     """Delete current user's account and associated downloads."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
+            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf",
         )
 
     try:
@@ -132,7 +132,7 @@ async def delete_account(
             500,
             _error_html(
                 "Could not remove all downloaded files. Your account was not deleted. "
-                "Please try again or contact support."
+                "Please try again or contact support.",
             ),
             "/web/settings?error=file_cleanup",
         )

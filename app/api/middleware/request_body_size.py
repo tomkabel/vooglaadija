@@ -16,7 +16,7 @@ class RequestBodySizeMiddleware(BaseHTTPMiddleware):
     MAX_BODY_SIZE = 1024 * 1024
 
     async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return await call_next(request)

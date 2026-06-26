@@ -74,13 +74,12 @@ async def _check_redis(redis_url: str) -> str:
     responses={
         200: success_response_doc("Service is healthy", {"status": "healthy"}),
         503: error_response_doc(
-            "Service unavailable", ErrorCode.INTERNAL_ERROR, "Dependency check failed"
+            "Service unavailable", ErrorCode.INTERNAL_ERROR, "Dependency check failed",
         ),
     },
 )
 async def health_check() -> HealthStatus:
-    """
-    Returns the health status using independent, direct connections.
+    """Returns the health status using independent, direct connections.
     """
     health_status: HealthStatus = {
         "status": "healthy",
@@ -123,8 +122,7 @@ async def health_check() -> HealthStatus:
     },
 )
 async def readiness_check() -> ReadinessResponse | Response:
-    """
-    Readiness probe that checks all dependencies.
+    """Readiness probe that checks all dependencies.
 
     Returns 503 if any dependency is unhealthy, allowing
     Kubernetes to remove this pod from service endpoints.

@@ -178,7 +178,7 @@ async def close_api_resources() -> None:
 
 
 def create_lifespan(
-    app_version: str, uvloop_available: bool
+    app_version: str, uvloop_available: bool,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None, bool | None]]:
     """Create the FastAPI lifespan context manager for app assembly."""
 
