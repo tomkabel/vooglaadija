@@ -267,22 +267,31 @@ def _get_platform(url: str) -> str:
     """Detect the media platform from a URL hostname using exact domain matching.
 
     Returns a string key used for throttling metrics, extractor args,
-    format chains, and cookie requirements. Defaults to 'youtube'.
+    format chains, and cookie requirements. Unknown/unrecognizable hosts
+    default to 'youtube' while subdomain-bypass attempts return 'unknown'.
     """
     hostname = (urlparse(url).hostname or "").lower()
-    if hostname in _YOUTUBE_DOMAINS | _YOUTUBE_SHORT_DOMAINS | _YOUTUBE_NOCOOKIE:
+    if not hostname:
         return "youtube"
-    if hostname in _VIMEO_HOSTS:
+
+    youtube_all = _YOUTUBE_DOMAINS | _YOUTUBE_SHORT_DOMAINS | _YOUTUBE_NOCOOKIE
+
+    def _host_matches(domains):
+        return hostname in domains or any(hostname.endswith("." + d) for d in domains)
+
+    if _host_matches(youtube_all):
+        return "youtube"
+    if _host_matches(_VIMEO_HOSTS):
         return "vimeo"
-    if hostname in _DAILYMOTION_HOSTS:
+    if _host_matches(_DAILYMOTION_HOSTS):
         return "dailymotion"
-    if hostname in _TWITCH_HOSTS:
+    if _host_matches(_TWITCH_HOSTS):
         return "twitch"
-    if hostname in _TIKTOK_HOSTS:
+    if _host_matches(_TIKTOK_HOSTS):
         return "tiktok"
-    if hostname in _INSTAGRAM_HOSTS:
+    if _host_matches(_INSTAGRAM_HOSTS):
         return "instagram"
-    return "youtube"
+    return "unknown"
 
 
 # Alias for backward compatibility — throttle-tracking uses the same platform key.
@@ -405,13 +414,14 @@ async def _extract_via_subprocess(
 
     # Only inject youtube-specific options when building the script for YouTube.
     # Tests assert that non-YouTube platform scripts do not contain YouTube-only keys.
+    # Embedding them as dict entries keeps the options inside the ydl_opts dict definition.
     if platform == "youtube":
-        youtube_specific = (
-            '    ydl_opts["prefer_free_formats"] = True\n'
-            '    ydl_opts["check_formats"] = "missable"\n'
+        youtube_opts = (
+            '            "prefer_free_formats": True,\n'
+            '            "check_formats": "missable",\n'
         )
     else:
-        youtube_specific = ""
+        youtube_opts = ""
 
     extract_script = f"""
 import sys
@@ -462,8 +472,8 @@ def _progress_hook(d):
             "socket_timeout": 60,
             "retries": 3,
             "progress_hooks": [_progress_hook],
-        }}
-{youtube_specific}    ydl_opts.update(cookies_opts)
+{youtube_opts}        }}
+    ydl_opts.update(cookies_opts)
     if extractor_args:
         ydl_opts["extractor_args"] = extractor_args
 
