@@ -233,6 +233,8 @@ def start_health_server(port: int | None = None) -> uvicorn.Server | None:
     if port is None:
         port = int(env_port)
 
+    health_host = os.environ.get("WORKER_HEALTH_HOST", "127.0.0.1")
+
     if port == 0:
         logger.info("worker_health_http_disabled")
         return None
@@ -244,7 +246,7 @@ def start_health_server(port: int | None = None) -> uvicorn.Server | None:
 
     config = uvicorn.Config(
         health_app,
-        host="0.0.0.0",
+        host=health_host,
         port=port,
         log_level=os.environ.get("LOG_LEVEL", "info").lower(),
         access_log=False,

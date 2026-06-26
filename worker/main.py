@@ -93,8 +93,8 @@ async def cleanup_expired_jobs() -> int:
 
         result = await db.execute(
             select(DownloadJob).where(
-                DownloadJob.expires_at < now, DownloadJob.status == "completed"
-            )
+                DownloadJob.expires_at < now, DownloadJob.status == "completed",
+            ),
         )
         expired_jobs = result.scalars().all()
 
@@ -115,13 +115,13 @@ async def cleanup_expired_jobs() -> int:
                     try:
                         os.remove(safe_path)
                         logger.info(
-                            "cleaned_up_expired_file", file_path=safe_path, job_id=str(job.id)
+                            "cleaned_up_expired_file", file_path=safe_path, job_id=str(job.id),
                         )
                         await db.delete(job)
                         cleanup_count += 1
                     except OSError as e:
                         logger.warning(
-                            "failed_to_delete_expired_file", file_path=job.file_path, error=str(e)
+                            "failed_to_delete_expired_file", file_path=job.file_path, error=str(e),
                         )
                 else:
                     logger.info("file_already_deleted", job_id=str(job.id), file_path=job.file_path)
@@ -133,7 +133,7 @@ async def cleanup_expired_jobs() -> int:
                     cleanup_count += 1
                 except Exception as db_err:
                     logger.warning(
-                        "failed_to_delete_db_row", job_id=job.id, error=str(db_err), exc_info=True
+                        "failed_to_delete_db_row", job_id=job.id, error=str(db_err), exc_info=True,
                     )
 
         try:
@@ -156,7 +156,7 @@ async def _update_queue_depth() -> None:
         return dl + rt + cd
         """
         total = await redis_client.eval(
-            lua_script, 3, "download_queue", "retry_queue", "circuit_deferred_queue"
+            lua_script, 3, "download_queue", "retry_queue", "circuit_deferred_queue",
         )
         QUEUE_DEPTH.set(int(total))
     except Exception as e:
@@ -300,7 +300,7 @@ async def main() -> None:
             return #due_jobs
             """
             moved_count = await redis_client.eval(
-                lua_script, 2, "retry_queue", "download_queue", now_ts, MAX_RETRY_BATCH
+                lua_script, 2, "retry_queue", "download_queue", now_ts, MAX_RETRY_BATCH,
             )
             if moved_count and moved_count > 0:
                 logger.info("retry_jobs_moved", moved_count=moved_count)

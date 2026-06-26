@@ -53,6 +53,7 @@ async def requeue_stuck_jobs(timeout_minutes: int = 15) -> int:
 
     Returns:
         Number of jobs requeued.
+
     """
     # Chaos-aware: if the chaos zombie key is active, clamp to 1 minute max
     # so the demo doesn't wait 15 minutes for recovery visualization
@@ -86,7 +87,7 @@ async def requeue_stuck_jobs(timeout_minutes: int = 15) -> int:
                 status="pending",
                 updated_at=datetime.now(UTC),
             )
-            .returning(DownloadJob.id)
+            .returning(DownloadJob.id),
         )
         requeued_ids = result.scalars().all()
 
@@ -104,7 +105,7 @@ async def requeue_stuck_jobs(timeout_minutes: int = 15) -> int:
                     event_type="zombie_recovery",
                     payload=json.dumps({"recovered_at": now.isoformat()}),
                     status="pending",
-                )
+                ),
             )
 
         try:

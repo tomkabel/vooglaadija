@@ -35,7 +35,7 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
             .where(Outbox.status == "pending")
             .order_by(Outbox.created_at)
             .limit(batch_size)
-            .with_for_update(skip_locked=True)
+            .with_for_update(skip_locked=True),
         )
         entries = claim_result.scalars().all()
 
@@ -68,7 +68,7 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
                     synced += 1
             except Exception as e:
                 logger.error(
-                    "failed_to_enqueue_job_from_outbox", job_id=str(entry.job_id), error=str(e)
+                    "failed_to_enqueue_job_from_outbox", job_id=str(entry.job_id), error=str(e),
                 )
 
         if processed_entry_ids:
@@ -93,7 +93,7 @@ async def cleanup_stale_outbox_entries(hours: int = 24) -> int:
             delete(Outbox).where(
                 Outbox.created_at < cutoff,
                 Outbox.status.in_(["completed", "failed"]),
-            )
+            ),
         )
         await db.commit()
         count = int(result.rowcount or 0)

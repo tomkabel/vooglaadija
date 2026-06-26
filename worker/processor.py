@@ -76,7 +76,7 @@ async def _drain_circuit_deferred(max_batch: int = 10) -> int:
                     result = await db.execute(
                         update(DownloadJob)
                         .where(DownloadJob.id == job_id_str, DownloadJob.status == "deferred")
-                        .values(status="pending", updated_at=datetime.now(UTC))
+                        .values(status="pending", updated_at=datetime.now(UTC)),
                     )
                     if result.rowcount != 1:
                         await db.rollback()
@@ -196,7 +196,7 @@ async def _handle_circuit_open(db, active_job_id: UUID, cb_error: CircuitBreaker
             f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
             error_category="transient",
             updated_at=datetime.now(UTC),
-        )
+        ),
     )
     await db.commit()
     if result.rowcount == 0:

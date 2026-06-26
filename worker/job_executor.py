@@ -85,7 +85,7 @@ async def requeue_job(job_id: UUID, db) -> bool:
             {
                 "retry_count": 0,
                 "next_retry_at": datetime.now(UTC).isoformat(),
-            }
+            },
         ),
         status="pending",
     )
@@ -100,7 +100,7 @@ async def requeue_job(job_id: UUID, db) -> bool:
         .values(
             status="pending",
             updated_at=datetime.now(UTC),
-        )
+        ),
     )
     await db.commit()
     if result.rowcount == 0:
@@ -138,7 +138,7 @@ async def check_chaos_injection(db, job_id: UUID, start_time: float) -> bool:
             await db.execute(
                 update(DownloadJob)
                 .where(DownloadJob.id == job_id)
-                .values(status="pending", updated_at=datetime.now(UTC))
+                .values(status="pending", updated_at=datetime.now(UTC)),
             )
             await db.commit()
             RECOVERIES.labels(reason="zombie_sweep_recovery").inc()
@@ -205,7 +205,7 @@ async def execute(
             throttle_risk = await get_risk_score("youtube")
             if throttle_risk >= 1.0:
                 logger.warning(
-                    "preemptive_throttle_block", job_id=str(job_id), risk_score=throttle_risk
+                    "preemptive_throttle_block", job_id=str(job_id), risk_score=throttle_risk,
                 )
                 await requeue_job(job_id, db)
                 JOBS_COMPLETED.labels(status="deferred").inc()
@@ -274,7 +274,7 @@ async def execute(
 
         stop_hb = asyncio.Event()
         hb_task = asyncio.create_task(
-            periodic_heartbeat(get_async_session_factory(), job_id, stop_hb)
+            periodic_heartbeat(get_async_session_factory(), job_id, stop_hb),
         )
 
         loop = asyncio.get_running_loop()
@@ -283,12 +283,12 @@ async def execute(
                 job.url,
                 settings.storage_path,
                 progress_callback=progress_callback,
-            )
+            ),
         )
 
         try:
             file_path, file_name, title = await asyncio.wait_for(
-                extract_task, timeout=attempt_timeout
+                extract_task, timeout=attempt_timeout,
             )
         except TimeoutError:
             extract_task.cancel()
@@ -306,7 +306,7 @@ async def execute(
                 return ExecutionResult(ExecutionStatus.REQUEUED, job_id, job=job)
 
             raise TimeoutError(
-                f"Extraction timed out after {attempt_timeout}s (attempt {job.retry_count + 1})"
+                f"Extraction timed out after {attempt_timeout}s (attempt {job.retry_count + 1})",
             ) from None
 
         if shutdown_event.is_set():
@@ -331,7 +331,7 @@ async def execute(
                 title=title,
                 completed_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=settings.file_expire_hours),
-            )
+            ),
         )
         await db.commit()
         if result.rowcount == 0:

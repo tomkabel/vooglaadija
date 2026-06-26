@@ -54,7 +54,7 @@ async def claim_next(db: AsyncSession, job_id: UUID | str | bytes) -> DownloadJo
         .where(DownloadJob.id == normalized_job_id, DownloadJob.status == "pending")
         .values(status="processing", updated_at=datetime.now(UTC))
         .returning(DownloadJob)
-        .execution_options(synchronize_session=False)
+        .execution_options(synchronize_session=False),
     )
     job = result.scalar_one_or_none()
     await db.commit()
@@ -64,7 +64,7 @@ async def claim_next(db: AsyncSession, job_id: UUID | str | bytes) -> DownloadJo
 async def heartbeat(db: AsyncSession, job_id: UUID) -> None:
     """Update a processing job heartbeat timestamp."""
     await db.execute(
-        update(DownloadJob).where(DownloadJob.id == job_id).values(updated_at=datetime.now(UTC))
+        update(DownloadJob).where(DownloadJob.id == job_id).values(updated_at=datetime.now(UTC)),
     )
     await db.commit()
 
@@ -89,7 +89,7 @@ async def periodic_heartbeat(
                     await hb_db.execute(
                         update(DownloadJob)
                         .where(DownloadJob.id == job_id)
-                        .values(updated_at=datetime.now(UTC))
+                        .values(updated_at=datetime.now(UTC)),
                     )
                     await hb_db.commit()
     except asyncio.CancelledError:

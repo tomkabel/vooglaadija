@@ -87,7 +87,7 @@ async def mark_failed_and_move_to_dlq(
             last_error=accumulated,
             error_category=decision.category.value,
             completed_at=datetime.now(UTC),
-        )
+        ),
     )
     if int(getattr(failed_result, "rowcount", 0) or 0) == 0:
         logger.warning(
@@ -139,7 +139,7 @@ async def reset_stuck_jobs(timeout_minutes: int = 10) -> int:
                 updated_at=datetime.now(UTC),
             )
             .returning(DownloadJob.id, DownloadJob.user_id)
-            .execution_options(synchronize_session=False)
+            .execution_options(synchronize_session=False),
         )
         affected = result.fetchall()
         if not affected:
