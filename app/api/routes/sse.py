@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from app.api.dependencies import CurrentUserFromCookie
+from app.api.rate_limit_config import limiter
 from app.services.pubsub_service import PubSubService, get_pubsub_service
 from core.database import get_async_session_factory
 from core.logging_config import get_logger
@@ -80,7 +81,7 @@ async def _emit_initial_snapshot(
                     ServerSentEvent(
                         event="job_update",
                         data=json.dumps(await _job_to_sse_data(job)),
-                    )
+                    ),
                 )
     except Exception as e:
         logger.warning("sse_initial_state_failed", user_id=str(user_id), error=str(e))
@@ -431,7 +432,7 @@ async def event_generator(
 
         # Fall back to polling
         async for event in fallback_polling_generator(
-            request, session_factory, user_id, seen_initial
+            request, session_factory, user_id, seen_initial,
         ):
             yield event
     except GeneratorExit:
@@ -449,6 +450,7 @@ async def event_generator(
 
 
 @router.get("/downloads/stream")
+@limiter.limit("5/minute")
 async def download_status_stream(
     request: Request,
     current_user: CurrentUserFromCookie,

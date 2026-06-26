@@ -22,7 +22,7 @@ class NoOpLimiter:
     """A no-op limiter that doesn't enforce rate limits."""
 
     def limit(
-        self, *args: Any, **kwargs: Any
+        self, *args: Any, **kwargs: Any,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Return a no-op decorator."""
 
@@ -51,8 +51,7 @@ def _parse_retry_after(detail: str) -> int:
     limit, _window, unit = match.groups()
     limit = int(limit)
     unit = unit.lower()
-    if unit.endswith("s"):
-        unit = unit[:-1]  # "minutes" → "minute", "secs" → "sec"
+    unit = unit.removesuffix("s")  # "minutes" → "minute", "secs" → "sec"
     # Handle "sec" variant
     if unit == "sec":
         unit = "second"
@@ -67,7 +66,7 @@ def _parse_retry_after(detail: str) -> int:
 
 
 async def rate_limit_exceeded_handler(
-    request: Request, exc: Exception
+    request: Request, exc: Exception,
 ) -> JSONResponse | HTMLResponse:
     """Handle rate limit exceeded errors with standardized error response.
 
@@ -87,7 +86,7 @@ async def rate_limit_exceeded_handler(
     # even if the JS error handler swaps the response into the DOM target.
     if request.headers.get("HX-Request") == "true":
         return HTMLResponse(
-            status_code=429, content=_rate_limit_error_html(detail), headers=headers
+            status_code=429, content=_rate_limit_error_html(detail), headers=headers,
         )
 
     return JSONResponse(
