@@ -403,6 +403,16 @@ async def _extract_via_subprocess(
 
     output_fields_json = json.dumps(list(_OUTPUT_FIELDS))
 
+    # Only inject youtube-specific options when building the script for YouTube.
+    # Tests assert that non-YouTube platform scripts do not contain YouTube-only keys.
+    if platform == "youtube":
+        youtube_specific = (
+            '    ydl_opts["prefer_free_formats"] = True\n'
+            '    ydl_opts["check_formats"] = "missable"\n'
+        )
+    else:
+        youtube_specific = ""
+
     extract_script = f"""
 import sys
 import json
@@ -440,23 +450,20 @@ def _progress_hook(d):
             "eta": d.get("eta"),
         }}), flush=True)
 
-for i, format_spec in enumerate(fallback_chain):
-    _last_progress_pct = -1.0
-    ydl_opts = {{
-        "format": format_spec["format"],
-        "format_sort": format_spec.get("format_sort", []),
-        "outtmpl": output_template,
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
-        "socket_timeout": 60,
-        "retries": 3,
-        "progress_hooks": [_progress_hook],
-    }}
-    if platform == "youtube":
-        ydl_opts["prefer_free_formats"] = True
-        ydl_opts["check_formats"] = "missable"
-    ydl_opts.update(cookies_opts)
+    for i, format_spec in enumerate(fallback_chain):
+        _last_progress_pct = -1.0
+        ydl_opts = {{
+            "format": format_spec["format"],
+            "format_sort": format_spec.get("format_sort", []),
+            "outtmpl": output_template,
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": True,
+            "socket_timeout": 60,
+            "retries": 3,
+            "progress_hooks": [_progress_hook],
+        }}
+{youtube_specific}    ydl_opts.update(cookies_opts)
     if extractor_args:
         ydl_opts["extractor_args"] = extractor_args
 

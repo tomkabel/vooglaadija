@@ -17,13 +17,18 @@ Each error category has its own retry policy:
 
 import re
 import secrets
+
+# Use a SystemRandom instance for uniform() while still exposing the name
+# `random` so tests can patch `app.services.error_classifier.random.uniform`.
+random = secrets.SystemRandom()
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 
 from redis.asyncio import Redis
 
-_rng = secrets.SystemRandom()
+# Backwards-compatible alias used by callers/tests via patching
+# `app.services.error_classifier.random.uniform`.
 
 
 class ErrorCategory(Enum):
@@ -261,12 +266,12 @@ def calculate_delay(
 
     if policy.jitter == JitterType.DECORRELATED:
         if attempt == 0 or prev_delay is None:
-            return _rng.uniform(0, base)
-        return min(cap, _rng.uniform(base, prev_delay * 3))
+            return random.uniform(0, base)
+        return min(cap, random.uniform(base, prev_delay * 3))
 
     if policy.jitter == JitterType.FULL:
         c = min(cap, base * (2**attempt))
-        return _rng.uniform(0, c)
+        return random.uniform(0, c)
 
     return base
 
