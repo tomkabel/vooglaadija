@@ -276,7 +276,7 @@ def _get_platform(url: str) -> str:
 
     youtube_all = _YOUTUBE_DOMAINS | _YOUTUBE_SHORT_DOMAINS | _YOUTUBE_NOCOOKIE
 
-    def _host_matches(domains):
+    def _host_matches(domains: frozenset[str]) -> bool:
         return hostname in domains or any(hostname.endswith("." + d) for d in domains)
 
     if _host_matches(youtube_all):
