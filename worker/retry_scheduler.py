@@ -55,7 +55,7 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
     error_str = str(error)
     classification = classify_error(error_str)
     category = classification.category
-    job_max_retries = job.max_retries if job.max_retries else 3
+    job_max_retries = job.max_retries or 3
     effective_max = min(CATEGORY_POLICIES[category].max_retries, job_max_retries)
 
     ERROR_CLASSIFICATION.labels(category=category.value).inc()
@@ -139,7 +139,7 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
             last_error=decision.accumulated_error,
             error_category=decision.category.value,
             updated_at=datetime.now(UTC),
-        )
+        ),
     )
     if int(getattr(retry_result, "rowcount", 0) or 0) == 0:
         await db.rollback()
@@ -158,7 +158,7 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
                 "retry_count": job.retry_count + 1,
                 "category": decision.category.value,
                 "next_retry_at": decision.next_retry_at.isoformat(),
-            }
+            },
         ),
         status="pending",
     )

@@ -15,13 +15,15 @@ Each error category has its own retry policy:
 - UNKNOWN:               2 retries, 30s-10m, full jitter
 """
 
-import random
 import re
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 
 from redis.asyncio import Redis
+
+_rng = secrets.SystemRandom()
 
 
 class ErrorCategory(Enum):
@@ -126,78 +128,78 @@ class ClassificationResult:
 
 
 _RATE_LIMITED_PATTERNS = [
-    re.compile(r"HTTP Error 429", re.I),
+    re.compile(r"HTTP Error 429", re.IGNORECASE),
     re.compile(r"\b429\b"),
-    re.compile(r"Too Many Requests", re.I),
-    re.compile(r"rate.?limit", re.I),
-    re.compile(r"Retry.?After", re.I),
+    re.compile(r"Too Many Requests", re.IGNORECASE),
+    re.compile(r"rate.?limit", re.IGNORECASE),
+    re.compile(r"Retry.?After", re.IGNORECASE),
 ]
 
 _TRANSIENT_PATTERNS = [
-    re.compile(r"HTTP Error 50[0-9]", re.I),
+    re.compile(r"HTTP Error 50[0-9]", re.IGNORECASE),
     re.compile(r"\b50[2-3]\b"),
-    re.compile(r"connection.*(?:refused|reset|abort|timeout)", re.I),
-    re.compile(r"temporary.*(?:failure|error|unavailable)", re.I),
-    re.compile(r"try again later", re.I),
-    re.compile(r"(?:DNS|name resolution).*error", re.I),
-    re.compile(r"network.*(?:error|unreachable)", re.I),
-    re.compile(r"Empty response", re.I),
-    re.compile(r"Read timed out", re.I),
-    re.compile(r"ConnectionError", re.I),
-    re.compile(r"timeout.*occurred", re.I),
-    re.compile(r"remote.*disconnected", re.I),
-    re.compile(r"reset by peer", re.I),
-    re.compile(r"broken pipe", re.I),
+    re.compile(r"connection.*(?:refused|reset|abort|timeout)", re.IGNORECASE),
+    re.compile(r"temporary.*(?:failure|error|unavailable)", re.IGNORECASE),
+    re.compile(r"try again later", re.IGNORECASE),
+    re.compile(r"(?:DNS|name resolution).*error", re.IGNORECASE),
+    re.compile(r"network.*(?:error|unreachable)", re.IGNORECASE),
+    re.compile(r"Empty response", re.IGNORECASE),
+    re.compile(r"Read timed out", re.IGNORECASE),
+    re.compile(r"ConnectionError", re.IGNORECASE),
+    re.compile(r"timeout.*occurred", re.IGNORECASE),
+    re.compile(r"remote.*disconnected", re.IGNORECASE),
+    re.compile(r"reset by peer", re.IGNORECASE),
+    re.compile(r"broken pipe", re.IGNORECASE),
 ]
 
 _BLOCKED_PATTERNS = [
-    re.compile(r"HTTP Error 403", re.I),
+    re.compile(r"HTTP Error 403", re.IGNORECASE),
     re.compile(r"\b403\b"),
-    re.compile(r"blocked", re.I),
-    re.compile(r"age.?restrict", re.I),
-    re.compile(r"copyright", re.I),
-    re.compile(r"terms of service", re.I),
-    re.compile(r"sign in to confirm", re.I),
-    re.compile(r"login required", re.I),
-    re.compile(r"GEO", re.I),
-    re.compile(r"unavailable in your", re.I),
-    re.compile(r"removed by", re.I),
-    re.compile(r"copyright claim", re.I),
-    re.compile(r"DMCA", re.I),
-    re.compile(r"restricted", re.I),
+    re.compile(r"blocked", re.IGNORECASE),
+    re.compile(r"age.?restrict", re.IGNORECASE),
+    re.compile(r"copyright", re.IGNORECASE),
+    re.compile(r"terms of service", re.IGNORECASE),
+    re.compile(r"sign in to confirm", re.IGNORECASE),
+    re.compile(r"login required", re.IGNORECASE),
+    re.compile(r"GEO", re.IGNORECASE),
+    re.compile(r"unavailable in your", re.IGNORECASE),
+    re.compile(r"removed by", re.IGNORECASE),
+    re.compile(r"copyright claim", re.IGNORECASE),
+    re.compile(r"DMCA", re.IGNORECASE),
+    re.compile(r"restricted", re.IGNORECASE),
 ]
 
 _NOT_FOUND_PATTERNS = [
-    re.compile(r"HTTP Error 404", re.I),
+    re.compile(r"HTTP Error 404", re.IGNORECASE),
     re.compile(r"\b404\b"),
-    re.compile(r"(?:video|page|content).*not found", re.I),
-    re.compile(r"(?:video|page).*unavailable", re.I),
-    re.compile(r"private video", re.I),
-    re.compile(r"deleted video", re.I),
-    re.compile(r"no longer available", re.I),
-    re.compile(r"removed video", re.I),
+    re.compile(r"(?:video|page|content).*not found", re.IGNORECASE),
+    re.compile(r"(?:video|page).*unavailable", re.IGNORECASE),
+    re.compile(r"private video", re.IGNORECASE),
+    re.compile(r"deleted video", re.IGNORECASE),
+    re.compile(r"no longer available", re.IGNORECASE),
+    re.compile(r"removed video", re.IGNORECASE),
 ]
 
 _FORMAT_PATTERNS = [
-    re.compile(r"format is not available", re.I),
-    re.compile(r"Requested format.*not available", re.I),
-    re.compile(r"All formats failed", re.I),
+    re.compile(r"format is not available", re.IGNORECASE),
+    re.compile(r"Requested format.*not available", re.IGNORECASE),
+    re.compile(r"All formats failed", re.IGNORECASE),
 ]
 
 _TIMEOUT_PATTERNS = [
-    re.compile(r"(?:timed? ?out)", re.I),
-    re.compile(r"Timeout", re.I),
-    re.compile(r"timed out", re.I),
+    re.compile(r"(?:timed? ?out)", re.IGNORECASE),
+    re.compile(r"Timeout", re.IGNORECASE),
+    re.compile(r"timed out", re.IGNORECASE),
 ]
 
 _STORAGE_PATTERNS = [
-    re.compile(r"no space left", re.I),
-    re.compile(r"disk full", re.I),
-    re.compile(r"permission denied", re.I),
-    re.compile(r"StorageError", re.I),
+    re.compile(r"no space left", re.IGNORECASE),
+    re.compile(r"disk full", re.IGNORECASE),
+    re.compile(r"permission denied", re.IGNORECASE),
+    re.compile(r"StorageError", re.IGNORECASE),
 ]
 
-RETRY_AFTER_PATTERN = re.compile(r"Retry-After:\s*(\d+)", re.I)
+RETRY_AFTER_PATTERN = re.compile(r"Retry-After:\s*(\d+)", re.IGNORECASE)
 
 _PATTERN_CATEGORIES: list[tuple[str, list[re.Pattern]]] = [
     ("format_unavailable", _FORMAT_PATTERNS),
@@ -259,12 +261,12 @@ def calculate_delay(
 
     if policy.jitter == JitterType.DECORRELATED:
         if attempt == 0 or prev_delay is None:
-            return random.uniform(0, base)
-        return min(cap, random.uniform(base, prev_delay * 3))
+            return _rng.uniform(0, base)
+        return min(cap, _rng.uniform(base, prev_delay * 3))
 
     if policy.jitter == JitterType.FULL:
         c = min(cap, base * (2**attempt))
-        return random.uniform(0, c)
+        return _rng.uniform(0, c)
 
     return base
 
