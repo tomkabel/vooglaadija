@@ -172,7 +172,7 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Either DATABASE_URL or DB_PASSWORD must be set. "
                 "For Docker: set DB_PASSWORD in .env. "
-                "For local dev: set DATABASE_URL in .env."
+                "For local dev: set DATABASE_URL in .env.",
             )
         encoded_password = quote_plus(self.db_password)
         self.database_url = (
@@ -184,7 +184,7 @@ class Settings(BaseSettings):
         if not self.secret_key:
             raise ValueError(
                 "SECRET_KEY is required. "
-                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"',
             )
 
         if len(self.secret_key) < 32:
@@ -195,7 +195,7 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SECRET_KEY has insufficient entropy "
                 f"(~{entropy_per_char:.1f} bits/char, need >= 2.9). "
-                'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"'
+                'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"',
             )
 
     def _validate_cors(self) -> None:

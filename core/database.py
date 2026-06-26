@@ -59,7 +59,7 @@ class _EngineFactory:
         """Get or create the async session factory (lazy initialization)."""
         if self._async_session_factory is None:
             self._async_session_factory = async_sessionmaker(
-                self.get_engine(), class_=AsyncSession, expire_on_commit=False
+                self.get_engine(), class_=AsyncSession, expire_on_commit=False,
             )
         return self._async_session_factory
 

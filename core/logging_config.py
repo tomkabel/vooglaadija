@@ -76,6 +76,7 @@ def configure_logging(log_level: str = "INFO") -> None:
 
     Args:
         log_level: Minimum log level to output (default: INFO)
+
     """
     is_production = os.environ.get("ENVIRONMENT", "development") == "production"
 
@@ -172,6 +173,7 @@ def get_logger(name: str | None = None, **kwargs: Any) -> "BoundLogger":
         from structlog.contextvars import bind_contextvars
         with bind_contextvars(user_id=123, request_id="abc"):
             logger.info("within_context")  # Includes both user_id and request_id
+
     """
     logger = structlog.get_logger(name)
     if kwargs:
