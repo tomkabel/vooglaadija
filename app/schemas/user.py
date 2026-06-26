@@ -1,11 +1,13 @@
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from app.utils.validators import validate_password
 
 
 class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     password: str
 
