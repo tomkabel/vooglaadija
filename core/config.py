@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     throttle_risk_threshold_scale: int = 10
     throttle_risk_threshold: float = 0.7
 
+    # Browser downloader microservice (Phase 2 worker integration).
+    # When disabled (default), the worker routes all jobs to yt-dlp,
+    # matching pre-Phase-2 behavior. P4 will expand the rest of the
+    # surface (image, sandbox_runtime, recording fallback).
+    browser_downloader_enabled: bool = False
+    browser_downloader_endpoint: str = "http://browser-downloader:3000"
+    browser_downloader_timeout: int = 300
+    browser_downloader_cb_use_redis: bool = False
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""
@@ -104,6 +113,7 @@ class Settings(BaseSettings):
         self._build_database_url()
         self._validate_secret_key()
         self._validate_cors()
+        self._validate_browser_downloader()
         self._resolve_storage()
         self._build_redis_url()
         return self
@@ -251,6 +261,25 @@ class Settings(BaseSettings):
             self.redis_url = f"redis://:{encoded_password}@{self.redis_host}:{self.redis_port}"
         else:
             self.redis_url = f"redis://{self.redis_host}:{self.redis_port}"
+
+    def _validate_browser_downloader(self) -> None:
+        if self.browser_downloader_timeout < 1:
+            raise ValueError(
+                f"Invalid BROWSER_DOWNLOADER_TIMEOUT: {self.browser_downloader_timeout!r} must be >= 1",
+            )
+        if not self.browser_downloader_endpoint:
+            raise ValueError("BROWSER_DOWNLOADER_ENDPOINT must be a non-empty URL")
+        try:
+            parsed = urlparse(self.browser_downloader_endpoint)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid BROWSER_DOWNLOADER_ENDPOINT: {self.browser_downloader_endpoint!r}",
+            ) from exc
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(
+                f"Invalid BROWSER_DOWNLOADER_ENDPOINT: {self.browser_downloader_endpoint!r} "
+                "must be an http(s) URL with a host",
+            )
 
 
 settings = Settings()

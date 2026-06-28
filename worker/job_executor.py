@@ -27,6 +27,11 @@ from core.metrics import JOBS_COMPLETED, RECOVERIES
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
 from core.queue import redis_client
+from worker.browser_executor import (
+    BrowserExecutorError,
+    extract_media as extract_media_browser,
+    select_executor,
+)
 from worker.health import update_worker_state
 from worker.job_claimer import heartbeat, periodic_heartbeat
 
@@ -51,6 +56,20 @@ class ExecutionResult:
     job: DownloadJob | None = None
     error: BaseException | None = None
     completed: bool = False
+
+
+def _resolve_executor_kind(url: str) -> str:
+    """Phase 2: pick the executor kind, respecting the browser feature flag.
+
+    `select_executor` does the pure hostname-based routing. The feature
+    flag forces a fallback to the existing yt-dlp path when the microservice
+    is disabled, preserving pre-Phase-2 behavior. Tests for the routing
+    decision should patch `select_executor` directly to avoid touching
+    settings; this wrapper is the integration point in `execute()`.
+    """
+    if not settings.browser_downloader_enabled:
+        return "youtube"
+    return select_executor(url)
 
 
 async def publish_job_status(job: DownloadJob) -> None:
@@ -201,7 +220,13 @@ async def execute(
         if await check_chaos_injection(db, job_id, start_time):
             return ExecutionResult(ExecutionStatus.CONSUMED, job_id, job=job)
 
-        if settings.feature_throttle_preemptive_enabled:
+        # Phase 2: route the job to the right executor. Browser-platform
+        # jobs skip the throttle predictor (yt-dlp-specific signal) and the
+        # progress callback (microservice is single-shot HTTP). The feature
+        # flag forces a fallback to yt-dlp when the microservice is disabled.
+        executor_kind = _resolve_executor_kind(job.url)
+
+        if executor_kind == "youtube" and settings.feature_throttle_preemptive_enabled:
             throttle_risk = await get_risk_score("youtube")
             if throttle_risk >= 1.0:
                 logger.warning(
@@ -278,13 +303,25 @@ async def execute(
         )
 
         loop = asyncio.get_running_loop()
-        extract_task = loop.create_task(
-            extract_media_with_circuit_breaker(
-                job.url,
-                settings.storage_path,
-                progress_callback=progress_callback,
-            ),
-        )
+        if executor_kind == "browser":
+            logger.info(
+                "job_routed_to_browser_executor", job_id=str(job_id), url=job.url,
+            )
+            extract_task = loop.create_task(
+                extract_media_browser(
+                    job.url,
+                    settings.storage_path,
+                    progress_callback=None,
+                ),
+            )
+        else:
+            extract_task = loop.create_task(
+                extract_media_with_circuit_breaker(
+                    job.url,
+                    settings.storage_path,
+                    progress_callback=progress_callback,
+                ),
+            )
 
         try:
             file_path, file_name, title = await asyncio.wait_for(
