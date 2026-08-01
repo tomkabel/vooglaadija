@@ -107,7 +107,9 @@ async def create_download_form(
     await service.best_effort_enqueue(job.id)
 
     resp = templates.TemplateResponse(
-        request, "partials/_download_item.html", get_template_context(request, job=job),
+        request,
+        "partials/_download_item.html",
+        get_template_context(request, job=job),
     )
     set_csrf_token_cookie(resp, get_csrf_token(request))
     return resp
@@ -124,12 +126,18 @@ async def create_download_full_page(
     """Full-page handler for form submissions (non-HTMX fallback)."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf",
+            request,
+            403,
+            _error_html("Invalid CSRF token"),
+            "/web/downloads?error=csrf",
         )
 
     if not is_supported_url(url):
         return _htmx_or_redirect(
-            request, 422, _error_html("Invalid supported URL"), "/web/downloads?error=invalid_url",
+            request,
+            422,
+            _error_html("Invalid supported URL"),
+            "/web/downloads?error=invalid_url",
         )
 
     service = DownloadService(db, current_user.id)

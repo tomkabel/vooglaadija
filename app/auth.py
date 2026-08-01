@@ -122,7 +122,10 @@ def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any]
 
 
 def set_token_cookies(
-    response: "Response", access_token: str, refresh_token: str, secure: bool = True,
+    response: "Response",
+    access_token: str,
+    refresh_token: str,
+    secure: bool = True,
 ) -> None:
     # __Host- prefixed cookies MUST have Secure=True in all browsers.
     # Ignore the caller's secure parameter for __Host- cookies.

@@ -113,7 +113,9 @@ async def create_download(
     db: DbSession,
 ) -> DownloadResponse:
     """Create a new download job for the authenticated user."""
-    job = await DownloadService(db, current_user.id).create(data.url)
+    service = DownloadService(db, current_user.id)
+    job = await service.create(data.url)
+    await service.best_effort_enqueue(job.id)
     return _job_to_response(job)
 
 

@@ -260,7 +260,10 @@ class DownloadService:
         return DeleteOutcome(file_deleted=file_deleted)
 
     async def resolve_errors(
-        self, page: int, per_page: int, category: str | None = None,
+        self,
+        page: int,
+        per_page: int,
+        category: str | None = None,
     ) -> FailedJobPage:
         """Return paginated user-owned failed jobs."""
         query = select(FailedJob).where(FailedJob.user_id == self.user_id)
@@ -272,7 +275,9 @@ class DownloadService:
         count_result = await self.db.execute(count_query)
         total = count_result.scalar_one()
         result = await self.db.execute(
-            query.order_by(FailedJob.failed_at.desc()).offset((page - 1) * per_page).limit(per_page),
+            query.order_by(FailedJob.failed_at.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page),
         )
         return FailedJobPage(
             failed_jobs=list(result.scalars().all()),
@@ -282,7 +287,10 @@ class DownloadService:
         )
 
     async def list_failed(
-        self, page: int, per_page: int, category: str | None = None,
+        self,
+        page: int,
+        per_page: int,
+        category: str | None = None,
     ) -> FailedJobPage:
         """Alias for failed-job listing."""
         return await self.resolve_errors(page, per_page, category)

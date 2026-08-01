@@ -146,7 +146,10 @@ async def test_schedule_retry_updates_db_outbox_and_redis(db_session) -> None:
     assert queued[0][1] == pytest.approx(_as_utc(retried.next_retry_at).timestamp(), abs=0.01)
 
     outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
-    assert outbox_result.scalars().all() == []
+    rows = outbox_result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "processed"
+    assert rows[0].processed_at is not None
 
 
 @pytest.mark.unit
@@ -291,7 +294,7 @@ def test_replay_all_retains_batch_original_job_lookup() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_outbox_relay_handles_retry_payload_success_and_failure(db_session) -> None:
-    """Outbox relay deletes successful retry rows and retains failed retry rows as pending."""
+    """Outbox relay marks successful retry rows 'processed' and retains failed ones as pending."""
     from worker.outbox_relay import sync_outbox_to_queue
 
     user_id = uuid4()
@@ -335,15 +338,16 @@ async def test_outbox_relay_handles_retry_payload_success_and_failure(db_session
     assert synced == 1
     result = await db_session.execute(select(Outbox))
     remaining = result.scalars().all()
-    assert len(remaining) == 1
-    assert remaining[0].job_id == failed_job_id
-    assert remaining[0].status == "pending"
+    assert len(remaining) == 2
+    statuses = {r.job_id: r.status for r in remaining}
+    assert statuses[successful_job_id] == "processed"
+    assert statuses[failed_job_id] == "pending"
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_outbox_relay_clears_duplicate_retry_rows_after_verifying_redis(db_session) -> None:
-    """Outbox relay should delete retry rows already recovered to Redis before a crash."""
+    """Outbox relay marks retry rows already recovered to Redis as 'processed'."""
     from worker.outbox_relay import sync_outbox_to_queue
 
     user_id = uuid4()
@@ -382,7 +386,9 @@ async def test_outbox_relay_clears_duplicate_retry_rows_after_verifying_redis(db
 
     assert synced == 1
     result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
-    assert result.scalars().all() == []
+    rows = result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "processed"
 
 
 @pytest.mark.unit
@@ -394,4 +400,5 @@ def test_outbox_relay_static_contracts_are_preserved() -> None:
     assert ".with_for_update(skip_locked=True)" in source
     assert 'entry.event_type == "retry_scheduled"' in source
     assert "push_to_download_queue" in source
-    assert 'Outbox.status == "pending"' in source
+    # The relay still filters on the pending status; we keep it as a constant.
+    assert 'Outbox.status == "pending"' in source or '_PENDING_STATUS = "pending"' in source

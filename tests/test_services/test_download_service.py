@@ -76,8 +76,8 @@ async def test_create_writes_job_and_pending_outbox(db_session, sample_url):
 
 
 @pytest.mark.asyncio
-async def test_best_effort_enqueue_deletes_pending_outbox_on_success(db_session):
-    """Best-effort enqueue removes pending outbox recovery rows after queue success."""
+async def test_best_effort_enqueue_marks_pending_outbox_processed_on_success(db_session):
+    """Best-effort enqueue transitions the pending outbox row to 'processed' after queue success."""
     from app.services.download_service import DownloadService
 
     user = await _user(db_session)
@@ -97,7 +97,9 @@ async def test_best_effort_enqueue_deletes_pending_outbox_on_success(db_session)
 
     enqueue.assert_awaited_once_with(job.id)
     outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == job.id))
-    assert outbox_result.scalar_one_or_none() is None
+    processed = outbox_result.scalar_one()
+    assert processed.status == "processed"
+    assert processed.processed_at is not None
 
 
 @pytest.mark.asyncio
@@ -139,7 +141,7 @@ async def test_best_effort_enqueue_rolls_back_failed_outbox_cleanup():
             self.rolled_back = False
 
         async def execute(self, _statement):
-            raise RuntimeError("delete failed")
+            raise RuntimeError("update failed")
 
         async def commit(self):
             raise AssertionError("commit should not run when cleanup fails")

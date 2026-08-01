@@ -94,12 +94,13 @@ const DRM_INIT_SCRIPT = () => {
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
       try {
-        if (init && init.headers) {
-          const h = init.headers instanceof Headers
-            ? Object.fromEntries(init.headers.entries())
-            : Array.isArray(init.headers)
-              ? Object.fromEntries(init.headers)
-              : { ...init.headers };
+        if (init?.headers) {
+          const h =
+            init.headers instanceof Headers
+              ? Object.fromEntries(init.headers.entries())
+              : Array.isArray(init.headers)
+                ? Object.fromEntries(init.headers)
+                : { ...init.headers };
           const auth = {};
           if (h.referer) auth.referer = h.referer;
           if (h.origin) auth.origin = h.origin;
@@ -109,7 +110,9 @@ const DRM_INIT_SCRIPT = () => {
             window.__bd_auth_headers = { ...window.__bd_auth_headers, ...auth };
           }
         }
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       return nativeFetch(input, init);
     };
   }
@@ -122,7 +125,9 @@ const DRM_INIT_SCRIPT = () => {
         if (['referer', 'origin', 'cookie', 'authorization'].includes(lower)) {
           window.__bd_auth_headers[lower] = value;
         }
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
       return origSetHeader.call(this, name, value);
     };
   }
@@ -244,7 +249,9 @@ export async function interceptMedia(page, url, opts = {}) {
             if (pageHeaders) {
               authHeaders = pageHeaders;
             }
-          } catch { /* best-effort */ }
+          } catch {
+            /* best-effort */
+          }
           // CDP-level headers override page-level (more reliable).
           const cdpHeaders = requestHeaders.get(params.requestId);
           if (cdpHeaders) {
@@ -254,7 +261,8 @@ export async function interceptMedia(page, url, opts = {}) {
             kind: 'manifest',
             streamUrl: candidate.url,
             ext: 'mp4',
-            authHeaders: authHeaders && Object.keys(authHeaders).length > 0 ? authHeaders : undefined,
+            authHeaders:
+              authHeaders && Object.keys(authHeaders).length > 0 ? authHeaders : undefined,
           });
           return;
         }

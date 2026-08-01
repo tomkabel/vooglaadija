@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
@@ -60,7 +60,7 @@ class BrowserExecutorError(Exception):
     used in `worker/retry_scheduler.evaluate`.
     """
 
-    _CATEGORY_MARKERS: dict[ErrorCategory, str] = {
+    _CATEGORY_MARKERS: ClassVar[dict[ErrorCategory, str]] = {
         ErrorCategory.BLOCKED: "blocked (anti-bot or DRM)",
         ErrorCategory.NOT_FOUND: "404 not found",
         ErrorCategory.TIMEOUT: "Request timeout",
@@ -216,7 +216,7 @@ async def extract_media(
         raise
     except BrowserExecutorError:
         raise
-    except Exception as exc:  # noqa: BLE001 — last-resort classification
+    except Exception as exc:
         logger.error("browser_downloader_unexpected_error", error=str(exc), exc_info=True)
         raise BrowserExecutorError(
             category=ErrorCategory.UNKNOWN, signal="unexpected_error"
@@ -248,9 +248,7 @@ async def _call_service(
         ) from exc
     except httpx.HTTPError as exc:
         logger.warning("browser_downloader_http_error", error=str(exc))
-        raise BrowserExecutorError(
-            category=ErrorCategory.TRANSIENT, signal="http_error"
-        ) from exc
+        raise BrowserExecutorError(category=ErrorCategory.TRANSIENT, signal="http_error") from exc
 
     if response.status_code == 200:
         return _parse_success(response)
@@ -284,11 +282,10 @@ def _parse_success(response: httpx.Response) -> tuple[str, str, str | None]:
     file_path = payload.get("file_path")
     if not isinstance(file_path, str) or not file_path:
         logger.warning(
-            "browser_downloader_missing_file_path", payload_keys=list(payload.keys()),
+            "browser_downloader_missing_file_path",
+            payload_keys=list(payload.keys()),
         )
-        raise BrowserExecutorError(
-            category=ErrorCategory.TRANSIENT, signal="missing_file_path"
-        )
+        raise BrowserExecutorError(category=ErrorCategory.TRANSIENT, signal="missing_file_path")
     file_name = file_path.rsplit("/", 1)[-1] or file_path
     return file_path, file_name, None
 
@@ -298,15 +295,17 @@ def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | N
     signal = f"http_{response.status_code}"
     try:
         payload = response.json()
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as err:
         # Non-JSON error body — use the synthesized HTTP status signal so 404/403/429
         # are categorized correctly even when the body is empty or non-JSON.
         logger.warning(
-            "browser_downloader_non_json_error", status=response.status_code,
+            "browser_downloader_non_json_error",
+            status=response.status_code,
         )
         raise BrowserExecutorError(
-            category=_map_response_to_category(signal), signal=signal,
-        )
+            category=_map_response_to_category(signal),
+            signal=signal,
+        ) from err
 
     if not isinstance(payload, dict):
         logger.warning(
@@ -314,7 +313,8 @@ def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | N
             payload_type=type(payload).__name__,
         )
         raise BrowserExecutorError(
-            category=_map_response_to_category(signal), signal=signal,
+            category=_map_response_to_category(signal),
+            signal=signal,
         )
 
     return _parse_failure_payload(payload, fallback_code=signal)

@@ -109,7 +109,7 @@ describe('streamlink backend — HLS fallback correctness', () => {
     let calls = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url) => {
+      vi.fn(async (_url) => {
         calls += 1;
         if (calls === 1) {
           return okRes({

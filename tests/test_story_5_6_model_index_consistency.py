@@ -46,6 +46,7 @@ EXPECTED_HEAD_INDEXES = {
         "ix_outbox_job_id",
         "ix_outbox_status",
         "ix_outbox_status_created_at",
+        "uq_outbox_pending_job_id",
     },
 }
 
@@ -108,12 +109,13 @@ def test_download_job_metadata_keeps_only_single_column_model_index() -> None:
 
 
 def test_outbox_metadata_matches_database_indexes() -> None:
-    """Outbox metadata should represent its single-column and composite indexes."""
+    """Outbox metadata should represent its single-column, composite, and partial unique indexes."""
     outbox_indexes = _index_names("outbox")
 
     assert "ix_outbox_job_id" in outbox_indexes
     assert "ix_outbox_status" in outbox_indexes
     assert "ix_outbox_status_created_at" in outbox_indexes
+    assert "uq_outbox_pending_job_id" in outbox_indexes
 
 
 def test_story_5_1_composites_are_documented_as_migration_only() -> None:

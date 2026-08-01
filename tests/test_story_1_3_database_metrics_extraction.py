@@ -21,6 +21,7 @@ _EXPECTED_ALEMBIC_VERSION_FILES = {
     "006_add_failed_job_original_job_id_index.py",
     "007_add_check_constraints_and_fk.py",
     "008_add_last_error_to_download_jobs.py",
+    "009_add_outbox_pending_unique_index.py",
 }
 _LEGACY_MODULES = {_DATABASE_SHIM_MODULE, _METRICS_SHIM_MODULE}
 

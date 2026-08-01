@@ -92,13 +92,18 @@ class TestOutboxRecovery:
             synced = await sync_outbox_to_queue(batch_size=10)
             assert synced == 1
 
-        # Outbox entry is DELETED after successful sync (not updated to enqueued)
+        # Outbox entry is marked 'processed' (not deleted) after successful sync.
+        # Expire the test session so the commit from the relay's separate session
+        # is visible through the same async engine.
+        await db_session.commit()
+        db_session.expire_all()
         from sqlalchemy import select
 
-        await db_session.commit()
         result = await db_session.execute(select(Outbox).where(Outbox.id == outbox_id))
-        deleted_entry = result.scalar_one_or_none()
-        assert deleted_entry is None
+        processed_entry = result.scalar_one_or_none()
+        assert processed_entry is not None
+        assert processed_entry.status == "processed"
+        assert processed_entry.processed_at is not None
 
     @pytest.mark.unit
     async def test_sync_outbox_with_retry_scheduled(self, db_session, job_id, user_id):
@@ -247,8 +252,16 @@ class TestOutboxRecovery:
 
 class TestOutboxIdempotency:
     @pytest.mark.unit
-    async def test_duplicate_outbox_entry_prevented(self, db_session, job_id, user_id):
-        """Test that duplicate outbox entries are prevented by idempotent check."""
+    async def test_duplicate_pending_outbox_entry_rejected_by_db(self, db_session, job_id, user_id):
+        """Test that a second 'pending' outbox row for the same job_id is rejected
+        by the partial unique index ``uq_outbox_pending_job_id``.
+
+        The DB-enforced constraint is the primary guard; the application-layer
+        SELECT-then-INSERT check inside ``write_job_to_outbox`` provides a
+        cheaper fast-path for the common case.
+        """
+        from sqlalchemy.exc import IntegrityError
+
         job = DownloadJob(
             id=job_id,
             user_id=user_id,
@@ -285,11 +298,9 @@ class TestOutboxIdempotency:
             status="pending",
         )
         db_session.add(outbox2)
-        await db_session.commit()
-
-        result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
-        all_entries = result.scalars().all()
-        assert len(all_entries) == 2
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+        await db_session.rollback()
 
 
 class TestOutboxBatchProcessing:
@@ -327,11 +338,15 @@ class TestOutboxBatchProcessing:
             synced = await sync_outbox_to_queue(batch_size=2)
             assert synced == 2
 
-        # Entries are DELETED after successful sync (batch_size=2 means 2 deleted)
+        # Entries are marked 'processed' after successful sync (batch_size=2 means 2 processed)
         await db_session.commit()
         result = await db_session.execute(select(Outbox))
         remaining = result.scalars().all()
-        assert len(remaining) == 3  # 5 - 2 = 3 remain
+        assert len(remaining) == 5
+        processed = [r for r in remaining if r.status == "processed"]
+        pending = [r for r in remaining if r.status == "pending"]
+        assert len(processed) == 2
+        assert len(pending) == 3
 
 
 class TestOutboxCrashRecoveryScenarios:
@@ -367,13 +382,16 @@ class TestOutboxCrashRecoveryScenarios:
             synced = await sync_outbox_to_queue(batch_size=10)
             assert synced == 1
 
-        # Entry is DELETED after successful sync
+        # Entry is marked 'processed' after successful sync, retained for audit.
         await db_session.commit()
+        db_session.expire_all()
         from sqlalchemy import select
 
         result = await db_session.execute(select(Outbox).where(Outbox.id == outbox_id))
-        deleted = result.scalar_one_or_none()
-        assert deleted is None
+        processed = result.scalar_one_or_none()
+        assert processed is not None
+        assert processed.status == "processed"
+        assert processed.processed_at is not None
 
     @pytest.mark.unit
     async def test_job_enqueued_twice_prevented(self, db_session, job_id, user_id):

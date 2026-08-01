@@ -91,7 +91,9 @@ function contextCandidates(authHeaders) {
   // Deduplicate by serialized key.
   const seen = new Set();
   return candidates.filter((c) => {
-    const key = `${c.credentials}::${c.mode}::${Object.keys(c.headers || {}).sort().join(',')}`;
+    const key = `${c.credentials}::${c.mode}::${Object.keys(c.headers || {})
+      .sort()
+      .join(',')}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -152,7 +154,6 @@ async function fetchResWithRetry(url, opts = {}) {
         }
         if (attempt < MAX_RETRIES) {
           await sleep(retryDelayMs(attempt));
-          continue;
         }
       }
     }
@@ -163,7 +164,14 @@ async function fetchResWithRetry(url, opts = {}) {
 // Follow redirects manually, validating every Location via `validateUrl`.
 // Checks Content-Length against the resource-kind cap before materializing.
 async function fetchResOne(url, opts = {}) {
-  const { signal, timeout = DEFAULT_FETCH_TIMEOUT, lookup, credentials, mode, headers: extraHeaders } = opts;
+  const {
+    signal,
+    timeout = DEFAULT_FETCH_TIMEOUT,
+    lookup,
+    credentials,
+    mode,
+    headers: extraHeaders,
+  } = opts;
   const resourceKind = classifyResource(url);
   const bodyCap = opts.bodyCap ?? maxBodyBytes(resourceKind);
   let next = url;
@@ -403,7 +411,13 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
   }
 
   try {
-    const text = await fetchText(url, { signal: aggregate, timeout: dlTimeout, lookup, bodyCap, authHeaders });
+    const text = await fetchText(url, {
+      signal: aggregate,
+      timeout: dlTimeout,
+      lookup,
+      bodyCap,
+      authHeaders,
+    });
 
     // Encrypted HLS: DRM methods or non-identity KEYFORMAT.
     if (/#EXT-X-(?:KEY|SESSION-KEY)/.test(text)) {

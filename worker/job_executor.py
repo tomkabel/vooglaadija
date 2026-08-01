@@ -29,6 +29,8 @@ from core.models.outbox import Outbox
 from core.queue import redis_client
 from worker.browser_executor import (
     extract_media as extract_media_browser,
+)
+from worker.browser_executor import (
     select_executor,
 )
 from worker.health import update_worker_state
@@ -166,7 +168,7 @@ async def check_chaos_injection(db, job_id: UUID, start_time: float) -> bool:
             JOB_DURATION_SECONDS.observe(time.time() - start_time)
             return True
     except Exception:
-        pass
+        logger.debug("zombie_sweep_recovery skipped (non-critical)", exc_info=True)
 
     try:
         if await redis_client.exists("chaos:db_failover"):
@@ -179,15 +181,15 @@ async def check_chaos_injection(db, job_id: UUID, start_time: float) -> bool:
     except OperationalError:
         raise
     except Exception:
-        pass
+        logger.debug("chaos_db_failover check skipped (non-critical)", exc_info=True)
 
     try:
         if await redis_client.exists("chaos:slow_processing"):
-            delay = random.uniform(5.0, 20.0)
+            delay = random.uniform(5.0, 20.0)  # noqa: S311 — chaos testing, not crypto
             logger.info("chaos_slow_processing", job_id=str(job_id), delay_seconds=round(delay, 1))
             await asyncio.sleep(delay)
     except Exception:
-        pass
+        logger.debug("chaos_slow_processing skipped (non-critical)", exc_info=True)
 
     if shutdown_event.is_set():
         logger.info("Shutdown requested, requeueing job %s", job_id)
@@ -229,7 +231,9 @@ async def execute(
             throttle_risk = await get_risk_score("youtube")
             if throttle_risk >= 1.0:
                 logger.warning(
-                    "preemptive_throttle_block", job_id=str(job_id), risk_score=throttle_risk,
+                    "preemptive_throttle_block",
+                    job_id=str(job_id),
+                    risk_score=throttle_risk,
                 )
                 await requeue_job(job_id, db)
                 JOBS_COMPLETED.labels(status="deferred").inc()
@@ -304,7 +308,9 @@ async def execute(
         loop = asyncio.get_running_loop()
         if executor_kind == "browser":
             logger.info(
-                "job_routed_to_browser_executor", job_id=str(job_id), url=job.url,
+                "job_routed_to_browser_executor",
+                job_id=str(job_id),
+                url=job.url,
             )
             extract_task = loop.create_task(
                 extract_media_browser(
@@ -324,14 +330,15 @@ async def execute(
 
         try:
             file_path, file_name, title = await asyncio.wait_for(
-                extract_task, timeout=attempt_timeout,
+                extract_task,
+                timeout=attempt_timeout,
             )
         except TimeoutError:
             extract_task.cancel()
             try:
                 await extract_task
             except (asyncio.CancelledError, Exception):
-                pass
+                logger.debug("extract_task cancel cleanup (non-critical)", exc_info=True)
 
             if getattr(worker_main_module, "shutdown_requested_at", None) is not None:
                 await requeue_job(job_id, db)

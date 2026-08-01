@@ -32,6 +32,12 @@ OUTBOX_PENDING = Gauge(
     "Number of pending outbox entries",
 )
 
+OUTBOX_OLDEST_PENDING_SECONDS = Gauge(
+    "ytprocessor_outbox_oldest_pending_seconds",
+    "Age in seconds of the oldest pending outbox entry. "
+    "Saturation above the worker outbox_sync_interval indicates relay stall.",
+)
+
 HTTP_REQUESTS = Counter(
     "ytprocessor_http_requests_total",
     "Total HTTP requests",
@@ -164,6 +170,7 @@ __all__ = [
     "JOBS_COMPLETED",
     "JOBS_CREATED",
     "JOB_DURATION_SECONDS",
+    "OUTBOX_OLDEST_PENDING_SECONDS",
     "OUTBOX_PENDING",
     "QUEUE_DEPTH",
     "RECOVERIES",

@@ -142,7 +142,8 @@ except Exception as e:
             )
 
             stdout_bytes, _ = await asyncio.wait_for(
-                process.communicate(), timeout=YT_DLP_METADATA_TIMEOUT,
+                process.communicate(),
+                timeout=YT_DLP_METADATA_TIMEOUT,
             )
 
         if process.returncode != 0:
@@ -213,7 +214,8 @@ async def _walk_and_kill_orphaned_children(process: asyncio.subprocess.Process) 
         children_text: str | None = None
         try:
             children_text = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: open(children_path).read(),
+                None,
+                lambda: open(children_path).read(),
             )
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             return
@@ -306,8 +308,8 @@ def _get_platform(url: str) -> str:
         | _INSTAGRAM_HOSTS
     )
     for domain in all_platform_domains:
-        if hostname.startswith(domain + '.') or ('.' + domain) in hostname:
-            return 'unknown'
+        if hostname.startswith(domain + ".") or ("." + domain) in hostname:
+            return "unknown"
     return "youtube"
 
 
@@ -434,8 +436,7 @@ async def _extract_via_subprocess(
     # Embedding them as dict entries keeps the options inside the ydl_opts dict definition.
     if platform == "youtube":
         youtube_opts = (
-            '            "prefer_free_formats": True,\n'
-            '            "check_formats": "missable",\n'
+            '            "prefer_free_formats": True,\n            "check_formats": "missable",\n'
         )
     else:
         youtube_opts = ""
@@ -660,7 +661,9 @@ async def extract_media_url(
     # Extraction semaphore prevents OOM from N concurrent ~50-100MB processes.
     async with _EXTRACTION_SEMAPHORE:
         info = await _extract_via_subprocess(
-            url, output_template, progress_callback=progress_callback,
+            url,
+            output_template,
+            progress_callback=progress_callback,
         )
 
     title: str | None = info.get("title") or None

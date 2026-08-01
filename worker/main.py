@@ -256,9 +256,9 @@ async def main() -> None:
     last_cleanup = datetime.now(UTC) - cleanup_interval
 
     try:
-        outbox_sync_interval_seconds = int(os.environ.get("OUTBOX_SYNC_INTERVAL_SECONDS", "30"))
+        outbox_sync_interval_seconds = int(os.environ.get("OUTBOX_SYNC_INTERVAL_SECONDS", "2"))
     except (ValueError, TypeError):
-        outbox_sync_interval_seconds = 30
+        outbox_sync_interval_seconds = 2
     outbox_sync_interval_seconds = max(1, min(outbox_sync_interval_seconds, 3600))
     outbox_sync_interval = timedelta(seconds=outbox_sync_interval_seconds)
     last_outbox_sync = datetime.now(UTC) - outbox_sync_interval
