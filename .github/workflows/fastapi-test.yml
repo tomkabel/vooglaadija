@@ -164,7 +164,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
+          POSTGRES_PASSWORD: test_pw
           POSTGRES_DB: test_db
         options: >-
           --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
@@ -202,9 +202,9 @@ jobs:
         run: |
           SK="$(openssl rand -hex 32)"
           cp .env.example .env
-          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=test_pass|" .env  # pragma: allowlist secret
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=test_pw|" .env
           sed -i "s|^SECRET_KEY=$|SECRET_KEY=${SK}|" .env
-          echo "PGPASSWORD=test_pass" >> "$GITHUB_ENV"  # pragma: allowlist secret
+          echo "PGPASSWORD=test_pw" >> "$GITHUB_ENV"
 
       - name: Create database schema
         run: |
