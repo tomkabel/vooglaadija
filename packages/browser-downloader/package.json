@@ -1,0 +1,25 @@
+{
+  "name": "browser-downloader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Node.js microservice that downloads non-YouTube media via Playwright stealth + CDP/DOM interception + streamlink.",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "playwright": "1.49.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}
