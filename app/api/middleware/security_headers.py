@@ -18,7 +18,7 @@ async def add_security_headers(request: Request, call_next: Any) -> Any:
     if "Content-Security-Policy" not in response.headers:
         response.headers["Content-Security-Policy"] = (
             f"default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' 'strict-dynamic' 'unsafe-hashes' "
+            f"script-src 'self' 'nonce-{nonce}' 'unsafe-hashes' "
             f"{FONT_ONLOAD_HANDLER_HASH}; "
             f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
             f"font-src 'self' https://fonts.gstatic.com; "

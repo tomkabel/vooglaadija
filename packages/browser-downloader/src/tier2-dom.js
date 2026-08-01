@@ -116,10 +116,13 @@ export async function detectBlob(page, opts = {}) {
 
   let blocked = false;
   try {
-    blocked = await page.evaluate(() => {
-      const text = `${document.title || ''} ${document.body?.innerText || ''}`;
-      return BLOCK_RE.test(text);
-    });
+    blocked = await page.evaluate(
+      ({ source, flags }) => {
+        const text = `${document.title || ''} ${document.body?.innerText || ''}`;
+        return new RegExp(source, flags).test(text);
+      },
+      { source: BLOCK_RE.source, flags: BLOCK_RE.flags },
+    );
   } catch {
     blocked = false;
   }
@@ -155,7 +158,7 @@ export async function detectBlob(page, opts = {}) {
         // An AbortController bounds each in-page fetch so a hung blob URL
         // cannot block the polling loop forever.
         payload = await page.evaluate(
-          async (u, cap, timeoutMs) => {
+          async ({ u, cap, timeoutMs }) => {
             const ac = new AbortController();
             const timer = setTimeout(() => ac.abort(), timeoutMs);
             try {
@@ -175,9 +178,7 @@ export async function detectBlob(page, opts = {}) {
               clearTimeout(timer);
             }
           },
-          blobUrl,
-          bodyCap,
-          timeout,
+          { u: blobUrl, cap: bodyCap, timeoutMs: timeout },
         );
       } catch {
         payload = null;
@@ -204,10 +205,13 @@ export async function detectBlob(page, opts = {}) {
       if (drmNow) {
         throw new DownloaderError('drm_detected');
       }
-      const blockedNow = await page.evaluate(() => {
-        const text = `${document.title || ''} ${document.body?.innerText || ''}`;
-        return BLOCK_RE.test(text);
-      });
+      const blockedNow = await page.evaluate(
+        ({ source, flags }) => {
+          const text = `${document.title || ''} ${document.body?.innerText || ''}`;
+          return new RegExp(source, flags).test(text);
+        },
+        { source: BLOCK_RE.source, flags: BLOCK_RE.flags },
+      );
       if (blockedNow) {
         throw new DownloaderError('anti_bot_block');
       }

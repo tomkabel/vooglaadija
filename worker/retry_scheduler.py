@@ -181,6 +181,7 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
         else:
             logger.error("job_failed_to_enqueue_for_retry", job_id=str(active_job_id))
     except Exception as enqueue_error:
+        await db.rollback()
         logger.error(
             "job_failed_to_enqueue_for_retry",
             job_id=str(active_job_id),

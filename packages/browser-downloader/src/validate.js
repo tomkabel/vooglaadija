@@ -105,6 +105,18 @@ export function isPrivateIp(value) {
   if (a === 172 && b >= 16 && b <= 31) {
     return true;
   }
+  if (a === 100 && b >= 64 && b <= 127) {
+    return true; // CGNAT 100.64.0.0/10
+  }
+  if (a === 192 && b === 0) {
+    return true; // 192.0.0.0/24 IETF protocol assignments
+  }
+  if (a === 198 && (b === 18 || b === 19)) {
+    return true; // 198.18.0.0/15 benchmarking
+  }
+  if (a >= 224) {
+    return true; // multicast + reserved + 255.255.255.255
+  }
   return false;
 }
 

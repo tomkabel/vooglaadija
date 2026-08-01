@@ -200,12 +200,11 @@ jobs:
 
       - name: Create test environment
         run: |
-          DB_PASS="$(openssl rand -hex 16)"
           SK="$(openssl rand -hex 32)"
           cp .env.example .env
-          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" .env
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=test_pass|" .env  # pragma: allowlist secret
           sed -i "s|^SECRET_KEY=$|SECRET_KEY=${SK}|" .env
-          echo "DB_PASS=${DB_PASS}" >> "$GITHUB_ENV"
+          echo "PGPASSWORD=test_pass" >> "$GITHUB_ENV"  # pragma: allowlist secret
 
       - name: Create database schema
         run: |
@@ -217,7 +216,7 @@ jobs:
           from core.models import User, DownloadJob
 
           async def init_db():
-              db_pass = os.environ['DB_PASS']
+              db_pass = os.environ['PGPASSWORD']
               engine = create_async_engine(f'postgresql+asyncpg://test_user:{db_pass}@localhost:5432/test_db')
               async with engine.begin() as conn:
                   await conn.run_sync(Base.metadata.create_all)

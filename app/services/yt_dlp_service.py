@@ -308,7 +308,7 @@ def _get_platform(url: str) -> str:
         | _INSTAGRAM_HOSTS
     )
     for domain in all_platform_domains:
-        if hostname.startswith(domain + ".") or ("." + domain) in hostname:
+        if hostname.startswith(domain + ".") or hostname.endswith("." + domain):
             return "unknown"
     return "youtube"
 

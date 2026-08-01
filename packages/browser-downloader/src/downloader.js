@@ -10,7 +10,7 @@
 // inside `download()` so the HTTP layer is unit-testable without a browser.
 
 import { randomUUID } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { DownloaderError, classifyError } from './errors.js';
@@ -25,15 +25,15 @@ const DEFAULT_TIER2_TIMEOUT_MS = 30_000;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 120_000;
 const DEFAULT_BODY_CAP = 500 * 1024 * 1024;
 
-let stealthApplied = false;
+let stealthReady = null;
 
 async function launchStealthBrowser() {
   const { chromium } = await import('playwright-extra');
-  if (!stealthApplied) {
+  stealthReady ??= (async () => {
     const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
     chromium.use(StealthPlugin());
-    stealthApplied = true;
-  }
+  })();
+  await stealthReady;
   return chromium.launch({ headless: true });
 }
 
@@ -61,6 +61,7 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
   const uuid = randomUUID();
 
   let tierUsed = 1;
+  let outPath;
   try {
     context = await browser.newContext();
     page = await context.newPage();
@@ -78,7 +79,7 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
       // Defensive: safeExt guarantees whitelist, but never trust the path.
       throw new DownloaderError('network_error', `unwhitelisted extension: ${result.ext}`);
     }
-    const outPath = join(outputDir, `${uuid}.${ext}`);
+    outPath = join(outputDir, `${uuid}.${ext}`);
 
     if (result.kind === 'bytes') {
       await writeFile(outPath, result.buffer);
@@ -94,6 +95,9 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
 
     return { status: 'success', file_path: outPath, tier_used: tierUsed };
   } catch (err) {
+    if (outPath) {
+      await rm(outPath, { force: true }).catch(() => {});
+    }
     if (err instanceof DownloaderError) {
       return { status: 'failed', error: err.code, tier_used: null };
     }

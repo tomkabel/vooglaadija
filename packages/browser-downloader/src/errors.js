@@ -117,14 +117,15 @@ export function classifyError(err) {
     if (NETWORK_ERRNOS.has(code)) {
       return ERROR_CODES.NETWORK_ERROR;
     }
-    // fetch() network failures surface as TypeError("fetch failed") with a
-    // network `cause`; recurse into the cause for the real errno.
-    if (err instanceof TypeError && err.cause) {
-      try {
-        return classifyError(err.cause);
-      } catch {
-        // cause was itself a bug — fall through and rethrow below
-      }
+  }
+
+  // fetch() network failures surface as TypeError("fetch failed") with a
+  // network `cause`; recurse into the cause for the real errno.
+  if (err instanceof TypeError && err.cause) {
+    try {
+      return classifyError(err.cause);
+    } catch {
+      // cause was itself a bug — fall through to the default below
     }
   }
 

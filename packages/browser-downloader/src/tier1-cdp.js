@@ -44,7 +44,7 @@ const BLOCK_RE =
 const HLS_DRM_METHOD_RE = /#EXT-X-KEY:.*METHOD=(SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)/i;
 const HLS_DRM_KEYFORMAT_RE = /#EXT-X-KEY:.*KEYFORMAT="(?!identity).+"/i;
 // DASH: any <ContentProtection> element with a DRM schemeIdUri.
-const DASH_DRM_RE = /<ContentProtection\s/i;
+const DASH_DRM_RE = /<ContentProtection[\s/>]/i;
 
 // Key headers captured for auth replay on downstream segment fetches.
 const AUTH_HEADER_NAMES = ['referer', 'origin', 'cookie', 'authorization'];
@@ -95,12 +95,18 @@ const DRM_INIT_SCRIPT = () => {
     window.fetch = (input, init) => {
       try {
         if (init?.headers) {
-          const h =
+          const raw =
             init.headers instanceof Headers
               ? Object.fromEntries(init.headers.entries())
               : Array.isArray(init.headers)
                 ? Object.fromEntries(init.headers)
                 : { ...init.headers };
+          // Normalise to lowercase — Headers.entries() does this already,
+          // but array and object forms preserve caller casing.
+          const h = {};
+          for (const [k, v] of Object.entries(raw)) {
+            h[String(k).toLowerCase()] = v;
+          }
           const auth = {};
           if (h.referer) auth.referer = h.referer;
           if (h.origin) auth.origin = h.origin;
@@ -346,10 +352,13 @@ export async function interceptMedia(page, url, opts = {}) {
 
     const onDomReady = async () => {
       try {
-        const blocked = await page.evaluate(() => {
-          const text = `${document.title || ''} ${document.body?.innerText || ''}`;
-          return BLOCK_RE.test(text);
-        });
+        const blocked = await page.evaluate(
+          ({ source, flags }) => {
+            const text = `${document.title || ''} ${document.body?.innerText || ''}`;
+            return new RegExp(source, flags).test(text);
+          },
+          { source: BLOCK_RE.source, flags: BLOCK_RE.flags },
+        );
         if (blocked) {
           onTerminal(new DownloaderError('anti_bot_block'));
         }

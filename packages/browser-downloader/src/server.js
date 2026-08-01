@@ -15,7 +15,7 @@ import express from 'express';
 
 import { ConcurrencyLimitError, createSemaphore } from './concurrency.js';
 import { download } from './downloader.js';
-import { classifyError } from './errors.js';
+import { DownloaderError, classifyError } from './errors.js';
 import { parseTimeout, validateOutputDir, validateUrl } from './validate.js';
 
 const PORT = Number(process.env.BD_PORT) || 3000;
@@ -98,7 +98,10 @@ export function createApp() {
       const result = await Promise.race([
         download(url, output_dir, { tier1Timeout, tier2Timeout }),
         new Promise((_, reject) => {
-          requestTimer = setTimeout(() => reject(new Error('request_timeout')), requestTimeout);
+          requestTimer = setTimeout(
+            () => reject(new DownloaderError('timeout', 'request timeout exceeded')),
+            requestTimeout,
+          );
         }),
       ]);
       if (result.status === 'success') {
