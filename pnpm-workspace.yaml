@@ -4,4 +4,3 @@ packages:
 allowBuilds:
   sharp: true
   '@biomejs/biome': true
-
