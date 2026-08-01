@@ -5,7 +5,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -216,13 +215,12 @@ class DownloadService:
             raise DownloadFileMissingError("File not found", code="missing_file_path")
 
         safe_path = self._validate_download_path(job.file_path)
+        if job.expires_at and self._as_utc(job.expires_at) < datetime.now(UTC):
+            raise DownloadFileExpiredError
         if not os.path.isfile(safe_path):
             safe_job_id = str(job_id).replace("\r", "").replace("\n", "")
             logger.error("file_missing_from_disk", job_id=safe_job_id, file_path=safe_path)
             raise DownloadFileMissingError("File not found on disk", code="missing_on_disk")
-
-        if job.expires_at and self._as_utc(job.expires_at) < datetime.now(UTC):
-            raise DownloadFileExpiredError
 
         return DownloadFilePath(path=safe_path, filename=job.file_name)
 
@@ -371,16 +369,26 @@ class DownloadService:
         return ReplayAllResult(replayed=replayed, total=len(failed_jobs))
 
     async def best_effort_enqueue(self, job_id: uuid.UUID) -> None:
-        """Try immediate queueing and leave outbox recovery intact on failure."""
+        """Try immediate queueing and leave outbox recovery intact on failure.
+
+        On Redis success, the matching pending outbox row is transitioned to
+        status='processed' (with processed_at) instead of being deleted, so
+        operators retain an audit trail. The row is reaped by
+        ``cleanup_stale_outbox_entries`` after the retention window.
+        """
         cleanup_started = False
         try:
             await enqueue_job(job_id)
             cleanup_started = True
+            from sqlalchemy import update as sqlalchemy_update
+
             await self.db.execute(
-                sqlalchemy_delete(Outbox).where(
+                sqlalchemy_update(Outbox)
+                .where(
                     Outbox.job_id == job_id,
                     Outbox.status == "pending",
-                ),
+                )
+                .values(status="processed", processed_at=datetime.now(UTC)),
             )
             await self.db.commit()
         except Exception:

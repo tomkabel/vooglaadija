@@ -79,7 +79,7 @@ async def test_web_auth_smoke_flow_register_login_validate_csrf_and_logout():
     password = "securepassword123"
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        transport=ASGITransport(app=app), base_url="https://test", follow_redirects=False
     ) as client:
         register_page = await client.get("/web/register")
         register_csrf = _csrf_cookie(register_page)

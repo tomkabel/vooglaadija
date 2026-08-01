@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from core.logging_config import get_logger
-from core.redis_client import get_redis_client
+from core.redis_client import close_redis_client, get_redis_client
 
 if TYPE_CHECKING:
     import redis.asyncio as aioredis
@@ -37,7 +37,7 @@ class _LazyRedisClient:
 
     async def close(self) -> None:
         if self._client is not None:
-            await self._client.close()
+            await close_redis_client()
             self._client = None
 
     def __getattr__(self, name: str) -> Any:

@@ -290,6 +290,10 @@ class TestExtractMediaCircuitBreaker:
     async def test_open_circuit_raises_transient_without_http_call(self) -> None:
         # When the breaker is OPEN, no HTTP call should be made. We use a
         # transport that would raise if invoked, proving the call was skipped.
+        # Phase 2 fix: CircuitBreakerOpenError propagates raw so the processor's
+        # deferred-job path handles it (worker/processor.py:_handle_circuit_open).
+        from app.services.circuit_breaker import CircuitBreakerOpenError
+
         called = False
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -304,14 +308,12 @@ class TestExtractMediaCircuitBreaker:
         for _ in range(breaker.failure_threshold):
             await breaker.record_failure(RuntimeError("boom"))
 
-        with pytest.raises(BrowserExecutorError) as exc:
+        with pytest.raises(CircuitBreakerOpenError):
             await extract_media(
                 "https://tiktok.com/@u/v/1",
                 "/storage",
                 client=client,
             )
-        assert exc.value.category == ErrorCategory.TRANSIENT
-        assert exc.value.signal == "circuit_open"
         assert called is False, "HTTP transport was called despite open breaker"
 
     @pytest.mark.asyncio

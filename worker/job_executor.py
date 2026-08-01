@@ -28,7 +28,6 @@ from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
 from core.queue import redis_client
 from worker.browser_executor import (
-    BrowserExecutorError,
     extract_media as extract_media_browser,
     select_executor,
 )

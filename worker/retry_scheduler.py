@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.error_classifier import (
@@ -55,7 +55,7 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
     error_str = str(error)
     classification = classify_error(error_str)
     category = classification.category
-    job_max_retries = job.max_retries or 3
+    job_max_retries = job.max_retries if job.max_retries is not None else 3
     effective_max = min(CATEGORY_POLICIES[category].max_retries, job_max_retries)
 
     ERROR_CLASSIFICATION.labels(category=category.value).inc()
@@ -169,7 +169,13 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
     try:
         enqueued = await push_to_retry_queue(active_job_id, decision.next_retry_at.timestamp())
         if enqueued:
-            await db.execute(delete(Outbox).where(Outbox.id == outbox_entry.id))
+            from sqlalchemy import update as sqlalchemy_update
+
+            await db.execute(
+                sqlalchemy_update(Outbox)
+                .where(Outbox.id == outbox_entry.id)
+                .values(status="processed", processed_at=datetime.now(UTC)),
+            )
             await db.commit()
             RETRIES_TOTAL.labels(category=decision.category.value).inc()
         else:

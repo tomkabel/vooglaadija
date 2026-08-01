@@ -210,15 +210,10 @@ async def extract_media(
 
     try:
         return await breaker.execute(_call_service, http_client, endpoint, request_body)
-    except CircuitBreakerOpenError as exc:
-        logger.warning(
-            "browser_downloader_circuit_open",
-            service=exc.service_name,
-            reset_timeout=exc.reset_timeout,
-        )
-        raise BrowserExecutorError(
-            category=ErrorCategory.TRANSIENT, signal="circuit_open"
-        ) from exc
+    except CircuitBreakerOpenError:
+        # Let CircuitBreakerOpenError propagate so the processor's dedicated
+        # deferred-job path can handle it (worker/processor.py:_handle_circuit_open).
+        raise
     except BrowserExecutorError:
         raise
     except Exception as exc:  # noqa: BLE001 — last-resort classification
@@ -304,12 +299,13 @@ def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | N
     try:
         payload = response.json()
     except (json.JSONDecodeError, ValueError):
-        # Non-JSON error body — treat as transient
+        # Non-JSON error body — use the synthesized HTTP status signal so 404/403/429
+        # are categorized correctly even when the body is empty or non-JSON.
         logger.warning(
             "browser_downloader_non_json_error", status=response.status_code,
         )
         raise BrowserExecutorError(
-            category=ErrorCategory.TRANSIENT, signal=signal
+            category=_map_response_to_category(signal), signal=signal,
         )
 
     if not isinstance(payload, dict):
@@ -318,21 +314,29 @@ def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | N
             payload_type=type(payload).__name__,
         )
         raise BrowserExecutorError(
-            category=ErrorCategory.TRANSIENT, signal=signal
+            category=_map_response_to_category(signal), signal=signal,
         )
 
-    return _parse_failure_payload(payload)
+    return _parse_failure_payload(payload, fallback_code=signal)
 
 
-def _parse_failure_payload(payload: dict[str, Any]) -> tuple[str, str, str | None]:
+def _parse_failure_payload(
+    payload: dict[str, Any],
+    *,
+    fallback_code: str = "unknown_error",
+) -> tuple[str, str, str | None]:
     """Map a structured failure payload to an error category.
 
     Accepts both 200-with-failed-status and non-200 responses.
     Raises BrowserExecutorError so the circuit breaker records a failure.
+
+    When the JSON body lacks an explicit ``error`` field, ``fallback_code``
+    (typically the synthesized ``http_<status>`` signal) is used so HTTP
+    404/403/429 still map to their correct categories.
     """
-    code = payload.get("error")
+    code: str = payload.get("error")  # type: ignore[assignment]
     if not isinstance(code, str) or not code:
-        code = "unknown_error"
+        code = fallback_code
     category = _map_response_to_category(code, payload)
     raise BrowserExecutorError(category=category, signal=code)
 
@@ -346,20 +350,18 @@ def _map_response_to_category(code: str, payload: dict[str, Any] | None = None) 
     # Terminal categories first — these never retry
     if code in {"drm_detected", "anti_bot_block"}:
         return ErrorCategory.BLOCKED
-    if code in {"no_media_found", "not_found", "private_content"}:
+    if code in {"no_media_found", "not_found", "private_content", "http_404"}:
         return ErrorCategory.NOT_FOUND
     # 429 rate-limit (microservice body) — TRANSIENT so the existing
     # backoff machinery applies; falling through to BLOCKED here would
     # send rate-limited jobs straight to the DLQ.
-    if code == "http_429":
+    if code in {"http_429", "http_503"}:
         return ErrorCategory.TRANSIENT
-    # Retryable categories
     if code in {"network_error", "http_error", "connect_error", "non_json_response"}:
         return ErrorCategory.TRANSIENT
     if code in {"timeout", "request_timeout"}:
         return ErrorCategory.TIMEOUT
-    # Generic 4xx (other than the BLOCKED codes above) → BLOCKED,
-    # except 429 (rate-limit) which is transient.
+    # Generic 4xx (other than the BLOCKED/NOT_FOUND codes above) → BLOCKED
     if code.startswith("http_4"):
         return ErrorCategory.BLOCKED
     if code.startswith("http_5"):

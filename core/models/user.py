@@ -40,8 +40,8 @@ class User(Base):
         DateTime(timezone=True), nullable=True, index=True,
     )
     token_version: Mapped[int] = mapped_column(Integer, server_default=text("1"), default=1)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
     )
 

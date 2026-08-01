@@ -48,8 +48,9 @@ def _parse_retry_after(detail: str) -> int:
     match = re.match(r"(\d+)\s+per\s+(\d+)\s+(\w+)", detail)
     if not match:
         return 60  # Default to 60 seconds if parsing fails
-    limit, _window, unit = match.groups()
-    limit = int(limit)
+    _limit, window, unit = match.groups()
+    _limit = int(_limit)
+    window = int(window)
     unit = unit.lower()
     unit = unit.removesuffix("s")  # "minutes" → "minute", "secs" → "sec"
     # Handle "sec" variant
@@ -62,7 +63,7 @@ def _parse_retry_after(detail: str) -> int:
         "day": 86400,
     }
     multiplier = multipliers.get(unit, 60)  # Default to minute (60s)
-    return limit * multiplier
+    return window * multiplier
 
 
 async def rate_limit_exceeded_handler(

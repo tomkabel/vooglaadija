@@ -259,8 +259,10 @@ _YOUTUBE_NOCOOKIE = frozenset({"youtube-nocookie.com", "www.youtube-nocookie.com
 _VIMEO_HOSTS = frozenset({"vimeo.com", "www.vimeo.com"})
 _DAILYMOTION_HOSTS = frozenset({"dailymotion.com", "www.dailymotion.com"})
 _TWITCH_HOSTS = frozenset({"twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"})
-_TIKTOK_HOSTS = frozenset({"tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com"})
-_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com"})
+_TIKTOK_HOSTS = frozenset(
+    {"tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "tiktokv.com"},
+)
+_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "instagr.am"})
 
 
 def _get_platform(url: str) -> str:
@@ -304,8 +306,8 @@ def _get_platform(url: str) -> str:
         | _INSTAGRAM_HOSTS
     )
     for domain in all_platform_domains:
-        if domain in hostname:
-            return "unknown"
+        if hostname.startswith(domain + '.') or ('.' + domain) in hostname:
+            return 'unknown'
     return "youtube"
 
 
@@ -475,19 +477,19 @@ def _progress_hook(d):
             "eta": d.get("eta"),
         }}), flush=True)
 
-    for i, format_spec in enumerate(fallback_chain):
-        _last_progress_pct = -1.0
-        ydl_opts = {{
-            "format": format_spec["format"],
-            "format_sort": format_spec.get("format_sort", []),
-            "outtmpl": output_template,
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-            "socket_timeout": 60,
-            "retries": 3,
-            "progress_hooks": [_progress_hook],
-{youtube_opts}        }}
+for i, format_spec in enumerate(fallback_chain):
+    _last_progress_pct = -1.0
+    ydl_opts = {{
+        "format": format_spec["format"],
+        "format_sort": format_spec.get("format_sort", []),
+        "outtmpl": output_template,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "socket_timeout": 60,
+        "retries": 3,
+        "progress_hooks": [_progress_hook],
+{youtube_opts}    }}
     ydl_opts.update(cookies_opts)
     if extractor_args:
         ydl_opts["extractor_args"] = extractor_args

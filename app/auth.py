@@ -124,11 +124,14 @@ def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any]
 def set_token_cookies(
     response: "Response", access_token: str, refresh_token: str, secure: bool = True,
 ) -> None:
+    # __Host- prefixed cookies MUST have Secure=True in all browsers.
+    # Ignore the caller's secure parameter for __Host- cookies.
+    _host_secure = True
     response.set_cookie(
         key="__Host-access_token",
         value=access_token,
         httponly=True,
-        secure=secure,
+        secure=_host_secure,
         samesite="lax",
         path="/",
         max_age=settings.access_token_expire_minutes * 60,
@@ -137,7 +140,7 @@ def set_token_cookies(
         key="__Host-refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=secure,
+        secure=_host_secure,
         samesite="lax",
         path="/",
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,

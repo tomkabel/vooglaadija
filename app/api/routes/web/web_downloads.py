@@ -109,6 +109,7 @@ async def create_download_form(
     resp = templates.TemplateResponse(
         request, "partials/_download_item.html", get_template_context(request, job=job),
     )
+    set_csrf_token_cookie(resp, get_csrf_token(request))
     return resp
 
 
