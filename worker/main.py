@@ -80,7 +80,7 @@ async def _update_circuit_deferred_depth() -> None:
         depth = await redis_client.zcard("circuit_deferred_queue")
         CIRCUIT_DEFERRED_DEPTH.set(depth)
     except Exception:
-        pass
+        logger.debug("circuit_deferred_depth update skipped (non-critical)", exc_info=True)
 
 
 async def cleanup_expired_jobs() -> int:
@@ -112,7 +112,7 @@ async def cleanup_expired_jobs() -> int:
                     )
                     continue
 
-                if os.path.exists(safe_path):
+                if os.path.exists(safe_path):  # noqa: ASYNC240 — local filesystem, negligible latency
                     try:
                         os.remove(safe_path)
                         logger.info(
