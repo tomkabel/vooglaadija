@@ -117,7 +117,9 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
                     synced += 1
             except Exception as e:
                 logger.error(
-                    "failed_to_enqueue_job_from_outbox", job_id=str(entry.job_id), error=str(e),
+                    "failed_to_enqueue_job_from_outbox",
+                    job_id=str(entry.job_id),
+                    error=str(e),
                 )
 
         if processed_entry_ids:

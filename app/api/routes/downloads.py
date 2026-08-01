@@ -80,7 +80,9 @@ def _map_download_service_error(exc: Exception) -> HTTPException:
             },
         ),
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials",
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
         ),
         422: {
             "description": "Validation error",
@@ -144,7 +146,9 @@ async def create_download(
             },
         ),
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials",
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
         ),
         422: {
             "description": "Validation error",
@@ -203,7 +207,9 @@ async def list_downloads(
             },
         ),
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials",
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
         ),
         404: error_response_doc(
             "Download job not found",
@@ -238,10 +244,14 @@ async def get_download(
             "Job is not completed. Current status: processing",
         ),
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials",
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
         ),
         403: error_response_doc(
-            "Invalid file path", ErrorCode.FORBIDDEN, "Access denied: invalid file path",
+            "Invalid file path",
+            ErrorCode.FORBIDDEN,
+            "Access denied: invalid file path",
         ),
         404: error_response_doc(
             "Job or file not found",
@@ -250,7 +260,9 @@ async def get_download(
             details={"job_id": "550e8400-e29b-41d4-a716-446655440000"},
         ),
         410: error_response_doc(
-            "Download link expired", ErrorCode.VALIDATION_ERROR, "Download link has expired",
+            "Download link expired",
+            ErrorCode.VALIDATION_ERROR,
+            "Download link has expired",
         ),
     },
 )
@@ -295,7 +307,9 @@ async def retry_download(
     responses={
         204: {"description": "Download job deleted"},
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials",
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
         ),
         404: error_response_doc(
             "Download job not found",

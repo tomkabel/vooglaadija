@@ -43,7 +43,10 @@ class Outbox(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("download_jobs.id"), nullable=False, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("download_jobs.id"),
+        nullable=False,
+        index=True,
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
