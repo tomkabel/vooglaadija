@@ -61,6 +61,7 @@ class CircuitBreaker:
     def __init__(
         self,
         name: str,
+        *,
         failure_threshold: int = 5,
         success_threshold: int = 3,
         reset_timeout: float = 30.0,

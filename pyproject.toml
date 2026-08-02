@@ -505,6 +505,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
+    "PLR0917", # SQLAlchemy event listener callbacks have a fixed positional signature
     "S101",   # assert is standard in pytest
     "S104",   # binding to all interfaces in test servers
     "S105",   # test secrets are expected
