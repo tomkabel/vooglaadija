@@ -59,7 +59,17 @@ async def _emit_initial_snapshot(
     user_id: uuid.UUID,
     seen_initial: OrderedDict[str, str],
 ) -> list[ServerSentEvent]:
-    """Emit initial job state from database."""
+    """
+    Create initial Server-Sent Events for the user's most recent download jobs.
+    
+    Parameters:
+    	session_factory: Factory for creating database sessions.
+    	user_id: Identifier of the user whose jobs are included.
+    	seen_initial: Mapping updated with each emitted job's identifier and state key.
+    
+    Returns:
+    	The initial job update events, or an empty list if the database query fails.
+    """
     events = []
     try:
         async with session_factory() as db:
@@ -112,7 +122,15 @@ async def _subscribe_to_pubsub(
     user_id: uuid.UUID,
     last_seen_job_ids: OrderedDict[str, str],
 ) -> AsyncGenerator[ServerSentEvent, None]:
-    """Inner generator that yields events from pubsub subscription."""
+    """
+    Stream distinct job status updates for a user from Pub/Sub.
+    
+    Parameters:
+    	last_seen_job_ids (OrderedDict[str, str]): Cache of the latest emitted state for each job.
+    
+    Returns:
+    	AsyncGenerator[ServerSentEvent, None]: Job update events containing serialized job data.
+    """
     async for job_data in pubsub.subscribe(user_id):
         job_id = job_data.get("id")
 
@@ -136,7 +154,15 @@ async def _subscribe_to_progress_pubsub(
     pubsub: PubSubService,
     user_id: uuid.UUID,
 ) -> AsyncGenerator[ServerSentEvent, None]:
-    """Inner generator that yields progress events from pubsub subscription."""
+    """
+    Stream progress updates for jobs belonging to a user.
+    
+    Parameters:
+    	user_id (uuid.UUID): Identifier of the user whose job progress updates are streamed.
+    
+    Yields:
+    	ServerSentEvent: An SSE event containing a job's progress data.
+    """
     async for progress_data in pubsub.subscribe_progress(user_id):
         job_id = progress_data.get("id")
         if job_id and progress_data.get("progress"):
@@ -222,13 +248,24 @@ async def _merge_generators(
     gen1: AsyncGenerator[ServerSentEvent, None],
     gen2: AsyncGenerator[ServerSentEvent, None],
 ) -> AsyncGenerator[ServerSentEvent, None]:
-    """Merge two SSE generators with backpressure via bounded queue + coalescing."""
+    """
+    Merge status and progress event streams into a single SSE stream.
+    
+    Status events are preserved under backpressure, while progress events may be dropped if the bounded queue remains full for five seconds.
+    """
     queue: asyncio.Queue[ServerSentEvent | None] = asyncio.Queue(maxsize=128)
 
     async def _drain(
         source: AsyncGenerator[ServerSentEvent, None],
         src_name: str,
     ) -> None:
+        """
+        Drain events from a source into the shared queue, preserving status events and allowing progress events to be dropped under backpressure.
+        
+        Parameters:
+        	source (AsyncGenerator[ServerSentEvent, None]): Event source to consume.
+        	src_name (str): Name used to identify the event source.
+        """
         try:
             async for event in source:
                 # Status events (job_update) are never dropped — they
@@ -277,7 +314,18 @@ async def fallback_polling_generator(
     user_id: uuid.UUID,
     seen_jobs: OrderedDict[str, str] | None = None,
 ) -> AsyncGenerator[ServerSentEvent, None]:
-    """Fallback polling generator when Pub/Sub is unavailable."""
+    """
+    Polls the database for the user's latest download-job states and emits changes as SSE events.
+    
+    Parameters:
+    	request (Request): The current client request, used to detect disconnection and retain deduplication state.
+    	session_factory (async_sessionmaker[AsyncSession]): Factory for database sessions.
+    	user_id (uuid.UUID): Identifier of the user whose download jobs are monitored.
+    	seen_jobs (OrderedDict[str, str] | None): Optional cache of previously emitted job states.
+    
+    Yields:
+    	ServerSentEvent: A `job_update` event for each new or changed download-job state.
+    """
     # Reuse existing dedup cache from request state if available
     if seen_jobs is None:
         existing_seen_jobs = getattr(request.state, "seen_jobs", None)
@@ -356,7 +404,22 @@ async def event_generator(
     session_factory: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
 ) -> AsyncGenerator[ServerSentEvent, None]:
-    """SSE event generator that prioritizes Pub/Sub with polling fallback."""
+    """
+    Stream download job updates through server-sent events.
+    
+    Publishes the initial database snapshot, replays events received during
+    initialization, and then streams status and progress updates from Pub/Sub.
+    Falls back to database polling when the Pub/Sub streams fail or complete.
+    Stops processing when the client disconnects.
+    
+    Parameters:
+    	request (Request): The client request used to detect disconnection.
+    	session_factory (async_sessionmaker[AsyncSession]): Factory for database sessions.
+    	user_id (uuid.UUID): Identifier of the user whose job updates are streamed.
+    
+    Yields:
+    	ServerSentEvent: A job status or progress update for the user.
+    """
     seen_initial: OrderedDict[str, str] = OrderedDict()
     buffered_events: list[dict] = []
 
@@ -366,7 +429,11 @@ async def event_generator(
     buffer_task: asyncio.Task | None = None
 
     async def _buffer_pubsub_events() -> None:
-        """Buffer pub/sub events before DB snapshot."""
+        """
+        Buffers user-specific Pub/Sub job events for replay after the initial database snapshot.
+        
+        Events are retained up to the configured buffer capacity, with the oldest events evicted when the limit is reached. The operation stops when the client disconnects, the generator is closed or cancelled, or Pub/Sub reconnection attempts are exhausted.
+        """
         nonlocal reconnect_attempts
         while reconnect_attempts < MAX_PUBSUB_RECONNECT_ATTEMPTS:
             if await request.is_disconnected():
@@ -455,7 +522,12 @@ async def download_status_stream(
     request: Request,
     current_user: CurrentUserFromCookie,
 ) -> EventSourceResponse:
-    """Server-Sent Events endpoint for real-time download status and progress updates."""
+    """
+    Provide a Server-Sent Events stream for the authenticated user's download updates.
+    
+    Returns:
+    	EventSourceResponse: The SSE response carrying download status and progress events.
+    """
     return EventSourceResponse(
         event_generator(request, get_async_session_factory(), current_user.id),
         media_type="text/event-stream",

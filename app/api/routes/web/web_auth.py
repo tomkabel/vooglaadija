@@ -70,7 +70,15 @@ async def login_page(
     return_url: str = "/web/downloads",
     error: Annotated[str | None, Query(max_length=100)] = None,
 ) -> TemplateResponse:
-    """Render login page."""
+    """Render the login page with CSRF data, the requested return URL, and resolved error messages.
+    
+    Parameters:
+        return_url (str): URL to return to after successful login.
+        error (str | None): Error identifier used to populate the page's error messages.
+    
+    Returns:
+        TemplateResponse: The rendered login page response.
+    """
     token = get_csrf_token(request)
     error_message, field_errors = _resolve_login_errors(error)
     response = templates.TemplateResponse(
@@ -98,7 +106,14 @@ async def login_form(
     password: Annotated[str, Form(max_length=255)],
     return_url: Annotated[str | None, Form(max_length=500)] = None,
 ) -> HTMLResponse | RedirectResponse:
-    """Handle login form submission via HTMX or regular POST."""
+    """Handle login form submission and authenticate the user.
+    
+    Parameters:
+        return_url (str | None): Optional URL to redirect to after successful login.
+    
+    Returns:
+        HTMLResponse | RedirectResponse: An HTMX response or redirect indicating the login result.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf",
@@ -124,7 +139,14 @@ async def register_page(
     request: Request,
     error: Annotated[str | None, Query(max_length=100)] = None,
 ) -> TemplateResponse:
-    """Render register page."""
+    """Render the user registration page with CSRF data and resolved validation errors.
+    
+    Parameters:
+        error (str | None): Optional registration error code used to populate the page's error messages.
+    
+    Returns:
+        TemplateResponse: The rendered registration page.
+    """
     token = get_csrf_token(request)
     error_message, field_errors = _resolve_register_errors(error)
     response = templates.TemplateResponse(
@@ -147,7 +169,15 @@ async def register_form(
     password_confirm: Annotated[str, Form(max_length=255)],
     db: DbSession,
 ) -> HTMLResponse | RedirectResponse:
-    """Handle registration form submission via HTMX or regular POST."""
+    """
+    Process a registration form submission and authenticate successfully registered users.
+    
+    Parameters:
+        password_confirm (str): Confirmation of the submitted password.
+    
+    Returns:
+        HTMLResponse | RedirectResponse: An error response for invalid registration data, or a response containing authentication cookies for a successful registration.
+    """
     user, error_response = await _register_user_or_error_response(
         request, email, password, password_confirm, db,
     )
@@ -182,7 +212,13 @@ async def demo_login(request: Request, db: DbSession) -> HTMLResponse | Redirect
 
 @router.post("/logout", response_model=None)
 async def logout(request: Request) -> HTMLResponse | RedirectResponse:
-    """Clear auth cookies and redirect to login."""
+    """
+    Log out the current user and redirect to the login page.
+    
+    Returns:
+        HTMLResponse | RedirectResponse: An error response for an invalid CSRF token;
+        otherwise, a redirect to the login page with authentication cookies cleared.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf",

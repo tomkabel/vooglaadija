@@ -40,7 +40,15 @@ async def settings_page(
     current_user: CurrentUserFromCookie,
     error: Annotated[str | None, Query(max_length=100)] = None,
 ) -> TemplateResponse:
-    """Render settings page for the current user."""
+    """
+    Render the settings page for the current user.
+    
+    Parameters:
+        error (str | None): Optional error code used to display validation feedback.
+    
+    Returns:
+        TemplateResponse: The rendered settings page.
+    """
     token = get_csrf_token(request)
     username = current_user.username or _default_username_from_email(current_user.email)
     error_message, field_errors = _resolve_settings_errors(error)
@@ -68,7 +76,15 @@ async def update_username(
     current_user: CurrentUserFromCookie,
     db: DbSession,
 ) -> HTMLResponse | RedirectResponse:
-    """Update current user's username."""
+    """
+    Update the current user's username.
+    
+    Parameters:
+        username (str): The new username.
+    
+    Returns:
+        HTMLResponse | RedirectResponse: A success response, or an error response for an invalid CSRF token or username.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf",
@@ -101,7 +117,15 @@ async def delete_account(
     current_user: CurrentUserFromCookie,
     db: DbSession,
 ) -> HTMLResponse | RedirectResponse:
-    """Delete current user's account and associated downloads."""
+    """
+    Delete the current user's account and associated downloads after validating the deletion request.
+    
+    Parameters:
+        confirm_text (str): Confirmation text required to authorize account deletion.
+    
+    Returns:
+        HTMLResponse | RedirectResponse: An empty HTMX response with a login redirect header, or a redirect to the login page.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf",

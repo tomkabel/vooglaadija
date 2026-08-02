@@ -21,7 +21,14 @@ const BLOCK_RE =
   /just a moment|access denied|are you a robot|captcha|verify you are human|blocked|forbidden|unauthorized/i;
 
 // Pure helper mirroring the in-page cap+evict logic. Exported for unit testing
-// without a browser. `obj instanceof Blob` is the non-Blob guard.
+/**
+ * Records a Blob URL in a bounded list.
+ * @param {Array<string>} arr - The list of recorded URLs.
+ * @param {*} obj - The object associated with the URL.
+ * @param {string} url - The Blob URL to record.
+ * @param {number} [cap=BLOB_CAP] - The maximum number of URLs to retain.
+ * @return {Array<string>} The updated URL list.
+ */
 export function pushBlobUrl(arr, obj, url, cap = BLOB_CAP) {
   if (!(obj instanceof Blob)) {
     return arr; // guard non-Blob (e.g. MediaSource) — do not record
@@ -76,6 +83,10 @@ const HOOK_SRC = () => {
   );
 };
 
+/**
+ * Attempts to activate playback by clicking the first matching play control or media element.
+ * @param {object} page - The browser page containing the playback controls.
+ */
 async function tryClickPlay(page) {
   const selectors = ['[aria-label="Play"]', '[data-testid="play"]', 'video', 'button'];
   for (const sel of selectors) {
@@ -91,10 +102,26 @@ async function tryClickPlay(page) {
   }
 }
 
+/**
+ * Wait for the specified duration.
+ * @param {number} ms - The delay in milliseconds.
+ * @return {Promise<void>} Resolves after the delay elapses.
+ */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Detect and download media exposed through a page's blob URLs.
+ * @param {Object} opts - Detection options.
+ * @param {number} [opts.timeout=30000] - Maximum polling duration in milliseconds.
+ * @param {number} [opts.bodyCap] - Maximum permitted blob body size in bytes.
+ * @return {{kind: string, buffer: Buffer, ext: string}} The downloaded media bytes and inferred file extension.
+ * @throws {DownloaderError} With `drm_detected` when DRM usage is detected.
+ * @throws {DownloaderError} With `anti_bot_block` when an anti-bot challenge is detected.
+ * @throws {DownloaderError} With `network_error` when the blob exceeds the size cap.
+ * @throws {DownloaderError} With `no_media_found` when no usable blob media is found before the timeout.
+ */
 export async function detectBlob(page, opts = {}) {
   const timeout = opts.timeout ?? 30_000;
   const bodyCap = opts.bodyCap ?? DEFAULT_BODY_CAP;

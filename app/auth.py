@@ -39,6 +39,15 @@ def create_access_token(
     subject: UUID | str,
     token_version: int = 1,
 ) -> str:
+    """Create an access token for the specified subject.
+    
+    Parameters:
+        subject (UUID | str): Identifier of the token subject.
+        token_version (int): Token version to include when greater than 1.
+    
+    Returns:
+        str: The signed access token.
+    """
     extra: dict[str, Any] = {"user_id": str(subject)}
     if token_version > 1:
         extra["ver"] = token_version
@@ -129,6 +138,15 @@ def set_token_cookies(
 ) -> None:
     # __Host- prefixed cookies MUST have Secure=True in all browsers.
     # Ignore the caller's secure parameter for __Host- cookies.
+    """
+    Set access and refresh token cookies on the response.
+    
+    Parameters:
+    	response (Response): Response receiving the cookies.
+    	access_token (str): Access token value.
+    	refresh_token (str): Refresh token value.
+    	secure (bool): Ignored; both cookies always require secure transmission.
+    """
     _host_secure = True
     response.set_cookie(
         key="__Host-access_token",
@@ -151,5 +169,6 @@ def set_token_cookies(
 
 
 def clear_token_cookies(response: "Response") -> None:
+    """Delete the access and refresh token cookies from the root path."""
     response.delete_cookie(key="__Host-access_token", path="/")
     response.delete_cookie(key="__Host-refresh_token", path="/")

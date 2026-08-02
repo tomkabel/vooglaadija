@@ -26,9 +26,23 @@ class NoOpLimiter:
         *args: Any,
         **kwargs: Any,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Return a no-op decorator."""
+        """
+        Provide a decorator that leaves the decorated function unchanged.
+        
+        Returns:
+            Callable[..., Any]: A decorator that returns the original function.
+        """
 
         def noop_decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            """
+            Return the original function unchanged.
+            
+            Parameters:
+                func (Callable[..., Any]): The function to leave undecorated.
+            
+            Returns:
+                Callable[..., Any]: The original function.
+            """
             return func
 
         return noop_decorator
@@ -42,10 +56,15 @@ limiter = NoOpLimiter() if is_testing else Limiter(key_func=get_remote_address)
 
 
 def _parse_retry_after(detail: str) -> int:
-    """Parse slowapi detail string to get retry-after seconds.
-
-    Detail format: "X per Y <unit>" e.g., "5 per 1 minute"
-    Returns integer seconds until retry is allowed.
+    """
+    Parse a rate-limit detail string into a retry interval.
+    
+    Parameters:
+        detail (str): Rate-limit description such as ``"5 per 1 minute"``.
+    
+    Returns:
+        int: Retry interval in seconds, defaulting to 60 when the description
+            cannot be parsed or uses an unsupported unit.
     """
     match = re.match(r"(\d+)\s+per\s+(\d+)\s+(\w+)", detail)
     if not match:
@@ -72,12 +91,22 @@ async def rate_limit_exceeded_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse | HTMLResponse:
-    """Handle rate limit exceeded errors with standardized error response.
-
-    Returns JSON for API requests (REST clients) and HTML for HTMX requests
-    (web UI forms). HTMX form submissions that hit the rate limit should not
-    receive JSON, because the JS error handler may inadvertently swap it into
-    the DOM target (see renderErrorInTarget in htmx-error-handler.js).
+    """
+    Handle rate-limit violations with a standardized response.
+    
+    HTMX requests receive an HTML error fragment; other requests receive a JSON
+    error response. Both responses include the retry interval in the
+    ``Retry-After`` header.
+    
+    Parameters:
+        request (Request): The incoming request.
+        exc (Exception): The exception raised by the rate-limit check.
+    
+    Returns:
+        JSONResponse | HTMLResponse: A 429 response in JSON or HTML format.
+    
+    Raises:
+        Exception: Re-raises exceptions that are not rate-limit violations.
     """
     if not isinstance(exc, RateLimitExceeded):
         raise exc

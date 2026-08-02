@@ -74,6 +74,18 @@ async def _change_password_response(
     current_user: CurrentUserFromCookie,
     db: DbSession,
 ) -> HTMLResponse | RedirectResponse:
+    """
+    Change the authenticated user's password and return the corresponding settings response.
+    
+    Parameters:
+        current_password (str): The user's existing password.
+        new_password (str): The desired new password.
+        new_password_confirm (str): Confirmation of the desired new password.
+    
+    Returns:
+        HTMLResponse | RedirectResponse: A success response or an error response describing
+        CSRF, current-password, password-mismatch, or password-requirement failures.
+    """
     error: tuple[int, str, str] | None = None
     if not await validate_csrf_token(request):
         error = (403, "Invalid CSRF token", "csrf")
@@ -129,6 +141,17 @@ async def _register_user_or_error_response(
     password_confirm: str,
     db: DbSession,
 ) -> tuple[User | None, HTMLResponse | RedirectResponse | None]:
+    """
+    Register a user or create an appropriate registration error response.
+    
+    Parameters:
+        email (str): Email address for the new user.
+        password (str): Password for the new user.
+        password_confirm (str): Confirmation of the new user's password.
+    
+    Returns:
+        tuple[User | None, HTMLResponse | RedirectResponse | None]: The registered user and no response on success, or no user and an error response on failure.
+    """
     error: tuple[int, str, str] | None = None
     if not await validate_csrf_token(request):
         error = (403, "Invalid CSRF token", "csrf")

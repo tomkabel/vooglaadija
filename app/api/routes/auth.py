@@ -128,6 +128,18 @@ async def login(
     user_data: UserCreate,
     db: DbSession,
 ) -> Token:
+    """
+    Authenticate a user and issue access and refresh tokens.
+    
+    Parameters:
+        user_data (UserCreate): User email and password used for authentication.
+    
+    Returns:
+        Token: The access token, refresh token, and bearer token type.
+    
+    Raises:
+        HTTPException: If the credentials are invalid or the user account is inactive.
+    """
     result = await db.execute(select(User).where(User.email == user_data.email, not_deleted()))
     user = result.scalar_one_or_none()
 
@@ -202,6 +214,18 @@ async def refresh(
 ) -> Token:
     # Accept refresh token from body or from HttpOnly cookie
     # This allows JS-free refresh via credentials: 'include' sending the cookie
+    """
+    Issue replacement access and refresh tokens using a valid refresh token supplied in the request body or cookie.
+    
+    Parameters:
+    	token_refresh (TokenRefresh | None): Optional request-body refresh token; the refresh-token cookie is used when omitted.
+    
+    Returns:
+    	Token: Newly issued access and refresh tokens.
+    
+    Raises:
+    	HTTPException: If the refresh token is missing, invalid, expired, revoked, malformed, or belongs to an inactive or nonexistent user.
+    """
     refresh_token_str = token_refresh.refresh_token if token_refresh else None
     if not refresh_token_str:
         refresh_token_str = request.cookies.get("__Host-refresh_token")
@@ -302,7 +326,11 @@ async def _blacklist_token_cookie(
     verify_fn: Any,
     blacklist_fn: Any,
 ) -> None:
-    """Extract jti from a token cookie and blacklist it if valid."""
+    """
+    Blacklist the token identified by a valid cookie value.
+    
+    The token's remaining lifetime determines the blacklist duration, with a minimum of 60 seconds.
+    """
     if not token_str:
         return
     payload = verify_fn(token_str)

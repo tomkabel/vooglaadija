@@ -204,7 +204,20 @@ class DownloadService:
         return job
 
     async def get_file_path(self, job_id: str | uuid.UUID) -> DownloadFilePath:
-        """Validate and return the disk file path for a completed download."""
+        """
+        Retrieve the validated file path for a completed download.
+        
+        Parameters:
+            job_id (str | uuid.UUID): Identifier of the download job.
+        
+        Returns:
+            DownloadFilePath: Validated disk path and original filename.
+        
+        Raises:
+            InvalidDownloadStatusError: If the download is not completed.
+            DownloadFileMissingError: If the job has no file path or the file is absent from disk.
+            DownloadFileExpiredError: If the download has expired.
+        """
         job = await self.get(job_id)
         if job.status != "completed":
             raise InvalidDownloadStatusError(
@@ -231,7 +244,21 @@ class DownloadService:
         allowed_statuses: set[str] | None = None,
         fail_on_file_delete: bool = True,
     ) -> DeleteOutcome:
-        """Delete a user-owned job and apply route-specific file cleanup policy."""
+        """
+        Delete a user-owned download job and apply the configured file-cleanup policy.
+        
+        Parameters:
+            job_id (str | uuid.UUID): Identifier of the download job.
+            allowed_statuses (set[str] | None): Statuses permitted for deletion.
+            fail_on_file_delete (bool): Whether to raise an error when the associated file cannot be deleted.
+        
+        Returns:
+            DeleteOutcome: Indicates whether the associated file was deleted.
+        
+        Raises:
+            InvalidDownloadStatusError: If the job status is not allowed.
+            DownloadFileDeleteFailedError: If file deletion fails and `fail_on_file_delete` is true.
+        """
         job = await self.get(job_id)
         if allowed_statuses is not None and job.status not in allowed_statuses:
             raise InvalidDownloadStatusError(
@@ -265,7 +292,15 @@ class DownloadService:
         per_page: int,
         category: str | None = None,
     ) -> FailedJobPage:
-        """Return paginated user-owned failed jobs."""
+        """
+        List failed download jobs for the authenticated user, optionally filtered by error category.
+        
+        Parameters:
+            category (str | None): Error category used to filter the failed jobs.
+        
+        Returns:
+            FailedJobPage: A paginated result containing the matching failed jobs and total count.
+        """
         query = select(FailedJob).where(FailedJob.user_id == self.user_id)
         count_query = select(func.count()).where(FailedJob.user_id == self.user_id)
         if category:
@@ -329,7 +364,16 @@ class DownloadService:
         category: str | None = None,
         max_batch: int = 500,
     ) -> ReplayAllResult:
-        """Replay a batch of failed jobs without per-row original-job lookups."""
+        """
+        Replay a batch of failed jobs.
+        
+        Parameters:
+            category (str | None): Optional error category used to filter failed jobs.
+            max_batch (int): Maximum number of failed jobs to replay.
+        
+        Returns:
+            ReplayAllResult: Counts of replayed jobs and failed jobs selected.
+        """
         query = select(FailedJob).where(FailedJob.user_id == self.user_id)
         if category:
             query = query.where(FailedJob.error_category == category)
@@ -377,12 +421,11 @@ class DownloadService:
         return ReplayAllResult(replayed=replayed, total=len(failed_jobs))
 
     async def best_effort_enqueue(self, job_id: uuid.UUID) -> None:
-        """Try immediate queueing and leave outbox recovery intact on failure.
-
-        On Redis success, the matching pending outbox row is transitioned to
-        status='processed' (with processed_at) instead of being deleted, so
-        operators retain an audit trail. The row is reaped by
-        ``cleanup_stale_outbox_entries`` after the retention window.
+        """
+        Attempt to enqueue a download job while preserving outbox-based recovery.
+        
+        A successful enqueue marks the matching pending outbox entry as processed. Enqueue
+        failures are logged and leave the outbox entry available for recovery.
         """
         cleanup_started = False
         try:
@@ -405,6 +448,19 @@ class DownloadService:
             logger.warning("failed_to_enqueue_job_outbox_recovery", job_id=str(job_id))
 
     async def _get_failed_job(self, failed_job_id: str | uuid.UUID) -> FailedJob:
+        """
+        Retrieve a user-owned failed job by ID.
+        
+        Parameters:
+            failed_job_id (str | uuid.UUID): Identifier of the failed job.
+        
+        Returns:
+            FailedJob: The matching failed job.
+        
+        Raises:
+            InvalidIDError: If the identifier has an invalid format.
+            FailedJobNotFoundError: If no matching failed job exists for the authenticated user.
+        """
         failed_uuid = self._parse_uuid(failed_job_id, message="Invalid failed job ID format")
         result = await self.db.execute(
             select(FailedJob).where(
@@ -418,6 +474,14 @@ class DownloadService:
         return failed_job
 
     async def _get_original_for_failed_job(self, original_job_id: uuid.UUID) -> DownloadJob | None:
+        """Retrieve the user's original download job associated with a failed job.
+        
+        Parameters:
+        	original_job_id (uuid.UUID): Identifier of the original download job.
+        
+        Returns:
+        	DownloadJob | None: The matching user-owned download job, or `None` if it does not exist.
+        """
         result = await self.db.execute(
             select(DownloadJob).where(
                 DownloadJob.id == original_job_id,
@@ -439,6 +503,18 @@ class DownloadService:
             pass
 
     def _validate_download_path(self, file_path: str) -> str:
+        """
+        Validate a download file path against the configured downloads directory.
+        
+        Parameters:
+            file_path (str): File path to validate.
+        
+        Returns:
+            str: Validated download file path.
+        
+        Raises:
+            UnsafeDownloadPathError: If the path is invalid or outside the configured downloads directory.
+        """
         try:
             return validate_path(self._downloads_base_path(), file_path)
         except (ValueError, PermissionError) as exc:
@@ -446,6 +522,7 @@ class DownloadService:
 
     @staticmethod
     def _downloads_base_path() -> str:
+        """Build the configured downloads directory path."""
         return os.path.join(settings.storage_path, "downloads")
 
     @staticmethod

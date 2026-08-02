@@ -27,6 +27,10 @@ const DEFAULT_BODY_CAP = 500 * 1024 * 1024;
 
 let stealthReady = null;
 
+/**
+ * Launches a headless Chromium browser with stealth enhancements enabled.
+ * @returns {Promise<import('playwright').Browser>} The launched browser instance.
+ */
 async function launchStealthBrowser() {
   const { chromium } = await import('playwright-extra');
   stealthReady ??= (async () => {
@@ -37,6 +41,13 @@ async function launchStealthBrowser() {
   return chromium.launch({ headless: true });
 }
 
+/**
+ * Extract and download media from a URL into an output directory.
+ * @param {string} rawUrl - The media source URL.
+ * @param {string} rawOutputDir - The directory where the downloaded file is saved.
+ * @param {Object} [opts] - Extraction and download options.
+ * @returns {Promise<Object>} A result containing the status, output file path on success, and error code on failure.
+ */
 export async function download(rawUrl, rawOutputDir, opts = {}) {
   const tier1Timeout = parseTimeout(opts.tier1Timeout, DEFAULT_TIER1_TIMEOUT_MS);
   const tier2Timeout = parseTimeout(opts.tier2Timeout, DEFAULT_TIER2_TIMEOUT_MS);

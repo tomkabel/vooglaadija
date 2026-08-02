@@ -13,6 +13,12 @@ export class ConcurrencyLimitError extends Error {
   }
 }
 
+/**
+ * Create a semaphore that limits the number of concurrently active operations.
+ * @param {number} max - The maximum number of active operations allowed.
+ * @returns {{ acquire: function(): function, active: number, max: number }} A semaphore with acquisition, activity, and capacity controls.
+ * @throws {TypeError} If `max` is not a positive integer.
+ */
 export function createSemaphore(max = 2) {
   if (!Number.isInteger(max) || max <= 0) {
     throw new TypeError('semaphore max must be a positive integer');

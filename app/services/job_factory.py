@@ -25,18 +25,18 @@ async def create_demo_job(
     enqueue: bool = True,
     stagger_delay: float = 0.0,
 ) -> DownloadJob | None:
-    """Create a single download job for a demo user with transactional outbox.
-
-    Args:
-        db: Database session
-        user_id: UUID of the user (must be demo user)
-        url: Video URL to download
-        enqueue: If True, also enqueue to Redis for immediate processing
-        stagger_delay: Seconds to sleep before enqueueing (for staggered submission)
-
+    """
+    Create a pending download job and optionally enqueue it for processing.
+    
+    Parameters:
+        db (AsyncSession): Database session used to persist the job.
+        user_id (UUID): Identifier of the user associated with the job.
+        url (str): Video URL to download.
+        enqueue (bool): Whether to enqueue the job after it is created.
+        stagger_delay (float): Number of seconds to wait before enqueueing.
+    
     Returns:
-        The created DownloadJob, or None on failure
-
+        DownloadJob | None: The created job, or None if creation fails.
     """
     import asyncio
 

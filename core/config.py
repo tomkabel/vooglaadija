@@ -105,6 +105,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_and_construct(self) -> "Settings":
+        """
+        Validate the application settings and construct derived configuration values.
+        
+        Applies testing defaults when testing is enabled; otherwise validates configured
+        values, resolves storage, and constructs database and Redis URLs.
+        
+        Returns:
+        	Settings: The validated and fully constructed settings instance
+        """
         if _is_testing_enabled():
             return self._apply_testing_defaults()
 
@@ -176,6 +185,12 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid {name}: {value!r} must be in range 1-65535")
 
     def _build_database_url(self) -> None:
+        """
+        Build the database connection URL when one has not been provided.
+        
+        Raises:
+            ValueError: If no database URL or database password is configured.
+        """
         if self.database_url:
             return
         if not self.db_password:
@@ -191,6 +206,12 @@ class Settings(BaseSettings):
         )
 
     def _validate_secret_key(self) -> None:
+        """
+        Validate that the configured secret key is present, sufficiently long, and has adequate entropy.
+        
+        Raises:
+            ValueError: If the secret key is missing, shorter than 32 characters, or has insufficient entropy.
+        """
         if not self.secret_key:
             raise ValueError(
                 "SECRET_KEY is required. "
@@ -209,6 +230,12 @@ class Settings(BaseSettings):
             )
 
     def _validate_cors(self) -> None:
+        """
+        Validate and normalize the configured CORS origins.
+        
+        Raises:
+            ValueError: If wildcard origins are configured or an origin is invalid.
+        """
         if self.cors_origins == "*":
             raise ValueError("CORS_ORIGINS cannot be '*' when credentialed requests are enabled")
 
@@ -254,6 +281,11 @@ class Settings(BaseSettings):
         self.storage_path = str(path)
 
     def _build_redis_url(self) -> None:
+        """
+        Construct the Redis connection URL from the configured host, port, and optional password.
+        
+        The existing Redis URL is preserved when provided.
+        """
         if self.redis_url:
             return
         if self.redis_password:
@@ -263,6 +295,12 @@ class Settings(BaseSettings):
             self.redis_url = f"redis://{self.redis_host}:{self.redis_port}"
 
     def _validate_browser_downloader(self) -> None:
+        """
+        Validate the browser downloader timeout and endpoint configuration.
+        
+        Raises:
+        	ValueError: If the timeout is less than one or the endpoint is missing or is not an HTTP(S) URL with a host.
+        """
         if self.browser_downloader_timeout < 1:
             raise ValueError(
                 f"Invalid BROWSER_DOWNLOADER_TIMEOUT: {self.browser_downloader_timeout!r} must be >= 1",

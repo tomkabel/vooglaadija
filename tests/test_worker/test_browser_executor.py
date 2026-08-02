@@ -152,13 +152,21 @@ class TestMapResponseToCategory:
 
 
 def _make_mock_client(response_status: int, body: dict | str) -> httpx.AsyncClient:
-    """Build an httpx.AsyncClient whose single POST returns the given response.
-
-    Uses httpx.MockTransport (httpx's built-in test utility — no external
-    mocking library required).
+    """
+    Build an asynchronous HTTP client that returns a configured response for requests.
+    
+    Parameters:
+        response_status (int): HTTP status code for the mock response.
+        body (dict | str): JSON response body or plain-text response body.
+    
+    Returns:
+        httpx.AsyncClient: Client configured with the mock response transport.
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
+        """
+        Create an HTTP response with the configured status and body.
+        """
         if isinstance(body, str):
             return httpx.Response(response_status, text=body)
         return httpx.Response(response_status, json=body)

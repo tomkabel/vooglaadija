@@ -28,7 +28,11 @@ const CONTENT_TYPE_EXT = {
 // Convert an IPv4-mapped IPv6 address (`::ffff:a.b.c.d` dotted-decimal or
 // `::ffff:xxxx:yyyy` hex form) to its dotted-decimal IPv4 string, or null if
 // `h` is not an IPv4-mapped address. Used to defeat SSRF via IPv4-mapped IPv6
-// (e.g. `http://[::ffff:169.254.169.254]/` reaching the cloud metadata IP).
+/**
+ * Converts an IPv4-mapped IPv6 address to its IPv4 representation.
+ * @param {string} h - The IPv6 address in dotted-decimal or hexadecimal mapped form.
+ * @return {string|null} The IPv4 address, or `null` for unsupported or invalid forms.
+ */
 function ipv4FromMapped(h) {
   const prefix = '::ffff:';
   if (!h.startsWith(prefix)) {
@@ -53,7 +57,11 @@ function ipv4FromMapped(h) {
 
 // Returns true for IPv4/IPv6 strings that are private, loopback, link-local,
 // ULA, or the unspecified address. Hostnames (non-IP) return false and are
-// resolved separately.
+/**
+ * Determines whether a value represents a private, reserved, or otherwise non-public IP address.
+ * @param {*} value - The value to evaluate.
+ * @returns {boolean} `true` if the value is a private or reserved IPv4 or IPv6 address, `false` otherwise.
+ */
 export function isPrivateIp(value) {
   if (!value || typeof value !== 'string') {
     return false;
@@ -120,6 +128,14 @@ export function isPrivateIp(value) {
   return false;
 }
 
+/**
+ * Validates an HTTP or HTTPS URL and blocks hosts that resolve to private or link-local addresses.
+ * @param {string} raw - The URL to validate.
+ * @param {Object} [options] - Validation options.
+ * @param {Function} [options.lookup] - Hostname resolution function.
+ * @return {Promise<URL>} The parsed and validated URL.
+ * @throws {Error} If the URL is invalid, uses an unsupported scheme, cannot be resolved, or resolves to a blocked address.
+ */
 export async function validateUrl(raw, { lookup = defaultLookup } = {}) {
   if (typeof raw !== 'string' || raw.length === 0) {
     throw new Error('url must be a non-empty string');
@@ -153,6 +169,14 @@ export async function validateUrl(raw, { lookup = defaultLookup } = {}) {
   return parsed;
 }
 
+/**
+ * Validates and resolves an output directory within the configured base directory.
+ * @param {string} dir - The output directory path.
+ * @param {object} [options] - Validation options.
+ * @param {string} [options.base] - The directory that contains the output path.
+ * @return {Promise<string>} The resolved output directory path.
+ * @throws {Error} If the base or output directory is inaccessible, or the output directory is outside the base directory.
+ */
 export async function validateOutputDir(dir, { base, realpath = defaultRealpath } = {}) {
   if (typeof dir !== 'string' || dir.length === 0) {
     throw new Error('output_dir must be a non-empty string');
@@ -180,6 +204,12 @@ export async function validateOutputDir(dir, { base, realpath = defaultRealpath 
   return resolved;
 }
 
+/**
+ * Parses a positive integer timeout value.
+ * @param {*} value - The value to parse.
+ * @param {number} defaultMs - The fallback timeout in milliseconds.
+ * @return {number} The parsed timeout or the fallback value.
+ */
 export function parseTimeout(value, defaultMs) {
   const n = Number(value);
   if (!(Number.isInteger(n) && n > 0)) {
@@ -189,7 +219,12 @@ export function parseTimeout(value, defaultMs) {
 }
 
 // Derive a whitelisted extension from a response URL and/or content-type.
-// Never returns an unwhitelisted extension; falls back to 'mp4'.
+/**
+ * Select a whitelisted video extension from a content type or URL/path.
+ * @param {string} urlOrPath - A URL or path whose extension may identify the video format.
+ * @param {string} contentType - The media content type used as the preferred format source.
+ * @return {string} The selected video extension, with manifests and unsupported values mapped to `mp4`.
+ */
 export function pickExtension(urlOrPath, contentType) {
   if (typeof contentType === 'string') {
     const ct = contentType.toLowerCase().split(';')[0].trim();
@@ -225,7 +260,11 @@ export function pickExtension(urlOrPath, contentType) {
   return 'mp4';
 }
 
-// Ensure an extension is whitelisted, else default to 'mp4'.
+/**
+ * Returns an approved video extension.
+ * @param {string} ext - The extension to validate.
+ * @return {string} The lowercased approved extension, or `mp4` when the input is unsupported.
+ */
 export function safeExt(ext) {
   if (typeof ext === 'string' && VIDEO_EXTS.includes(ext.toLowerCase())) {
     return ext.toLowerCase();

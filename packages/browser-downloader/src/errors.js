@@ -54,7 +54,12 @@ const NETWORK_HINT_RE = /network|fetch|socket|connect|timeout|abort|dns|resolve|
 // Walk an error's `cause` chain looking for evidence of a network/transport
 // failure (errno code, AbortError, DownloaderError network/timeout code, or a
 // name/message hint). `seen` breaks self-referential cause chains to prevent
-// unbounded recursion.
+/**
+ * Determines whether an error's cause chain indicates a network-related failure.
+ * @param {*} err - The error whose causes are inspected.
+ * @param {Set<object>} seen - Objects already visited while traversing the cause chain.
+ * @return {boolean} `true` if the cause chain indicates a network or timeout failure, `false` otherwise.
+ */
 function causeIsNetwork(err, seen) {
   let cur = err?.cause;
   while (cur) {
@@ -88,7 +93,11 @@ function causeIsNetwork(err, seen) {
 
 // A genuine code bug (TypeError/ReferenceError/SyntaxError/RangeError) is
 // rethrown — UNLESS its cause chain is itself a network failure (e.g. undici's
-// `TypeError: fetch failed` whose `cause` carries the real network errno).
+/**
+ * Determines whether an error represents a genuine code bug.
+ * @param {*} err - The error to classify.
+ * @return {boolean} `true` if the error is a code bug, `false` if it is not or its cause indicates a network failure.
+ */
 function isBug(err, seen = new WeakSet()) {
   if (!BUG_CTORS.some((Ctor) => err instanceof Ctor)) {
     return false;
@@ -96,6 +105,12 @@ function isBug(err, seen = new WeakSet()) {
   return !causeIsNetwork(err, seen);
 }
 
+/**
+ * Classifies a thrown value as a downloader error code.
+ * @param {*} err - The thrown value to classify.
+ * @returns {string} The matching downloader error code.
+ * @throws {Error} Re-throws genuine code bugs.
+ */
 export function classifyError(err) {
   if (!err) {
     return ERROR_CODES.NETWORK_ERROR;

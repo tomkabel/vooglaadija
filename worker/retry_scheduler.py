@@ -51,7 +51,15 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
-    """Classify an error and decide whether the job should retry or fail finally."""
+    """
+    Classify an error and determine whether the job should be retried or marked as permanently failed.
+    
+    Parameters:
+    	error (BaseException): The error encountered while processing the job.
+    
+    Returns:
+    	RetryDecision: The retry or final-failure decision, including the error category, retry limit, delay, and relevant error metadata.
+    """
     error_str = str(error)
     classification = classify_error(error_str)
     category = classification.category
@@ -119,7 +127,16 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
 
 
 async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDecision) -> bool:
-    """Persist retry scheduling, then enqueue Redis and clear synced outbox rows."""
+    """
+    Persist a retry schedule and enqueue the job for a later attempt.
+    
+    Parameters:
+        job (DownloadJob): The processing job to reschedule.
+        decision (RetryDecision): The retry timing, category, and error metadata to persist.
+    
+    Returns:
+        bool: `true` if the job is enqueued successfully, `false` if scheduling is skipped or enqueueing fails.
+    """
     active_job_id = job.id
     if decision.next_retry_at is None:
         delay = decision.delay_seconds or 0.0

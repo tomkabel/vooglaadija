@@ -55,11 +55,14 @@ async def _defer_job_to_circuit(job_id: UUID, service: str) -> None:
 
 
 async def _drain_circuit_deferred(max_batch: int = 10) -> int:
-    """Move deferred jobs back to download queue when circuit has recovered.
-
-    Updates DB status 'deferred' → 'pending' atomically so the worker's
-    claim (WHERE status='pending') succeeds on re-pickup.
-    Returns number of jobs drained.
+    """
+    Move deferred jobs back to the download queue after the circuit breaker recovers.
+    
+    Parameters:
+        max_batch (int): Maximum number of deferred jobs to process.
+    
+    Returns:
+        int: Number of jobs successfully returned to the download queue.
     """
     if not await _circuit_is_accepting():
         return 0
@@ -176,6 +179,16 @@ async def _handle_execution_result(
 
 
 async def _handle_circuit_open(db, active_job_id: UUID, cb_error: CircuitBreakerOpenError) -> bool:
+    """
+    Defer a processing job while its service circuit breaker is open.
+    
+    Parameters:
+    	active_job_id (UUID): Identifier of the job to defer.
+    	cb_error (CircuitBreakerOpenError): Circuit-breaker error containing the service and recovery details.
+    
+    Returns:
+    	bool: `False` because the job is deferred or is no longer processing.
+    """
     logger.warning(
         "circuit_breaker_open_deferring",
         job_id=str(active_job_id),

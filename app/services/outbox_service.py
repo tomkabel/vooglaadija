@@ -16,19 +16,14 @@ async def write_job_to_outbox(
     event_type: str = "enqueue_download",
     payload: str | None = None,
 ) -> Outbox | None:
-    """Write a job to the outbox in the same transaction as the main entity.
-
-    This ensures atomicity - if the transaction commits, the outbox entry exists.
-    The worker will process this entry and mark it as processed.
-
-    Idempotent under concurrency:
-
-    1. Application-layer pre-check: SELECT for existing pending entry.
-    2. Database-layer guarantee: partial unique index
-       ``uq_outbox_pending_job_id`` (job_id) WHERE status='pending' rejects
-       duplicate inserts at commit time. If the SELECT misses a race, the
-       IntegrityError on flush is treated as "already pending" and returns
-       ``None`` without re-raising, so the outer transaction can commit.
+    """
+    Add a pending outbox entry for a job within the current transaction.
+    
+    Duplicate pending entries are ignored, including concurrent duplicates.
+    
+    Returns:
+        Outbox | None: The newly created outbox entry, or `None` when a pending
+        entry already exists.
     """
     result = await db.execute(
         select(Outbox).where(

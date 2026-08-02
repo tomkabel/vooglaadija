@@ -62,17 +62,14 @@ async def _update_staleness_metrics(db) -> None:
 
 
 async def sync_outbox_to_queue(batch_size: int = 100) -> int:
-    """Sync pending outbox entries to Redis queue and mark them processed.
-
-    Returns the number of outbox entries successfully delivered to Redis.
-
-    Crash-safety: the row's status transitions from 'pending' to 'processed'
-    in a single SQL UPDATE that runs only after the Redis push has been
-    confirmed by the queue helper (push_to_download_queue / push_to_retry_queue
-    return True only after Redis acknowledged the write). If the process dies
-    between the Redis push and the UPDATE commit, the next sync will re-deliver
-    the message — duplicates are prevented at the queue side by LREM+LPUSH
-    for download_queue and ZSCORE-based dedup for retry_queue.
+    """
+    Deliver pending outbox entries to Redis and mark successfully delivered entries as processed.
+    
+    Parameters:
+    	batch_size (int): Maximum number of pending entries to process.
+    
+    Returns:
+    	int: Number of entries successfully delivered to Redis.
     """
     session_factory = get_async_session_factory()
     synced = 0

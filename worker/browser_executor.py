@@ -69,6 +69,13 @@ class BrowserExecutorError(Exception):
     }
 
     def __init__(self, category: ErrorCategory, signal: str) -> None:
+        """
+        Initialize an executor error with its category and original error signal.
+        
+        Parameters:
+            category (ErrorCategory): Classification assigned to the error.
+            signal (str): Original error signal associated with the failure.
+        """
         self.category = category
         self.signal = signal
         marker = self._CATEGORY_MARKERS.get(category, "transient error")
@@ -97,18 +104,11 @@ _breaker: CircuitBreaker | None = None
 
 
 def _get_client() -> httpx.AsyncClient:
-    """Lazy singleton httpx client.
-
-    `trust_env=False` so the worker does not pick up a stray HTTP_PROXY
-    from the environment and route internal service-to-service traffic
-    through an unrelated proxy. Operators who DO need proxy support can
-    add a `browser_downloader_proxy` setting in P4.
-
-    Timeout model: 30s connect (matches the spec's "existing 30s connect"
-    pattern; httpx's default of 5s is too tight for a slow microservice
-    cold start) plus the configurable `browser_downloader_timeout` for
-    read/write/pool (default 300s — covers the full Tier 1 + Tier 2
-    window in the microservice).
+    """
+    Create or retrieve the shared HTTP client for browser-downloader requests.
+    
+    Returns:
+        httpx.AsyncClient: The lazily initialized HTTP client.
     """
     global _client
     if _client is None:
@@ -143,21 +143,14 @@ def get_browser_downloader_circuit_breaker() -> CircuitBreaker:
 
 
 def select_executor(url: str) -> str:
-    """Pick the executor kind for a job URL.
-
-    Returns the literal string `"browser"` for known browser-only platforms
-    (TikTok, Instagram, Twitter/X) and `"youtube"` for everything else. The
-    feature flag (`browser_downloader_enabled`) is enforced by the caller in
-    `worker/job_executor.py` — this function is a pure hostname lookup so it
-    can be unit-tested without touching settings.
-
-    Hostname matching uses suffix equality (e.g. `www.tiktok.com`,
-    `m.tiktok.com`, `vm.tiktok.com` all match `tiktok.com`). This keeps the
-    set small while still catching mobile subdomains that platforms
-    frequently serve on.
-
-    Unknown hosts fall through to `"youtube"` to preserve pre-Phase-2
-    behavior (yt-dlp attempts and fails as today).
+    """
+    Determine which executor should handle a job URL.
+    
+    Parameters:
+    	url (str): The job URL to classify.
+    
+    Returns:
+    	str: `"browser"` for supported TikTok, Instagram, Twitter/X, and related domains; `"youtube"` for all other or malformed URLs.
     """
     try:
         hostname = (urlparse(url).hostname or "").lower()
@@ -191,15 +184,19 @@ async def extract_media(
     progress_callback: ProgressCallback | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> tuple[str, str, str | None]:
-    """Call the browser-downloader microservice and return `(file_path, file_name, title)`.
-
-    `title` is always `None` for browser-platform downloads in Phase 2 (the
-    microservice does not extract titles). The DB column is nullable so this
-    is safe to insert directly.
-
+    """
+    Download media through the browser-downloader microservice.
+    
+    Parameters:
+        url: The media URL to download.
+        storage_path: Directory where the downloaded media is stored.
+    
+    Returns:
+        A tuple containing the file path, file name, and a nullable title.
+    
     Raises:
-        BrowserExecutorError: every failure mode is wrapped in this with a
-            classified `ErrorCategory`. No raw `httpx` exception leaks.
+        BrowserExecutorError: If the request or response processing fails.
+        CircuitBreakerOpenError: If the browser-downloader circuit is open.
     """
     _ = progress_callback  # Microservice is single-shot; no progress stream.
     http_client = client or _get_client()
@@ -229,10 +226,19 @@ async def extract_media(
 async def _call_service(
     http_client: httpx.AsyncClient, endpoint: str, body: dict[str, Any]
 ) -> tuple[str, str, str | None]:
-    """Single HTTP attempt. Returns the success tuple or raises BrowserExecutorError.
-
-    Split out from `extract_media` so the circuit breaker can wrap exactly
-    one HTTP round-trip per recorded success/failure.
+    """
+    Send one download request and parse the service response.
+    
+    Parameters:
+    	http_client (httpx.AsyncClient): HTTP client used for the request.
+    	endpoint (str): Download service endpoint.
+    	body (dict[str, Any]): JSON request payload.
+    
+    Returns:
+    	tuple[str, str, str | None]: The media file path, file name, and optional title.
+    
+    Raises:
+    	BrowserExecutorError: If the request fails or the service returns an unsuccessful or invalid response.
     """
     try:
         response = await http_client.post(endpoint, json=body)
@@ -256,7 +262,12 @@ async def _call_service(
 
 
 def _parse_success(response: httpx.Response) -> tuple[str, str, str | None]:
-    """Parse a 200 OK response into the worker's tuple shape."""
+    """
+    Parse a successful downloader response into the worker's media tuple.
+    
+    Returns:
+    	file_data (tuple[str, str, str | None]): The file path, derived file name, and null title.
+    """
     try:
         payload = response.json()
     except (json.JSONDecodeError, ValueError) as exc:
@@ -291,7 +302,15 @@ def _parse_success(response: httpx.Response) -> tuple[str, str, str | None]:
 
 
 def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | None]:
-    """Parse a non-200 response, mapping HTTP status + JSON error code to a category."""
+    """
+    Classify a non-successful downloader response using its structured error code or HTTP status.
+    
+    Parameters:
+        response (httpx.Response): The HTTP response containing the failure details.
+    
+    Raises:
+        BrowserExecutorError: Always, with the category and signal derived from the response.
+    """
     signal = f"http_{response.status_code}"
     try:
         payload = response.json()
@@ -325,14 +344,15 @@ def _parse_failure_payload(
     *,
     fallback_code: str = "unknown_error",
 ) -> tuple[str, str, str | None]:
-    """Map a structured failure payload to an error category.
-
-    Accepts both 200-with-failed-status and non-200 responses.
-    Raises BrowserExecutorError so the circuit breaker records a failure.
-
-    When the JSON body lacks an explicit ``error`` field, ``fallback_code``
-    (typically the synthesized ``http_<status>`` signal) is used so HTTP
-    404/403/429 still map to their correct categories.
+    """
+    Map a structured service failure to a classified browser executor error.
+    
+    Parameters:
+        payload (dict[str, Any]): Structured failure data from the service.
+        fallback_code (str): Error signal used when the payload does not provide one.
+    
+    Raises:
+        BrowserExecutorError: Always raised with the mapped error category and signal.
     """
     code: str = payload.get("error")  # type: ignore[assignment]
     if not isinstance(code, str) or not code:
@@ -342,10 +362,15 @@ def _parse_failure_payload(
 
 
 def _map_response_to_category(code: str, payload: dict[str, Any] | None = None) -> ErrorCategory:
-    """Single source of truth for microservice error code → ErrorCategory.
-
-    Mapping is intentionally narrow: anything not explicitly recognized is
-    TRANSIENT (retries are safe; the worker can reclassify later if needed).
+    """
+    Map a microservice error code to its worker error category.
+    
+    Parameters:
+    	code (str): Microservice error code to classify.
+    	payload (dict[str, Any] | None): Optional response payload associated with the error.
+    
+    Returns:
+    	ErrorCategory: Category assigned to the error code.
     """
     # Terminal categories first — these never retry
     if code in {"drm_detected", "anti_bot_block"}:

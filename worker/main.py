@@ -84,7 +84,12 @@ async def _update_circuit_deferred_depth() -> None:
 
 
 async def cleanup_expired_jobs() -> int:
-    """Delete expired jobs and their files."""
+    """
+    Delete expired completed jobs and their associated files.
+    
+    Returns:
+    	int: The number of jobs removed from the database.
+    """
     session_factory = get_async_session_factory()
     downloads_dir = os.path.join(settings.storage_path, "downloads")
 
@@ -156,6 +161,7 @@ async def cleanup_expired_jobs() -> int:
 
 
 async def _update_queue_depth() -> None:
+    """Updates the queue-depth metric with the combined number of queued, retry, and circuit-deferred jobs."""
     try:
         lua_script = """
         local dl = redis.call('LLEN', KEYS[1])
@@ -235,6 +241,13 @@ async def _health_heartbeat_loop() -> None:
 
 
 async def main() -> None:
+    """
+    Start the worker, process queued jobs, and shut down gracefully when requested.
+    
+    The function verifies Redis and database connectivity before starting the health
+    server, periodically performs queue maintenance and cleanup, and enforces the
+    configured shutdown grace period for in-flight jobs.
+    """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _signal_handler)

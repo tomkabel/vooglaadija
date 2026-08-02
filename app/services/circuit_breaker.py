@@ -41,6 +41,13 @@ class CircuitBreakerOpenError(Exception):
     """Raised when circuit breaker is open and request cannot proceed."""
 
     def __init__(self, service_name: str, reset_timeout: float):
+        """
+        Initialize an error for a service blocked by an open circuit breaker.
+        
+        Parameters:
+            service_name (str): Name of the blocked service.
+            reset_timeout (float): Cooldown in seconds before retrying the service.
+        """
         self.service_name = service_name
         self.reset_timeout = reset_timeout
         super().__init__(
@@ -67,18 +74,16 @@ class CircuitBreaker:
         half_open_max_calls: int = 3,
         use_redis_distributed: bool = False,
     ):
-        """Initialize circuit breaker.
-
-        Args:
-            name: Service name for logging
-            failure_threshold: Consecutive failures before opening circuit
-            success_threshold: Consecutive successes to close circuit from half-open
-            reset_timeout: Seconds before attempting recovery (open → half-open)
-            half_open_max_calls: Max concurrent calls in half-open state
-            use_redis_distributed: If True, share failure count and half-open
-                slot state across all worker processes via Redis. Requires that
-                the redis_client imported at the top of this module is connected.
-
+        """
+        Initialize a circuit breaker for a service.
+        
+        Parameters:
+            name (str): Service name used to identify the breaker.
+            failure_threshold (int): Consecutive failures required to open the breaker.
+            success_threshold (int): Consecutive successful recovery calls required to close it.
+            reset_timeout (float): Seconds the breaker remains open before recovery is attempted.
+            half_open_max_calls (int): Maximum concurrent recovery calls allowed.
+            use_redis_distributed (bool): Whether to share breaker state across worker processes through Redis.
         """
         self.name = name
         self.failure_threshold = failure_threshold
@@ -381,7 +386,12 @@ class CircuitBreaker:
                     await self._reset_failures_distributed()
 
     async def record_failure(self, error: Exception | None = None) -> None:
-        """Record a failed call."""
+        """
+        Record a failed call and update the circuit breaker state.
+        
+        Parameters:
+            error (Exception | None): The exception associated with the failed call, if available.
+        """
         async with self._lock:
             if self._use_redis:
                 # Use distributed counters so all workers see the failure
@@ -426,24 +436,22 @@ class CircuitBreaker:
                     CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
 
     async def execute(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
-        """Execute a function with circuit breaker protection.
-
-        Cancellation is treated as a slot release, NOT a failure — this
-        prevents asyncio.CancelledError from falsely reopening the circuit
-        when an outer timeout fires against a healthy downstream service.
-
-        Args:
-            func: Async function to execute
-            *args: Positional arguments for func
-            **kwargs: Keyword arguments for func
-
+        """
+        Execute an asynchronous function under circuit-breaker protection.
+        
+        Cancellation releases any half-open slot without recording a failure.
+        
+        Parameters:
+            func (Callable[..., Awaitable[Any]]): Asynchronous function to execute
+            *args (Any): Positional arguments passed to `func`
+            **kwargs (Any): Keyword arguments passed to `func`
+        
         Returns:
-            Result from func if successful
-
+            Any: The result produced by `func`
+        
         Raises:
-            CircuitBreakerOpenError: If circuit is open
-            Exception: Re-raises any exception from func
-
+            CircuitBreakerOpenError: If execution is blocked by the circuit breaker
+            Exception: Any exception raised by `func`
         """
         if not await self.can_execute():
             raise CircuitBreakerOpenError(self.name, self.reset_timeout)
@@ -505,21 +513,18 @@ async def extract_media_with_circuit_breaker(
     storage_path: str,
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, str, str | None]:
-    """Extract media URL with circuit breaker protection.
-
-    Wraps extract_media_url with circuit breaker to prevent
-    hammering YouTube during outages.
-
-    Args:
-        url: The video URL to extract.
-        storage_path: Base path for storing downloaded files.
-        progress_callback: Optional async callback for download progress updates.
-                           The circuit breaker does not interpret progress data;
-                           it is purely a pass-through to extract_media_url.
-
+    """
+    Extract media from a video URL through the YouTube circuit breaker.
+    
+    Parameters:
+        url (str): The video URL to extract.
+        storage_path (str): Base path for storing downloaded files.
+        progress_callback (Callable[[dict], Awaitable[None]] | None): Optional
+            asynchronous callback for download progress updates.
+    
     Returns:
-        tuple of (file_path, file_name, title).
-
+        tuple[str, str, str | None]: The downloaded file path, file name, and
+            media title.
     """
     cb = get_youtube_circuit_breaker()
 

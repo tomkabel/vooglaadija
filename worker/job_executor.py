@@ -60,13 +60,14 @@ class ExecutionResult:
 
 
 def _resolve_executor_kind(url: str) -> str:
-    """Phase 2: pick the executor kind, respecting the browser feature flag.
-
-    `select_executor` does the pure hostname-based routing. The feature
-    flag forces a fallback to the existing yt-dlp path when the microservice
-    is disabled, preserving pre-Phase-2 behavior. Tests for the routing
-    decision should patch `select_executor` directly to avoid touching
-    settings; this wrapper is the integration point in `execute()`.
+    """
+    Select the executor kind for a media URL, honoring the browser downloader setting.
+    
+    Parameters:
+    	url (str): Media URL used to determine the executor kind.
+    
+    Returns:
+    	str: `"youtube"` when browser downloading is disabled; otherwise, the executor kind selected for the URL.
     """
     if not settings.browser_downloader_enabled:
         return "youtube"
@@ -96,7 +97,15 @@ async def publish_job_status(job: DownloadJob) -> None:
 
 
 async def requeue_job(job_id: UUID, db) -> bool:
-    """Requeue a processing job through the transactional outbox."""
+    """
+    Requeue a processing job through the transactional outbox.
+    
+    Parameters:
+    	job_id (UUID): Identifier of the job to requeue.
+    
+    Returns:
+    	bool: `True` if the job was processing and requeued, `False` otherwise.
+    """
     outbox_entry = Outbox(
         id=uuid.uuid4(),
         job_id=job_id,
@@ -141,7 +150,17 @@ def cleanup_downloaded_file(file_path: str | None) -> None:
 
 
 async def check_chaos_injection(db, job_id: UUID, start_time: float) -> bool:
-    """Run execution-time chaos scenarios and return whether the job was consumed."""
+    """
+    Run configured execution-time chaos scenarios and indicate whether the job was consumed.
+    
+    Parameters:
+    	db: Database session used for job recovery and requeueing.
+    	job_id (UUID): Identifier of the job being processed.
+    	start_time (float): Start time used to record the job's duration during recovery.
+    
+    Returns:
+    	bool: `true` if the job was recovered or requeued, `false` otherwise.
+    """
     from worker.state import shutdown_event
 
     try:
@@ -207,7 +226,17 @@ async def execute(
     start_time: float,
     worker_main_module: Any | None = None,
 ) -> ExecutionResult:
-    """Execute the download path for an already-claimed job."""
+    """
+    Process an already-claimed download job and report its execution outcome.
+    
+    Parameters:
+        job (DownloadJob): The claimed job to process.
+        start_time (float): Monotonic timestamp used for execution and fault-injection timing.
+        worker_main_module (Any | None): Optional worker module providing shutdown state and grace-period settings.
+    
+    Returns:
+        ExecutionResult: The job ID, resulting execution status, and any completed job or error details.
+    """
     from worker.state import shutdown_event
 
     if worker_main_module is None:

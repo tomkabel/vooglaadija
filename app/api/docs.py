@@ -27,10 +27,23 @@ def mount_docs_static(app: FastAPI) -> None:
 
 
 def register_docs_routes(app: FastAPI) -> None:
-    """Register custom Swagger UI and ReDoc routes."""
+    """
+    Register custom Swagger UI and ReDoc routes.
+    
+    The routes use local documentation assets when available and fall back to jsDelivr assets otherwise. Generated pages include request-specific script nonces and apply a Content Security Policy when CDN assets are used.
+    """
 
     @app.get("/docs", include_in_schema=False)
     async def custom_docs(request: Request) -> HTMLResponse:
+        """
+        Generate the Swagger UI API documentation page.
+        
+        Parameters:
+        	request (Request): The incoming request providing the application OpenAPI configuration and security nonce.
+        
+        Returns:
+        	HTMLResponse: The rendered Swagger UI page, using local assets when available and CDN assets with an appropriate content security policy otherwise.
+        """
         nonce = request.state.nonce
         swagger_dir = APP_DIR / "static" / "swagger"
         if swagger_dir.exists():
@@ -70,6 +83,7 @@ def register_docs_routes(app: FastAPI) -> None:
 
     @app.get("/redoc", include_in_schema=False)
     async def custom_redoc(request: Request) -> HTMLResponse:
+        """Generate the ReDoc API documentation page using local or CDN assets."""
         nonce = request.state.nonce
         redoc_dir = APP_DIR / "static" / "redoc"
         if redoc_dir.exists():
@@ -95,7 +109,16 @@ def register_docs_routes(app: FastAPI) -> None:
 
 
 def _inject_inline_script_nonce(html: str, nonce: str) -> str:
-    """Add the request nonce to FastAPI's generated inline docs script."""
+    """
+    Add a nonce attribute to FastAPI-generated inline documentation scripts.
+    
+    Parameters:
+        html (str): Generated documentation HTML.
+        nonce (str): Nonce value to add to matching inline script tags.
+    
+    Returns:
+        str: Documentation HTML with the nonce added to matching inline scripts.
+    """
     return html.replace(
         "<script>\n    const ui =", f'<script nonce="{nonce}">\n    const ui =',
     ).replace("<script>\nconst ui =", f'<script nonce="{nonce}">\nconst ui =')

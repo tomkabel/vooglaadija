@@ -28,6 +28,11 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
 
 const limiter = createSemaphore(MAX_CONCURRENCY);
 
+/**
+ * Classifies an error and provides a network error fallback when classification fails.
+ * @param {Error} err - The error to classify.
+ * @return {string} The error classification, or `network_error` if classification fails.
+ */
 function safeClassify(err) {
   try {
     return classifyError(err);
@@ -36,6 +41,10 @@ function safeClassify(err) {
   }
 }
 
+/**
+ * Create the Express application for health checks and download requests.
+ * @return {import('express').Express} The configured Express application.
+ */
 export function createApp() {
   const app = express();
   app.use(express.json({ limit: BODY_LIMIT }));
@@ -144,6 +153,12 @@ export function createApp() {
   return app;
 }
 
+/**
+ * Starts the HTTP server on the specified port.
+ * @param {import('express').Express} app - The Express application to serve.
+ * @param {number} [port] - The port to bind to.
+ * @returns {import('node:http').Server} The running HTTP server.
+ */
 export function startServer(app, port = PORT) {
   const server = app.listen(port, () => {
     console.log(`browser-downloader listening on :${port}`);

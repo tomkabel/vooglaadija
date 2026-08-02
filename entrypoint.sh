@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# error_exit prints an error message to standard error and exits with status 1.
 error_exit() {
   echo "ERROR: $1" >&2
   exit 1

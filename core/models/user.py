@@ -16,7 +16,12 @@ if TYPE_CHECKING:
 
 
 def not_deleted() -> ColumnElement[bool]:
-    """Return a filter condition for non-deleted users."""
+    """
+    Build a condition that selects users whose deletion timestamp is NULL.
+    
+    Returns:
+        ColumnElement[bool]: A SQLAlchemy condition matching users with no deletion timestamp.
+    """
     return and_(User.deleted_at.is_(None))
 
 

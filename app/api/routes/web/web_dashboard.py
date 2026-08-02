@@ -17,7 +17,15 @@ router = APIRouter(tags=["web"])
 
 @router.get("/chaos-lab")
 async def chaos_lab_page(request: Request) -> TemplateResponse:
-    """Render the chaos engineering lab page for live demo."""
+    """
+    Render the chaos engineering lab page when the chaos API feature is enabled.
+    
+    Returns:
+        TemplateResponse: The rendered chaos engineering lab page.
+    
+    Raises:
+        HTTPException: If the chaos API feature is disabled.
+    """
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
 
@@ -33,7 +41,15 @@ async def chaos_lab_page(request: Request) -> TemplateResponse:
 
 @router.get("/chaos-lab/status")
 async def chaos_lab_status(request: Request) -> TemplateResponse:
-    """HTMX partial: return current chaos flag status for polling."""
+    """
+    Render the current chaos status for HTMX polling.
+    
+    Raises:
+        HTTPException: If the chaos API feature is disabled.
+    
+    Returns:
+        TemplateResponse: The rendered chaos status partial.
+    """
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
 

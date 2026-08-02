@@ -32,7 +32,12 @@ class _EngineFactory:
         self._async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
     def get_engine(self) -> AsyncEngine:
-        """Get or create the async engine (lazy initialization)."""
+        """
+        Provide the configured asynchronous database engine.
+        
+        Returns:
+            AsyncEngine: The database engine.
+        """
         if self._engine is None:
             self._engine = create_async_engine(
                 settings.database_url,
@@ -73,7 +78,12 @@ def get_engine() -> AsyncEngine:
 
 
 def get_async_session_factory() -> async_sessionmaker[AsyncSession]:
-    """Get or create the async session factory (lazy initialization)."""
+    """
+    Provide the shared asynchronous database session factory.
+    
+    Returns:
+        async_sessionmaker[AsyncSession]: The session factory used to create asynchronous database sessions.
+    """
     return _factory.get_async_session_factory()
 
 

@@ -45,7 +45,11 @@ const MAX_RETRIES = 3; // max segment-level retries
 const BASE_RETRY_MS = 500; // base delay for exponential backoff
 
 // -- Per-resource-kind size caps (Phase 2.3) --------------------------------
-// Mirrors FlowPick's PageFetchClient resource classification.
+/**
+ * Determines the maximum permitted response size for a resource category.
+ * @param {string} resourceKind - The resource category, such as `manifest` or `key`.
+ * @return {number} The maximum response size in bytes.
+ */
 
 function maxBodyBytes(resourceKind) {
   if (resourceKind === 'manifest') return 8 * 1024 * 1024; // 8 MiB
@@ -53,6 +57,11 @@ function maxBodyBytes(resourceKind) {
   return 256 * 1024 * 1024; // 256 MiB (segments, init, generic)
 }
 
+/**
+ * Classifies a media resource based on its URL extension.
+ * @param {string} url - The resource URL.
+ * @return {string} `manifest` for HLS or DASH manifests, `key` for key files, or `segment` otherwise.
+ */
 function classifyResource(url) {
   if (/\.(m3u8|mpd)(\?|$)/i.test(url)) return 'manifest';
   if (/\.key(\?|$)/i.test(url)) return 'key';
@@ -60,7 +69,11 @@ function classifyResource(url) {
 }
 
 // -- Retry delay with exponential backoff + jitter (Phase 2.3) --------------
-// Mirrors FlowPick's retryDelay: min(500 * 2^attempt, 8000) + rand(0, 250)ms.
+/**
+ * Calculates the delay before a retry using capped exponential backoff and random jitter.
+ * @param {number} attempt - The zero-based retry attempt number.
+ * @return {number} The delay in milliseconds, including up to 250 milliseconds of jitter.
+ */
 
 function retryDelayMs(attempt) {
   const base = Math.min(BASE_RETRY_MS * 2 ** attempt, 8_000);
@@ -68,13 +81,22 @@ function retryDelayMs(attempt) {
   return base + jitter;
 }
 
+/**
+ * Delays completion for the specified duration.
+ * @param {number} ms - The delay duration in milliseconds.
+ * @return {Promise<void>} Resolves after the delay.
+ */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // -- Context fallback strategy (Phase 2.3) ----------------------------------
 // Tries multiple fetch() credential modes, deduplicating equivalents. Mirrors
-// FlowPick's contextCandidates(): hinted → same-origin CORS → include CORS.
+/**
+ * Generates credential and CORS request contexts, prioritizing captured authentication headers.
+ * @param {Object} authHeaders - Authentication headers to include in credentialed requests.
+ * @return {Array<Object>} The deduplicated request contexts.
+ */
 
 function contextCandidates(authHeaders) {
   const candidates = [];
@@ -103,7 +125,15 @@ function contextCandidates(authHeaders) {
 // -- HTTP helpers ------------------------------------------------------------
 
 // Single fetch with a per-call timeout, parent AbortSignal forwarding, and
-// optional auth headers.
+/**
+ * Fetch a resource with manual redirect handling and request cancellation.
+ * @param {string} url - The resource URL.
+ * @param {Object} options - Request options.
+ * @param {AbortSignal} [options.signal] - Signal that cancels the request.
+ * @param {number} options.timeout - Request timeout in milliseconds.
+ * @param {Object} [options.headers] - Additional request headers.
+ * @return {Promise<Response>} The fetch response.
+ */
 async function fetchOnce(url, { signal, timeout, headers: extraHeaders }) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeout);
@@ -129,7 +159,13 @@ async function fetchOnce(url, { signal, timeout, headers: extraHeaders }) {
   }
 }
 
-// Retry a fetch across multiple credential contexts with exponential backoff.
+/**
+ * Fetches a resource across credential contexts with retry backoff.
+ * @param {string} url - The resource URL.
+ * @param {Object} [opts] - Request options, including timeout, cancellation signal, URL lookup, and authentication headers.
+ * @returns {Promise<Response>} The fetched response.
+ * @throws {*} The last request error when all attempts fail.
+ */
 async function fetchResWithRetry(url, opts = {}) {
   const { signal, timeout = DEFAULT_FETCH_TIMEOUT, lookup, authHeaders } = opts;
   const contexts = contextCandidates(authHeaders);
@@ -162,7 +198,20 @@ async function fetchResWithRetry(url, opts = {}) {
 }
 
 // Follow redirects manually, validating every Location via `validateUrl`.
-// Checks Content-Length against the resource-kind cap before materializing.
+/**
+ * Fetch a resource while following validated redirects and enforcing its size limit.
+ * @param {string} url - The resource URL to fetch.
+ * @param {Object} [opts] - Request and size-limit options.
+ * @param {AbortSignal} [opts.signal] - Signal used to cancel the request.
+ * @param {number} [opts.timeout] - Per-request timeout in milliseconds.
+ * @param {Function} [opts.lookup] - Function used to validate resolved redirect URLs.
+ * @param {string} [opts.credentials] - Credentials mode for the request.
+ * @param {string} [opts.mode] - Request mode.
+ * @param {Object} [opts.headers] - Additional request headers.
+ * @param {number} [opts.bodyCap] - Maximum permitted response size in bytes.
+ * @return {Promise<Response>} The successful resource response.
+ * @throws {DownloaderError} If the response is unsuccessful, exceeds the size limit, contains an invalid redirect, or exceeds the redirect limit.
+ */
 async function fetchResOne(url, opts = {}) {
   const {
     signal,
@@ -213,7 +262,15 @@ async function fetchResOne(url, opts = {}) {
 // -- Subprocess runner -------------------------------------------------------
 
 // Run a subprocess with drained stdio, a timeout, and an optional AbortSignal.
-// Resolves to { code, stderr, killed }. Never rejects — callers inspect code.
+/**
+ * Runs a subprocess and captures its exit status and standard error.
+ * @param {string} cmd - The executable to run.
+ * @param {string[]} args - Arguments passed to the executable.
+ * @param {Object} [opts] - Execution options.
+ * @param {number} [opts.timeout] - Maximum runtime in milliseconds.
+ * @param {AbortSignal} [opts.signal] - Signal that cancels the subprocess.
+ * @return {{code: number|null, stderr: string, killed: boolean}} The exit code, captured standard error, and whether termination was requested.
+ */
 export function runSpawn(cmd, args, opts = {}) {
   return new Promise((resolve) => {
     const timeout = opts.timeout ?? DEFAULT_STREAMLINK_TIMEOUT;
@@ -303,7 +360,11 @@ export function runSpawn(cmd, args, opts = {}) {
   });
 }
 
-// -- Fetch helpers -----------------------------------------------------------
+/**
+ * Parses the response content length from HTTP headers.
+ * @param {Headers} headers - The headers containing the content length.
+ * @return {number|null} The content length in bytes, or `null` when unavailable or invalid.
+ */
 
 function contentLength(headers) {
   const v = headers?.get?.('content-length');
@@ -314,6 +375,12 @@ function contentLength(headers) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Fetches a resource as text while enforcing its applicable body-size limit.
+ * @param {string} url - The resource URL.
+ * @param {Object} [opts] - Fetch and retry options.
+ * @returns {string} The response body as text.
+ */
 async function fetchText(url, opts = {}) {
   const resourceKind = classifyResource(url);
   const cap = opts.bodyCap ?? maxBodyBytes(resourceKind);
@@ -325,6 +392,12 @@ async function fetchText(url, opts = {}) {
   return text;
 }
 
+/**
+ * Fetch binary content and write it to a file.
+ * @param {string} url - The resource URL.
+ * @param {string} destPath - The destination file path.
+ * @param {Object} [opts] - Fetch options, including an optional body size cap.
+ */
 async function fetchToFile(url, destPath, opts = {}) {
   const resourceKind = classifyResource(url);
   const cap = opts.bodyCap ?? maxBodyBytes(resourceKind);
@@ -341,7 +414,12 @@ async function fetchToFile(url, destPath, opts = {}) {
 // Extract the first variant URL from a master playlist, preserving query
 // strings. Parse failures and validation failures (e.g. SSRF to a private IP)
 // `continue` to the next candidate rather than `return null` (which would skip
-// all remaining valid variants).
+/**
+ * Finds the first valid variant URL in an HLS master playlist.
+ * @param {string} manifestText - The master playlist contents.
+ * @param {string} baseUrl - The URL used to resolve relative variant references.
+ * @return {string|null} The resolved variant URL, or `null` if no valid variant is found.
+ */
 async function pickVariantUrl(manifestText, baseUrl, { lookup } = {}) {
   const lines = manifestText.split('\n').map((l) => l.trim());
   for (let i = 0; i < lines.length; i += 1) {
@@ -377,11 +455,23 @@ const HLS_DRM_RE =
   /#EXT-X-(?:KEY|SESSION-KEY):.*METHOD=(?:SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)/i;
 const HLS_DRM_KEYFORMAT_RE = /#EXT-X-KEY:.*KEYFORMAT="(?!identity).+"/i;
 
+/**
+ * Determines whether an HLS manifest indicates DRM encryption.
+ * @param {string} manifestText - The HLS manifest content to inspect.
+ * @return {boolean} `true` if the manifest indicates DRM encryption, `false` otherwise.
+ */
 function isDrmEncrypted(manifestText) {
   return HLS_DRM_RE.test(manifestText) || HLS_DRM_KEYFORMAT_RE.test(manifestText);
 }
 
-// -- Main exports ------------------------------------------------------------
+/**
+ * Downloads an HLS manifest by fetching its segments and combining them into an output file.
+ * @param {string} url - The HLS manifest URL.
+ * @param {string} outPath - The destination file path.
+ * @param {Object} [opts] - Download, authentication, lookup, timeout, and cancellation options.
+ * @return {Promise<string>} The output file path.
+ * @throws {DownloaderError} If the playlist is invalid, exceeds recursion limits, uses unsupported DRM, or the download fails.
+ */
 
 export async function downloadManifestFallback(url, outPath, opts = {}) {
   const dlTimeout = opts.timeout ?? DEFAULT_DOWNLOAD_TIMEOUT;
@@ -506,6 +596,14 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
   }
 }
 
+/**
+ * Downloads an HLS or DASH stream to a file using streamlink.
+ * @param {string} url - The stream URL.
+ * @param {string} outPath - The destination file path.
+ * @param {Object} [opts] - Download options, including timeout, cancellation signal, URL lookup, and authentication headers.
+ * @return {Promise<string>} The destination file path.
+ * @throws {DownloaderError} If the download fails and no applicable fallback succeeds.
+ */
 export async function downloadStream(url, outPath, opts = {}) {
   const timeout = opts.timeout ?? DEFAULT_DOWNLOAD_TIMEOUT;
   const lookup = opts.lookup;

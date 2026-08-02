@@ -47,14 +47,11 @@ KEY_TO_SCENARIO_FIELD: dict[str, str] = {
 
 
 def get_redis_client() -> aioredis.Redis:
-    """Get or create the shared Redis client singleton.
-
-    Returns the same client instance on every call. The client manages
-    its own connection pool internally (TCP connections are reused).
-
-    Used by both API server and worker process — each process gets its own
-    singleton (one per OS process), which is the correct behavior since
-    redis-py's connection pool is not fork/process-safe.
+    """
+    Get the shared asynchronous Redis client, creating it when needed.
+    
+    Returns:
+        aioredis.Redis: The shared Redis client for the current process.
     """
     if _redis_state["client"] is not None:
         return cast("aioredis.Redis", _redis_state["client"])
@@ -84,17 +81,12 @@ async def close_redis_client() -> None:
 
 
 async def check_worker_health() -> bool:
-    """Check if any worker has a fresh heartbeat in Redis.
-
-    Workers write ``worker:health:<worker_id>`` keys with a 30-second TTL
-    (set via SETEX) every ~20 seconds in their main loop. This function
-    scans for any matching key — if one exists with remaining TTL, at
-    least one worker is alive.
-
+    """
+    Determine whether any worker has a current heartbeat in Redis.
+    
     Returns:
-        True if at least one worker health key exists (worker is alive).
-        False if no health keys found or Redis is unreachable.
-
+        bool: `True` if at least one worker heartbeat has a positive TTL,
+        `False` if no current heartbeat exists or Redis access fails.
     """
     try:
         client = get_redis_client()

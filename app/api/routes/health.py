@@ -79,7 +79,12 @@ async def _check_redis(redis_url: str) -> str:
     },
 )
 async def health_check() -> HealthStatus:
-    """Returns the health status using independent, direct connections.
+    """
+    Reports the health of the database and Redis dependencies.
+    
+    Returns:
+        HealthStatus: A timestamped health result with dependency statuses and an
+        overall status of "healthy" or "unhealthy".
     """
     health_status: HealthStatus = {
         "status": "healthy",

@@ -218,12 +218,17 @@ async def metrics() -> Response:
 
 
 def start_health_server(port: int | None = None) -> uvicorn.Server | None:
-    """Start the health check FastAPI server in a background thread.
-
-    Port is read from WORKER_HEALTH_PORT env var (default: 8082).
-    Set WORKER_HEALTH_PORT=0 to disable.
-
-    Returns the uvicorn server instance for truthiness/lifecycle compatibility.
+    """
+    Start the health check server in a daemon background thread.
+    
+    The port defaults to `WORKER_HEALTH_PORT` or 8082, and the host defaults to
+    `WORKER_HEALTH_HOST` or `0.0.0.0`. A port of 0 disables the server.
+    
+    Parameters:
+    	port (int | None): Port to bind, or `None` to use `WORKER_HEALTH_PORT`.
+    
+    Returns:
+    	uvicorn.Server | None: The running server instance, or `None` when disabled.
     """
     global _health_server, _health_server_thread, _worker_loop
     if _health_server is not None:

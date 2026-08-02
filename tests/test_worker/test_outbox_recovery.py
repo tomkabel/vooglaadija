@@ -107,7 +107,9 @@ class TestOutboxRecovery:
 
     @pytest.mark.unit
     async def test_sync_outbox_with_retry_scheduled(self, db_session, job_id, user_id):
-        """Test that sync_outbox_to_queue handles retry_scheduled entries."""
+        """
+        Verify that retry-scheduled outbox entries are synchronized to the retry queue.
+        """
         job = DownloadJob(
             id=job_id,
             user_id=user_id,
@@ -306,7 +308,12 @@ class TestOutboxIdempotency:
 class TestOutboxBatchProcessing:
     @pytest.mark.unit
     async def test_sync_respects_batch_size(self, db_session):
-        """Test that sync_outbox_to_queue respects batch_size limit."""
+        """
+        Verify that outbox synchronization limits the number of entries processed per batch.
+        
+        Parameters:
+        	db_session: Database session used to create and inspect test records.
+        """
         user_id = uuid4()
         job_ids = [uuid4() for _ in range(5)]
 

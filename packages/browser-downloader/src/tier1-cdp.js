@@ -49,6 +49,12 @@ const DASH_DRM_RE = /<ContentProtection[\s/>]/i;
 // Key headers captured for auth replay on downstream segment fetches.
 const AUTH_HEADER_NAMES = ['referer', 'origin', 'cookie', 'authorization'];
 
+/**
+ * Detects DRM indicators in a DASH or HLS manifest.
+ * @param {string} body - The manifest content to inspect.
+ * @param {string} url - The manifest URL used to identify its format.
+ * @return {string|null} A description of the detected DRM indicator, or `null` when none is found.
+ */
 function scanManifestForDrm(body, url) {
   const isDash = /\.mpd(\?|$)/i.test(url);
   if (isDash) {
@@ -149,7 +155,15 @@ async function safeDetach(client) {
   }
 }
 
-// -- Main export -------------------------------------------------------------
+/**
+ * Intercepts media responses during navigation and returns the first supported media or manifest result.
+ * @param {import('playwright').Page} page - The page to navigate and monitor.
+ * @param {string} url - The URL to navigate to.
+ * @param {object} [opts] - Interception options.
+ * @param {number} [opts.timeout=30000] - Maximum time to wait for a media response.
+ * @param {number} [opts.bodyCap] - Maximum allowed size of a media response body.
+ * @return {Promise<object|null>} The intercepted media result, a manifest result, or `null` if no media is found before the timeout.
+ */
 
 export async function interceptMedia(page, url, opts = {}) {
   const timeout = opts.timeout ?? 30_000;

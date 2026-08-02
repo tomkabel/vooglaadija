@@ -724,6 +724,12 @@ class TestPlatformFormatChains:
         captured_scripts: list[str] = []
 
         async def capturing_subprocess_exec(*args, **kwargs):
+            """
+            Capture the subprocess script and return a mocked process.
+            
+            Returns:
+                A mocked subprocess process with a fixed process ID.
+            """
             captured_scripts.append(args[2])
             return _make_process(pid=12346)
 
@@ -746,6 +752,12 @@ class TestPlatformFormatChains:
         captured_scripts: list[str] = []
 
         async def capturing_subprocess_exec(*args, **kwargs):
+            """
+            Capture the subprocess script and return a mock process for testing.
+            
+            Returns:
+                Mock subprocess process with PID 12347.
+            """
             captured_scripts.append(args[2])
             return _make_process(pid=12347)
 

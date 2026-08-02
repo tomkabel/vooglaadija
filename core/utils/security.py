@@ -4,7 +4,21 @@ import os
 
 
 def validate_path(base_path: str, target_path: str, check_writable: bool = False) -> str:
-    """Validate that target_path resolves within base_path and return the resolved target."""
+    """
+    Validate that a target path resolves within an allowed base directory.
+    
+    Parameters:
+        base_path (str): The allowed base directory.
+        target_path (str): The path to validate.
+        check_writable (bool): Whether to require the target or its parent directory to be writable.
+    
+    Returns:
+        str: The canonical resolved target path.
+    
+    Raises:
+        ValueError: If the resolved target is outside the resolved base directory.
+        PermissionError: If writability is required and the target location is not writable.
+    """
     resolved_base = os.path.realpath(base_path)
     resolved_target = os.path.realpath(target_path)
 

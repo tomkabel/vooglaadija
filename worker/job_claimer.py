@@ -62,7 +62,7 @@ async def claim_next(db: AsyncSession, job_id: UUID | str | bytes) -> DownloadJo
 
 
 async def heartbeat(db: AsyncSession, job_id: UUID) -> None:
-    """Update a processing job heartbeat timestamp."""
+    """Update a job's heartbeat timestamp and commit the change."""
     await db.execute(
         update(DownloadJob).where(DownloadJob.id == job_id).values(updated_at=datetime.now(UTC)),
     )
@@ -74,7 +74,13 @@ async def periodic_heartbeat(
     job_id: UUID,
     stop_event: asyncio.Event,
 ) -> None:
-    """Send heartbeats every 30 seconds until the stop event is set."""
+    """
+    Update the specified job's heartbeat every 30 seconds until the stop event is set.
+    
+    Parameters:
+    	job_id (UUID): Identifier of the job whose heartbeat is updated.
+    	stop_event (asyncio.Event): Event that stops the heartbeat loop.
+    """
     try:
         async with db_factory() as hb_db:
             while not stop_event.is_set():

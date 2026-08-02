@@ -30,17 +30,32 @@ class _LazyRedisClient:
         self._client: aioredis.Redis | None = None
 
     def _ensure(self) -> aioredis.Redis:
+        """
+        Ensure the Redis client is initialized and return it.
+        
+        Returns:
+            aioredis.Redis: The shared Redis client.
+        """
         if self._client is None:
             self._client = get_redis_client()
         assert self._client is not None
         return self._client
 
     async def close(self) -> None:
+        """Close the cached Redis client and clear the local client reference."""
         if self._client is not None:
             await close_redis_client()
             self._client = None
 
     def __getattr__(self, name: str) -> Any:
+        """Forward attribute access to the lazily initialized Redis client.
+        
+        Parameters:
+            name (str): Name of the attribute to retrieve.
+        
+        Returns:
+            Any: Value of the requested attribute on the Redis client.
+        """
         return getattr(self._ensure(), name)
 
 

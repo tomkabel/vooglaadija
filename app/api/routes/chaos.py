@@ -43,6 +43,14 @@ class ChaosStatus(BaseModel):
 
 
 def _scenario_key(scenario: str) -> str:
+    """Map a chaos scenario to its configured Redis key.
+    
+    Parameters:
+    	scenario (str): The chaos scenario name.
+    
+    Returns:
+    	str: The configured Redis key, or a `chaos:`-prefixed key for unknown scenarios.
+    """
     return SCENARIO_KEY_MAP.get(scenario, f"chaos:{scenario}")
 
 
@@ -53,6 +61,16 @@ async def inject_chaos(
     scenario: str = Form(...),
     duration_seconds: int = Form(30),
 ) -> dict[str, Any] | JSONResponse:
+    """
+    Activate a chaos scenario for a specified duration.
+    
+    Parameters:
+        scenario (str): Chaos scenario to activate.
+        duration_seconds (int): Duration of the activation in seconds.
+    
+    Returns:
+        dict[str, Any] | JSONResponse: Activation details on success, or a 403 response when CSRF validation fails.
+    """
     _require_feature_flag()
     if not await validate_csrf_token(request):
         return JSONResponse(
@@ -100,6 +118,11 @@ async def reset_chaos(
     request: Request,
     _user: CurrentUserFromCookie,
 ) -> dict[str, Any] | JSONResponse:
+    """Reset all active chaos scenarios.
+    
+    Returns:
+    	dict[str, Any] | JSONResponse: A success response containing the number of deleted scenario keys, or a 403 response when CSRF validation fails.
+    """
     _require_feature_flag()
     if not await validate_csrf_token(request):
         return JSONResponse(
@@ -122,6 +145,11 @@ async def chaos_status(
     request: Request,
     _user: CurrentUserFromCookie,
 ) -> dict[str, Any]:
+    """Report the active status of each chaos scenario.
+    
+    Returns:
+    	dict[str, Any]: A response containing the active status for each scenario.
+    """
     _require_feature_flag()
 
     from core.redis_client import KEY_TO_SCENARIO_FIELD
@@ -142,10 +170,19 @@ async def chaos_submit_videos(
     db: DbSession,
     count: int = Form(default=10),
 ) -> dict[str, Any] | JSONResponse:
-    """Bulk submit demo video URLs for chaos lab.
-
-    Creates N random download jobs from the demo URL pool.
-    Only available when FEATURE_CHAOS_API_ENABLED=true.
+    """
+    Submit randomly selected demo video URLs for processing.
+    
+    The requested count is limited to the range 1–50. An invalid CSRF token produces
+    a 403 response.
+    
+    Parameters:
+    	count (int): Number of demo videos to submit.
+    
+    Returns:
+    	dict[str, Any] | JSONResponse: Submission details containing the number
+    	of jobs created, the effective requested count, and their URLs, or a 403
+    	response when CSRF validation fails.
     """
     _require_feature_flag()
     if not await validate_csrf_token(request):

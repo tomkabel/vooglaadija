@@ -30,30 +30,17 @@ logger = get_logger(__name__)
 
 
 async def requeue_stuck_jobs(timeout_minutes: int = 15) -> int:
-    """Requeue jobs that have been stuck in 'PROCESSING' status too long.
-
-    These are "zombie" jobs - workers that were killed (SIGKILL/OOM) without
-    running graceful shutdown, leaving jobs permanently stuck in PROCESSING.
-
-    Uses a single atomic bulk UPDATE with RETURNING to avoid:
-    - O(N) SAVEPOINT overhead (prevents savepoint exhaustion on large backlogs)
-    - Heartbeat race: the WHERE clause skips recently-updated rows, so active
-      workers' heartbeats don't interfere with zombie detection
-    - Dual-write issues: outbox entries are created after the RETURNING,
-      under the same transaction
-
-    When the chaos zombie trigger key exists in Redis, the timeout is
-    automatically shortened to 1 minute so the demo recovery is visible
-    within the 3-minute demo window.
-
+    """
+    Requeue jobs that have remained in processing status beyond the timeout.
+    
+    When the chaos recovery trigger is active, the timeout is limited to one minute.
+    
     Args:
-        timeout_minutes: Jobs stuck in PROCESSING for longer than this are requeued.
-            When CHAOS_ZOMBIE_JOB_KEY is set, this is clamped to max 1 minute
-            for demo responsiveness.
-
+        timeout_minutes: Maximum age, in minutes, for a job to remain in processing
+            before it is requeued.
+    
     Returns:
         Number of jobs requeued.
-
     """
     # Chaos-aware: if the chaos zombie key is active, clamp to 1 minute max
     # so the demo doesn't wait 15 minutes for recovery visualization

@@ -180,7 +180,16 @@ async def close_api_resources() -> None:
 def create_lifespan(
     app_version: str, uvloop_available: bool,
 ) -> Callable[[FastAPI], AbstractAsyncContextManager[None, bool | None]]:
-    """Create the FastAPI lifespan context manager for app assembly."""
+    """
+    Create a FastAPI lifespan context manager that initializes application resources on startup and cleans them up during shutdown.
+    
+    Parameters:
+    	app_version (str): Application version included in startup diagnostics.
+    	uvloop_available (bool): Whether uvloop is available for the application.
+    
+    Returns:
+    	Callable[[FastAPI], AbstractAsyncContextManager[None, bool | None]]: The configured FastAPI lifespan context manager.
+    """
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

@@ -18,6 +18,15 @@ class RequestBodySizeMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        """
+        Limit request bodies to the configured maximum size.
+        
+        Parameters:
+            request (Request): The incoming HTTP request.
+        
+        Returns:
+            Response: The downstream response, or a 413 response when the declared body size exceeds the limit.
+        """
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return await call_next(request)
 

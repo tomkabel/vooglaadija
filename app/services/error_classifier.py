@@ -303,13 +303,21 @@ def _budget_window() -> int:
 
 
 def _max_ratio() -> float:
+    """
+    Provide the maximum allowed retry ratio.
+    
+    Returns:
+    	float: The configured maximum retry ratio.
+    """
     return _MAX_RETRY_RATIO
 
 
 async def check_retry_budget(redis_client: Redis) -> bool:
-    """Check if retry budget allows another retry.
-
-    Returns True if budget OK, False if retries should be shed.
+    """
+    Determine whether another retry fits within the configured retry budget.
+    
+    Returns:
+    	bool: `True` if the retry budget permits another retry or the budget check fails; `False` if the retry ratio has reached its limit.
     """
     retry_key, total_key = _retry_budget_keys()
     window = _budget_window()
@@ -330,6 +338,12 @@ async def check_retry_budget(redis_client: Redis) -> bool:
 
 
 async def record_retry_budget_request(redis_client: Redis, is_retry: bool = False) -> None:
+    """
+    Record a request in the retry budget tracking window.
+    
+    Parameters:
+        is_retry (bool): Whether the request should also count as a retry.
+    """
     retry_key, total_key = _retry_budget_keys()
     window = _budget_window()
     now = datetime.now(UTC).timestamp()

@@ -70,15 +70,14 @@ async def _check_ssrf(url: str) -> None:
 
 
 async def resolve_video_title(url: str) -> str | None:
-    """Resolve a video title from a URL without downloading.
-
-    Runs yt-dlp with download=False for fast metadata extraction (~0.5-3s).
-    Called at job creation time so the title is available immediately in the UI.
-
-    Includes SSRF protection: validates the URL does not resolve to a private IP.
-
-    Returns the raw video title string, or None if extraction fails for any reason
-    (timeout, network error, unsupported URL, SSRF, etc.). Never raises.
+    """
+    Resolve a video title from a URL without downloading the media.
+    
+    Parameters:
+        url (str): Video URL to inspect.
+    
+    Returns:
+        str | None: The extracted title, or `None` if the URL is blocked or metadata extraction fails.
     """
     try:
         await _check_ssrf(url)
@@ -268,11 +267,13 @@ _INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "instagr.am"
 
 
 def _get_platform(url: str) -> str:
-    """Detect the media platform from a URL hostname using exact domain matching.
-
-    Returns a string key used for throttling metrics, extractor args,
-    format chains, and cookie requirements. Unknown/unrecognizable hosts
-    default to 'youtube' while subdomain-bypass attempts return 'unknown'.
+    """
+    Identify the media platform associated with a URL hostname.
+    
+    Returns:
+        str: The platform identifier, `"youtube"` for recognized YouTube or
+            unrecognized hosts, `"unknown"` for suspicious platform-like hostnames,
+            or the matching supported platform identifier.
     """
     hostname = (urlparse(url).hostname or "").lower()
     if not hostname:
@@ -281,6 +282,15 @@ def _get_platform(url: str) -> str:
     youtube_all = _YOUTUBE_DOMAINS | _YOUTUBE_SHORT_DOMAINS | _YOUTUBE_NOCOOKIE
 
     def _host_matches(domains: frozenset[str]) -> bool:
+        """
+        Determine whether the hostname matches a supported domain or its subdomain.
+        
+        Parameters:
+            domains (frozenset[str]): Domains to match against the hostname.
+        
+        Returns:
+            bool: `true` if the hostname matches a domain or valid subdomain, `false` otherwise.
+        """
         return hostname in domains or any(hostname.endswith("." + d) for d in domains)
 
     if _host_matches(youtube_all):
@@ -377,10 +387,12 @@ _COOKIE_REQUIRED_PLATFORMS = frozenset({"tiktok", "instagram"})
 
 
 async def _check_throttle(stderr_text: str, service: str = "youtube") -> None:
-    """Parse stderr for HTTP 429 pattern and record response if found.
-
-    yt-dlp runs as a subprocess, so HTTP status codes aren't exposed directly.
-    Detection is via stderr pattern matching against 'HTTP Error 429'.
+    """
+    Record a throttling response when subprocess output indicates HTTP status 429.
+    
+    Parameters:
+        stderr_text (str): Subprocess error output to inspect.
+        service (str): Service associated with the response.
     """
     if not stderr_text:
         return
@@ -395,18 +407,25 @@ async def _extract_via_subprocess(
     output_template: str,
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> dict:
-    """Extract media info via subprocess that can be forcibly killed on timeout.
-
-    This runs yt-dlp as a separate OS process so that on TimeoutError,
-    process.kill() can terminate it immediately rather than leaving a thread running.
-
-    Uses a platform-specific format fallback chain. For YouTube this handles
-    "Requested format is not available" errors when the platform lacks the
-    exact formats needed for merging. Non-YouTube platforms use simple
-    single-stream format selection.
-
-    When progress_callback is provided, the subprocess emits download progress JSON
-    lines via stdout, which are parsed and forwarded to the callback in real time.
+    """
+    Extract media information and download media using yt-dlp.
+    
+    Supports platform-specific format fallbacks and optionally reports download progress
+    through the callback.
+    
+    Parameters:
+    	url (str): Media URL to validate and extract.
+    	output_template (str): Template for the downloaded media file path.
+    	progress_callback (Callable[[dict], Awaitable[None]] | None): Callback that receives
+    		progress updates when provided.
+    
+    Returns:
+    	dict: Extracted media information.
+    
+    Raises:
+    	SSRFError: If the URL resolves to a private or internal address.
+    	TimeoutError: If extraction exceeds the configured timeout.
+    	RuntimeError: If extraction fails or produces no usable output.
     """
     await _check_ssrf(url)
 
@@ -555,6 +574,9 @@ sys.exit(1)
                     logger.warning("stdout_non_json_line", line=line[:200])
 
         async def _read_stderr() -> None:
+            """
+            Collects the subprocess's standard error output as decoded lines.
+            """
             if process.stderr is None:
                 return
             async for line_bytes in process.stderr:
@@ -625,26 +647,26 @@ async def extract_media_url(
     storage_path: str,
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, str, str | None]:
-    """Extract media from a video URL using yt-dlp.
-
-    Supports YouTube, Vimeo, Dailymotion, Twitch, TikTok, and Instagram.
-    Non-YouTube platforms (especially TikTok and Instagram) may require
-    cookies configured via YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER.
-
-    Args:
-        url: The video URL to extract.
-        storage_path: Base path for storing downloaded files.
-        progress_callback: Optional async callback invoked with progress dicts during download.
-
+    """
+    Extract media from a supported video URL and store the resulting file.
+    
+    Supports YouTube, Vimeo, Dailymotion, Twitch, TikTok, and Instagram. TikTok and
+    Instagram may require cookies configured through YT_DLP_COOKIES_FILE or
+    YT_DLP_COOKIES_BROWSER.
+    
+    Parameters:
+        url (str): Video URL to extract.
+        storage_path (str): Base directory for downloaded files.
+        progress_callback (Callable[[dict], Awaitable[None]] | None): Optional
+            asynchronous callback receiving download progress updates.
+    
     Returns:
-        tuple of (file_path, file_name, title) where file_path is always within storage_path
-        and title is the human-readable video title (or None if unavailable).
-
+        tuple[str, str, str | None]: The stored file path, display filename, and
+        extracted title, or None when no title is available.
+    
     Raises:
-        StorageError: If the download directory cannot be created or path is invalid.
-        SSRFError: If the URL resolves to a private/internal IP address.
-        asyncio.TimeoutError: If the extraction takes longer than YT_DLP_TIMEOUT.
-
+        StorageError: If the download directory cannot be created, the output path
+            is invalid, or the extracted file is missing.
     """
     download_dir = os.path.join(storage_path, "downloads")
     try:

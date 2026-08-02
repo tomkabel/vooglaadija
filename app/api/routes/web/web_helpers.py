@@ -138,6 +138,17 @@ def rotate_csrf_token(response: Response) -> str:
 def get_template_context(
     request: Request, csrf_token: str | None = None, **extra_context: object,
 ) -> dict[str, object]:
+    """
+    Build the common context values used to render a web template.
+    
+    Parameters:
+    	request (Request): The current web request.
+    	csrf_token (str | None): An optional CSRF token to include in the context.
+    	**extra_context (object): Additional values to include in the template context.
+    
+    Returns:
+    	dict[str, object]: The template context containing request metadata and extra values.
+    """
     context: dict[str, object] = {
         "request": request,
         "current_year": datetime.now(UTC).year,
@@ -153,6 +164,15 @@ def is_htmx_request(request: Request) -> bool:
 
 
 async def validate_csrf_token(request: Request) -> bool:
+    """
+    Validate the CSRF token for a request.
+    
+    Parameters:
+    	request (Request): The incoming HTTP request.
+    
+    Returns:
+    	bool: `true` for safe HTTP methods or a matching CSRF token, `false` otherwise.
+    """
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return True
     cookie_token = request.cookies.get("csrf_token")
@@ -171,6 +191,15 @@ async def validate_csrf_token(request: Request) -> bool:
 
 
 def _resolve_error(error_code: str | None, mapping: _ErrorMap) -> tuple[str | None, dict[str, str]]:
+    """Resolve an error code to its message and field-level errors.
+    
+    Parameters:
+    	error_code (str | None): The error code to resolve.
+    	mapping (_ErrorMap): The mapping of error codes to error details.
+    
+    Returns:
+    	tuple[str | None, dict[str, str]]: The associated message and field-level errors, or empty error details when the code is absent or unmapped.
+    """
     return mapping.get(error_code, (None, {})) if error_code is not None else (None, {})
 
 
@@ -201,6 +230,18 @@ def _htmx_or_redirect(
 def _error_response(
     request: Request, status_code: int, message: str, redirect_url: str,
 ) -> HTMLResponse | RedirectResponse:
+    """
+    Create an error response for an HTMX request or redirect the client otherwise.
+    
+    Parameters:
+    	request (Request): The incoming web request.
+    	status_code (int): The HTTP status code for the response.
+    	message (str): The error message to display.
+    	redirect_url (str): The URL to use for non-HTMX requests.
+    
+    Returns:
+    	HTMLResponse | RedirectResponse: An HTML error response for HTMX requests or a redirect response otherwise.
+    """
     return _htmx_or_redirect(request, status_code, _error_html(message), redirect_url)
 
 
@@ -234,6 +275,7 @@ def _login_success_response(
 def _register_success_response(
     request: Request, access_token: str, refresh_token: str,
 ) -> HTMLResponse | RedirectResponse:
+    """Complete registration by establishing the authenticated session and directing the user to the downloads page."""
     return _auth_success_response(request, access_token, refresh_token, "/web/downloads")
 
 
