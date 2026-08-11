@@ -92,6 +92,7 @@ async def login_page(
 @limiter.limit("5/minute")
 async def login_form(
     request: Request,
+    *,
     response: Response,
     db: DbSession,
     email: Annotated[str, Form(max_length=255)],
@@ -198,6 +199,7 @@ async def logout(request: Request) -> HTMLResponse | RedirectResponse:
 @limiter.limit("10/minute")
 async def change_password(
     request: Request,
+    *,
     current_password: Annotated[str, Form(max_length=255)],
     new_password: Annotated[str, Form(max_length=255)],
     new_password_confirm: Annotated[str, Form(max_length=255)],
@@ -207,9 +209,9 @@ async def change_password(
     """Change current user's password and rotate CSRF after success."""
     return await _change_password_response(
         request,
-        current_password,
-        new_password,
-        new_password_confirm,
-        current_user,
-        db,
+        current_password=current_password,
+        new_password=new_password,
+        new_password_confirm=new_password_confirm,
+        current_user=current_user,
+        db=db,
     )

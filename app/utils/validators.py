@@ -148,7 +148,7 @@ async def _check_redirect_target(url: str) -> bool:
     """
 
     class _NoFollowRedirects(urllib.request.HTTPRedirectHandler):
-        def redirect_request(
+        def redirect_request(  # noqa: PLR0917
             self,
             req: urllib.request.Request,
             fp: Any,
