@@ -2,7 +2,13 @@
 
 from fastapi import APIRouter
 
-from app.api.routes.web import web_auth, web_dashboard, web_downloads, web_settings
+from app.api.routes.web import (
+    web_auth,
+    web_dashboard,
+    web_downloads,
+    web_settings,
+    web_terms,
+)
 from app.api.routes.web.web_helpers import (  # noqa: F401
     _change_password_response,
     _demo_user_or_raise,
@@ -33,3 +39,4 @@ router.include_router(web_auth.router)
 router.include_router(web_downloads.router)
 router.include_router(web_dashboard.router)
 router.include_router(web_settings.router)
+router.include_router(web_terms.router)

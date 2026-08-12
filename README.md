@@ -66,6 +66,23 @@ Prometheus metrics, OpenTelemetry tracing, and Sentry error tracking. A server-r
 with HTMX and Tailwind CSS provides job management with real-time status updates via Server-Sent
 Events.
 
+### Legitimate Use Cases
+
+Vooglaadija is a tool. Examples of legitimate uses include:
+
+- Downloading your own YouTube content
+- Archival or backup of content you have created or have explicit permission to download
+- Downloading Creative Commons or public domain content
+- Offline access to content you are authorized to view
+
+### Legal Disclaimer
+
+**You are responsible for ensuring you have the right to download any content before using Vooglaadija.** Downloading copyrighted content without authorization may violate YouTube's Terms of Service and applicable copyright law, including the DMCA §1201 anti-circumvention provisions in the US.
+
+Vooglaadija is open-source software provided under GPLv3. The operators of this service do not endorse or encourage copyright infringement. This tool has substantial non-infringing uses and is designed for lawful purposes only. Users should consult qualified legal counsel if unsure about the legality of their use case.
+
+See the [Terms of Service](/web/terms) for full details.
+
 ---
 
 ## Features

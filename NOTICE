@@ -1,0 +1,81 @@
+NOTICE
+======
+
+Vooglaadija
+Copyright (c) 2024-2026 Vooglaadija Contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.
+
+Warranty Disclaimer and Liability Limitation
+--------------------------------------------
+This software is provided AS IS, AS AVAILABLE, with NO WARRANTIES.
+Per GPLv3 Section 15, this program is provided without warranty of any kind.
+Per GPLv3 Section 16, no liability is accepted for any damages arising
+from the use of this software.
+
+Third-Party Components
+----------------------
+
+This software includes the following third-party components:
+
+1. yt-dlp
+   - License: Unlicense (public domain)
+   - URL: https://github.com/yt-dlp/yt-dlp
+
+2. FastAPI
+   - Copyright (c) 2018-2026 Sebastián Ramírez
+   - License: MIT
+   - URL: https://github.com/tiangolo/fastapi
+
+3. SQLAlchemy
+   - Copyright (c) 2007-2026 SQLAlchemy authors
+   - License: MIT
+   - URL: https://github.com/sqlalchemy/sqlalchemy
+
+4. Pydantic
+   - Copyright (c) 2018-2026 Samuel Colvin and contributors
+   - License: MIT
+   - URL: https://github.com/pydantic/pydantic
+
+5. Redis (python)
+   - Copyright (c) 2023-2026 Redis contributors
+   - License: MIT
+   - URL: https://github.com/redis/redis-py
+
+6. HTMX
+   - Copyright (c) 2023-2026 Big Sky Software
+   - License: 0BSD
+   - URL: https://github.com/bigskysoftware/htmx
+
+7. Tailwind CSS
+   - Copyright (c) 2023-2026 Tailwind Labs
+   - License: MIT
+   - URL: https://github.com/tailwindlabs/tailwindcss
+
+For full license texts of third-party components, please refer to their
+respective repositories.
+
+Nature of Vooglaadija
+---------------------
+Vooglaadija does not host, re-upload, or redistribute any copyrighted content.
+It is a passive download tool — the user initiates all downloads. The service
+operator does not select, modify, or control the content being downloaded.
+
+This tool has substantial non-infringing uses including:
+- Downloading content you own or have created
+- Downloading content with explicit permission from the copyright holder
+- Downloading Creative Commons or public domain content
+- Archival purposes with creator's consent
+
+Users are solely responsible for ensuring they have the right to download
+any content before using this tool. See Terms of Service for details.

@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service — Vooglaadija{% endblock %}
+
+{% block nav_actions %}
+<a href="/web/login" class="btn-secondary text-sm">
+    Sign In
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-[calc(100vh-4rem)] py-12 px-4 sm:px-6 lg:px-8 relative">
+    <div class="max-w-3xl mx-auto relative z-10">
+        <div class="slide-up opacity-0-initial animate-fill-forwards">
+            <!-- Header -->
+            <div class="text-center mb-10">
+                <h1 class="text-3xl font-display font-bold text-white tracking-tight">
+                    Terms of Service
+                </h1>
+                <p class="mt-3 text-gray-500 font-body">
+                    Last updated: {{ last_updated }}
+                </p>
+            </div>
+
+            <!-- Terms Card -->
+            <div class="card-glow p-8 space-y-8">
+                <!-- Important Notice -->
+                <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6">
+                    <div class="flex items-start gap-4">
+                        <div class="flex-shrink-0 mt-0.5">
+                            <svg class="h-6 w-6 text-amber-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.374-1.5-4.242 0L3.616 6.376c-.866 1.5.217 3.374 1.948 3.374h1.872zM12 15.75h.008v.008H12v-.008z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-display font-semibold text-amber-400 mb-2">
+                                Important Legal Notice
+                            </h3>
+                            <p class="text-sm text-gray-400 leading-relaxed">
+                                <strong class="text-gray-300">You are solely responsible for ensuring you have the right to download any content before using Vooglaadija.</strong>
+                                Downloading copyrighted content without authorization may violate YouTube's Terms of Service, applicable copyright laws, and the DMCA. Vooglaadija is a tool — its presence on this server does not authorize any particular download.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 1: Acceptance -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        1. Acceptance of Terms
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            By accessing or using Vooglaadija, you acknowledge that you have read, understood, and agree to be bound by these Terms of Service. If you do not agree to these terms, do not use this service.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Section 2: Permitted Uses -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        2. Permitted Uses
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>Vooglaadija is intended for lawful purposes only. Permitted uses include:</p>
+                        <ul class="list-disc list-inside space-y-1.5 ml-4">
+                            <li>Downloading content you own or have created yourself</li>
+                            <li>Downloading content with the explicit permission of the copyright holder</li>
+                            <li>Downloading content licensed under Creative Commons or similar free licenses</li>
+                            <li>Downloading public domain content</li>
+                            <li>Archival or backup purposes with the creator's consent</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Section 3: Prohibited Uses -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        3. Prohibited Uses
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>You agree not to use Vooglaadija to:</p>
+                        <ul class="list-disc list-inside space-y-1.5 ml-4">
+                            <li>Download content you do not have the right to download</li>
+                            <li>Circumvent any technological protection measures or access controls</li>
+                            <li>Violate YouTube's Terms of Service or any applicable platform terms</li>
+                            <li>Infringe copyright or other intellectual property rights</li>
+                            <li>Redistribute downloaded content without authorization</li>
+                            <li>Use the service for any commercial purpose without proper authorization</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Section 4: Disclaimer -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        4. Disclaimer of Liability
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            <strong class="text-gray-300">Vooglaadija is provided "AS IS" without warranty of any kind.</strong>
+                            The operators of this service make no representations about the legality of any specific use of this tool. Copyright law varies by jurisdiction. Users are advised to consult qualified legal counsel before downloading any content.
+                        </p>
+                        <p>
+                            To the maximum extent permitted by law, the operators of this service shall not be liable for any damages arising from the use of Vooglaadija, including but not limited to direct, indirect, incidental, special, or consequential damages.
+                        </p>
+                        <p>
+                            As permitted by GPLv3 Sections 15 and 16, this software is provided without warranty or liability of any kind for any purpose.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Section 5: DMCA -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        5. DMCA and Content Removal
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            If you believe that content on YouTube infringes your copyright, please contact YouTube directly or file a DMCA takedown request with YouTube. Vooglaadija operators cannot remove content from YouTube.
+                        </p>
+                        <p>
+                            If you are a rights holder and believe that this service is being used to infringe your rights, contact the service administrator. We take intellectual property rights seriously and will cooperate with legitimate takedown requests.
+                        </p>
+                        <div class="bg-surface-800/50 rounded-lg p-4 mt-4">
+                            <h4 class="text-sm font-display font-semibold text-gray-300 mb-2">DMCA Designated Agent</h4>
+                            <p class="text-xs text-gray-500">
+                                <strong class="text-amber-400">[TODO: Provide the designated agent's name, physical address, telephone number, and email per 17 U.S.C. § 512(c)(2) before deploying to production.]</strong><br />
+                                To file a DMCA takedown request, contact the designated agent at
+                                <span class="font-mono">[agent-email@example.com]</span>
+                                or via the designated takedown form once configured.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 6: Nature of Service -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        6. Nature of Vooglaadija
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            Vooglaadija is open-source software distributed under the GNU General Public License v3.0. It is a passive tool — the service operator does not select, modify, or control the content being downloaded. The user initiates all downloads.
+                        </p>
+                        <p>
+                            This service architecture (local file storage, authenticated access, time-limited download links) is designed to limit third-party liability exposure and is not intended to facilitate copyright infringement.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Section 7: Changes to Terms -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        7. Changes to These Terms
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            These terms may be updated at any time to reflect changes in law, service architecture, or operational requirements. Material changes will be communicated via a notice on this page and, where practicable, via the service dashboard.
+                        </p>
+                        <p>
+                            Continued use of the service after any modification constitutes acceptance of the updated terms. Users are advised to review these terms periodically.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Section 8: Governing Law -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        8. Governing Law and Jurisdiction
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            These Terms of Service are governed by the laws of the Republic of Estonia, without regard to conflict of law principles.
+                        </p>
+                        <p>
+                            Any disputes arising from the use of this service shall be subject to the exclusive jurisdiction of the courts of the Republic of Estonia.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Section 9: Contact -->
+                <section>
+                    <h2 class="text-xl font-display font-semibold text-white mb-4">
+                        9. Contact
+                    </h2>
+                    <div class="text-gray-400 font-body space-y-3 text-sm leading-relaxed">
+                        <p>
+                            For questions about these terms, please contact the designated agent at
+                            <span class="font-mono">[agent-email@example.com]</span>
+                            or via the designated takedown form once configured.
+                            <strong class="text-amber-400">[TODO: Provide the designated agent's name, physical address, telephone number, and email per 17 U.S.C. § 512(c)(2) before deploying to production.]</strong>
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Legal Framework -->
+                <div class="border-t border-white/[0.04] pt-6">
+                    <h3 class="text-sm font-display font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                        Applicable Legal Framework
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-600 font-mono">
+                        <div class="bg-surface-800/50 rounded-lg p-3">
+                            <span class="text-gray-500">US:</span> DMCA §1201, Copyright Law
+                        </div>
+                        <div class="bg-surface-800/50 rounded-lg p-3">
+                            <span class="text-gray-500">EU:</span> Copyright Directive (Dir. (EU) 2019/790) Art. 17; DSA (Reg. (EU) 2022/2065)
+                        </div>
+                        <div class="bg-surface-800/50 rounded-lg p-3">
+                            <span class="text-gray-500">Estonia:</span> Autoriõiguse seadus
+                        </div>
+                        <div class="bg-surface-800/50 rounded-lg p-3">
+                            <span class="text-gray-500">License:</span> GNU GPLv3 §§15-16
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Consent -->
+                <div class="border-t border-white/[0.04] pt-6">
+                    <p class="text-xs text-gray-600 font-body">
+                        By using Vooglaadija, you confirm that you have read, understood, and agree to be bound by these Terms of Service. You acknowledge that you are responsible for ensuring any downloads comply with applicable law.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Footer Navigation -->
+            <div class="mt-8 flex justify-center">
+                <a href="/web/login" class="text-sm text-gray-500 hover:text-amber-400 transition-colors duration-300">
+                    Sign In
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
