@@ -3679,3 +3679,270 @@ class TestResolveErrorsHelpers:
         message, field_errors = _resolve_settings_errors("unknown_code")
         assert message is None
         assert field_errors == {}
+
+
+class TestTermsPage:
+    """Tests for the GET /web/terms endpoint added in this PR."""
+
+    async def test_terms_page_returns_200(self):
+        """Terms page should return 200 OK without authentication."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert response.status_code == 200
+
+    async def test_terms_page_sets_csrf_cookie(self):
+        """Terms page should set a csrf_token cookie on the response."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert response.status_code == 200
+        assert response.cookies.get("csrf_token") is not None
+
+    async def test_terms_page_returns_html(self):
+        """Terms page should return HTML content type."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "text/html" in response.headers.get("content-type", "")
+
+    async def test_terms_page_renders_title(self):
+        """Terms page should render the 'Terms of Service' heading."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Terms of Service" in response.text
+
+    async def test_terms_page_renders_acceptance_section(self):
+        """Terms page should include the Acceptance of Terms section."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Acceptance of Terms" in response.text
+
+    async def test_terms_page_renders_permitted_uses_section(self):
+        """Terms page should include the Permitted Uses section."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Permitted Uses" in response.text
+
+    async def test_terms_page_renders_prohibited_uses_section(self):
+        """Terms page should include the Prohibited Uses section."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Prohibited Uses" in response.text
+
+    async def test_terms_page_renders_disclaimer_section(self):
+        """Terms page should include the Disclaimer of Liability section."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Disclaimer of Liability" in response.text
+
+    async def test_terms_page_renders_dmca_section(self):
+        """Terms page should include the DMCA and Content Removal section."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "DMCA and Content Removal" in response.text
+
+    async def test_terms_page_contains_current_year(self):
+        """Terms page footer should render the current year as a whole token (e.g. '© 2026')."""
+        from datetime import UTC, datetime
+
+        # Match the app: get_template_context uses datetime.now(UTC).year.
+        current_year = str(datetime.now(UTC).year)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        # Anchor to the copyright entity so a bare 4-digit number appearing
+        # elsewhere in the page (the last_updated date, statute refs, etc.)
+        # cannot cause a false pass. The template emits the literal HTML entity
+        # "&copy;", which is preserved verbatim in the raw response body.
+        assert f"&copy; {current_year}" in response.text
+
+    async def test_terms_page_csrf_token_in_html_matches_cookie(self):
+        """The CSRF token embedded in the page should match the cookie value."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        csrf_cookie = response.cookies.get("csrf_token")
+        assert csrf_cookie is not None
+        # The CSRF token must appear somewhere in the rendered HTML
+        assert csrf_cookie in response.text
+
+    async def test_terms_page_accessible_without_auth(self):
+        """Terms page must be reachable without any authentication headers."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            # Explicitly no auth headers
+            response = await client.get("/web/terms", headers={})
+
+        # Should not redirect to login
+        assert response.status_code == 200
+
+    async def test_terms_page_has_sign_in_link(self):
+        """Terms page footer navigation should contain a Sign In link."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "/web/login" in response.text
+
+    async def test_terms_page_has_terms_link(self):
+        """Terms page footer navigation should contain a link back to /web/terms."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "/web/terms" in response.text
+
+    async def test_terms_page_renders_dmca_agent_placeholder(self):
+        """DMCA designated agent section must flag that statutory contact details are missing."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "DMCA Designated Agent" in response.text
+        # Statutory § 512(c)(2) contact details must be explicitly called out as TODO.
+        assert "512(c)(2)" in response.text
+
+    async def test_terms_page_renders_explicit_last_updated(self):
+        """The 'Last updated' date must be an explicit revision date, not the auto year."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Last updated: April 26, 2026" in response.text
+
+    async def test_terms_page_important_legal_notice_present(self):
+        """Terms page should render the Important Legal Notice warning box."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Important Legal Notice" in response.text
+
+    async def test_terms_page_nature_of_service_section(self):
+        """Terms page should include the Nature of Vooglaadija section."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("/web/terms")
+
+        assert "Nature of Vooglaadija" in response.text
+
+    async def test_terms_page_new_csrf_token_each_request(self):
+        """Each request to /web/terms should set a CSRF cookie (may differ per request)."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response1 = await client.get("/web/terms")
+            csrf1 = response1.cookies.get("csrf_token")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            response2 = await client.get("/web/terms")
+            csrf2 = response2.cookies.get("csrf_token")
+
+        # Both requests must receive a CSRF token (values may or may not differ)
+        assert csrf1 is not None
+        assert csrf2 is not None
+
+    async def test_terms_page_existing_csrf_cookie_reused(self):
+        """When a csrf_token cookie is sent with the request, the same token is reused."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            follow_redirects=False,
+        ) as client:
+            # First request: obtain a fresh CSRF token
+            first = await client.get("/web/terms")
+            existing_token = first.cookies.get("csrf_token")
+            assert existing_token is not None
+
+            # Second request within the same client so the cookie jar carries the token
+            second = await client.get("/web/terms")
+
+            # Read the cookie jar while the client is still open (httpx does not
+            # guarantee jar state after the context manager exits).
+            jar_token = client.cookies.get("csrf_token")
+            second_html = second.text
+
+        # response.cookies only reflects Set-Cookie headers; the authoritative source
+        # for "reuse" is the client's cookie jar (and the token embedded in the HTML).
+        assert jar_token == existing_token
+        # The rendered page must embed the same, reused token.
+        assert existing_token in second_html
