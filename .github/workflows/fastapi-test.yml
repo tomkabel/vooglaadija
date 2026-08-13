@@ -48,6 +48,19 @@ jobs:
       - name: Run ruff format check
         run: hatch run lint:format-check
 
+      # Architecture fitness functions (docs/ARCHITECTURE-STANDARD.md)
+      - name: Run boundary verifier (zone-aware import boundaries)
+        run: hatch run lint:boundary
+
+      - name: Check lockfile freshness (One-Version Rule)
+        run: hatch run lint:lock-check
+
+      - name: Run deptry (unused/undeclared dependencies)
+        run: hatch run lint:deps
+
+      - name: Run vulture (dead code)
+        run: hatch run lint:dead-code
+
       - name: Install pnpm
         uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9
 
