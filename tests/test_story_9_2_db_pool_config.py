@@ -129,18 +129,18 @@ def test_base_compose_exposes_db_pool_defaults_in_common_env():
 
 
 @pytest.mark.unit
-def test_production_worker_overrides_pool_without_api_override():
-    """Production compose gives the worker a smaller pool while API inherits defaults."""
-    services = _load_yaml_file("docker-compose.production.yml")["services"]
+def test_worker_overrides_pool_without_api_override():
+    """The worker service gets a smaller pool while the API inherits common defaults."""
+    services = _load_yaml_file("docker-compose.yml")["services"]
     api_env = services["api"]["environment"]
     worker_env = services["worker"]["environment"]
 
     assert worker_env["DB_POOL_SIZE"] == "${WORKER_DB_POOL_SIZE:-3}"
     assert worker_env["DB_MAX_OVERFLOW"] == "${WORKER_DB_MAX_OVERFLOW:-2}"
-    assert "DB_POOL_SIZE" not in api_env
-    assert "DB_MAX_OVERFLOW" not in api_env
-    assert "DB_POOL_TIMEOUT" not in api_env
-    assert "DB_POOL_RECYCLE" not in api_env
+    assert "WORKER_DB_POOL_SIZE" not in api_env
+    assert "WORKER_DB_MAX_OVERFLOW" not in api_env
+    assert api_env["DB_POOL_SIZE"] == "${DB_POOL_SIZE:-10}"
+    assert api_env["DB_MAX_OVERFLOW"] == "${DB_MAX_OVERFLOW:-5}"
 
 
 @pytest.mark.unit

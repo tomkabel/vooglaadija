@@ -122,11 +122,8 @@ Run on every commit (configured in `.pre-commit-config.yaml`):
 # Build image
 docker build -t vooglaadija .
 
-# Local environment
-docker compose -f docker-compose.local.yml up
-
-# Demo environment
-docker compose -f docker-compose.demo.yml up
+# Local environment (builds api/worker locally, binds debug ports)
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 ```
 
 Multi-stage BuildKit builds. Non-root user (1000:1000). Images pushed to `ghcr.io`.

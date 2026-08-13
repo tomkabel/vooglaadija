@@ -1,6 +1,27 @@
 # ============================================
-# A++ Production Docker-Compose - 2026 Best Practices
-# Resource Limits, Security, Observability, GitOps Ready
+# Vooglaadija — production Docker Compose
+# ============================================
+# This is the SINGLE source of truth for the application stack.
+#
+# Deployment:
+#   - Production (recommended): deploy/bootstrap.sh provisions Docker + Coolify on
+#     any VPS, deploys this file via Coolify, assigns the domain to the api service
+#     and auto-provisions a wildcard TLS certificate (Cloudflare DNS-01 challenge,
+#     auto-renewed by Coolify's Caddy proxy).
+#   - Local development:
+#       cp .env.example .env   # set secrets
+#       docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Design notes (2026 best practices):
+#   - No custom networks: Coolify creates and manages the network. Custom networks
+#     break Coolify routing (containers end up on two networks; proxy may pick the
+#     wrong IP -> intermittent 504s).
+#   - No host port bindings here: the reverse proxy (Coolify's Caddy) is the only
+#     public entry point. Debug ports live in docker-compose.local.yml.
+#   - api/worker are registry-first: images are built in CI and pushed to GHCR
+#     (.github/workflows/docker.yml); the server only pulls them (never builds).
+#   - Profiles: 'monitoring' (Prometheus + Grafana), 'backup' (PostgreSQL dumps).
+#   - json-file logging with rotation on every service (no host plugin required).
 # ============================================
 
 x-common-env: &common-env # Database components (app/config.py constructs URL with proper encoding)
@@ -19,6 +40,7 @@ x-common-env: &common-env # Database components (app/config.py constructs URL wi
   REDIS_PORT: ${REDIS_PORT:-6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
   SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
   ENVIRONMENT: ${ENVIRONMENT:-production}
   FILE_EXPIRE_HOURS: ${FILE_EXPIRE_HOURS:-24}
   STORAGE_PATH: /app/storage
@@ -59,16 +81,45 @@ x-base-service: &base-service
     - no-new-privileges=true
 
 services:
+  # ==========================================
+  # Storage init — fix named volume permissions
+  # ==========================================
+  storage-init:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+    image: alpine:latest
+    restart: 'no'
+    exclude_from_hc: true # Coolify: ignore this one-shot service in health checks
+    volumes:
+      - storage:/app/storage:rw
+    command: |
+      sh -c "
+        echo 'Fixing storage permissions...';
+        chown -R 1000:1000 /app/storage 2>/dev/null || true;
+        mkdir -p /app/storage/downloads /app/storage/temp 2>/dev/null || true;
+        chown -R 1000:1000 /app/storage/downloads /app/storage/temp 2>/dev/null || true;
+        echo 'Storage permissions fixed';
+        exit 0;
+      "
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ==========================================
+  # API — FastAPI application
+  # ==========================================
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: api
-    container_name: ytprocessor-api
+    image: ghcr.io/tomkabel/vooglaadija:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       <<: *common-env
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:8081,http://127.0.0.1:8080}
+      COOKIE_SECURE: ${COOKIE_SECURE:-False}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       # Enable observability
@@ -76,13 +127,11 @@ services:
       OTEL_PYTHON_METER_PROVIDER: otel
     expose:
       - '8000'
-    ports:
-      - '127.0.0.1:8000:8000'
     volumes:
       - storage:/app/storage:Z # SELinux label
-      # Config could be mounted as read-only if needed
-      # - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
+      storage-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -99,32 +148,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    # Networks and aliases for service discovery
-    networks:
-      ytprocessor-network:
-        aliases:
-          - api
-          - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
+  # ==========================================
+  # Worker — background job processor (yt-dlp)
+  # ==========================================
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: worker
-    container_name: ytprocessor-worker
+    image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       <<: *common-env
       WORKER_ID: ${HOSTNAME:-worker-1}
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
+      DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
     volumes:
       - storage:/app/storage:Z
     depends_on:
+      storage-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     <<: *base-service
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
     deploy:
       resources:
         limits:
@@ -144,14 +200,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    networks:
-      ytprocessor-network:
-        aliases:
-          - worker
 
+  # ==========================================
+  # PostgreSQL
+  # ==========================================
   db:
-    image: postgres:15-alpine # Removed problematic digest for now
-    container_name: ytprocessor-db
+    image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -162,8 +216,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data:Z
     ports: []
-    # Database typically needs more resources
-    # Note: PostgreSQL must run as its default user, not overridden by security-context
+    # PostgreSQL must run as its default user, not overridden by security-context
     deploy:
       resources:
         limits:
@@ -178,22 +231,23 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    # Database should be read-only except for data directory
-    # This is handled by the volume mount
-    networks:
-      ytprocessor-network:
-        aliases:
-          - db
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
+  # ==========================================
+  # Redis — job queue and cache
+  # ==========================================
   redis:
     image: redis:7-alpine
-    container_name: ytprocessor-redis
     restart: unless-stopped
     # Use exec form for proper signal handling
     command:
       - redis-server
       - --requirepass
-      - '${REDIS_PASSWORD}'
+      - '${REDIS_PASSWORD:?REDIS_PASSWORD is required}'
       - --appendonly
       - 'yes'
       - --maxmemory
@@ -224,15 +278,17 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
-    networks:
-      ytprocessor-network:
-        aliases:
-          - redis
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
-  # Optional: Observability stack (for local development/testing)
+  # ==========================================
+  # OpenTelemetry Collector
+  # ==========================================
   otel-collector:
     image: otel/opentelemetry-collector:0.88.0
-    container_name: otel-collector
     restart: unless-stopped
     command: ['--config=/etc/otel-collector-config.yml']
     volumes:
@@ -242,9 +298,9 @@ services:
       # local/dev only; production should set a real OTLP/gRPC backend target.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-localhost:4317}
       OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-false}
-    ports:
-      - '4317:4317' # OTLP gRPC
-      - '4318:4318' # OTLP HTTP
+    expose:
+      - '4317' # OTLP gRPC
+      - '4318' # OTLP HTTP
     security_opt:
       - no-new-privileges=true
     deploy:
@@ -255,106 +311,174 @@ services:
         reservations:
           cpus: '0.1'
           memory: 64M
-    networks:
-      ytprocessor-network:
-        aliases:
-          - otel-collector
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
-  loki:
-    image: grafana/loki:3.0.0
-    container_name: ytprocessor-loki
-    restart: unless-stopped
-    command: ['-config.file=/etc/loki/loki.yml']
-    volumes:
-      - ./infra/loki/loki.yml:/etc/loki/loki.yml:ro
-      - loki_data:/loki
-    ports:
-      - '3100:3100'
-    security_opt:
-      - no-new-privileges=true
-    cap_drop:
-      - ALL
-    healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3100/ready']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+  # ==========================================
+  # Monitoring (optional) — Prometheus + Grafana
+  # Usage: docker compose --profile monitoring up -d
+  # ==========================================
+  prometheus:
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
-    networks:
-      ytprocessor-network:
-        aliases:
-          - loki
-
-  # Nginx reverse proxy for API with SSL
-  nginx:
-    image: nginx:alpine
-    container_name: ytprocessor-nginx
+    image: prom/prometheus:v2.54.1
+    profiles: ['monitoring']
     restart: unless-stopped
-    ports:
-      - '80:80' # Override with docker-compose.local.yml on rootless systems
-      - '443:443'
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.enable-lifecycle
+      # 12h retention keeps the dashboard meaningful without excessive disk usage
+      - --storage.tsdb.retention.time=12h
     volumes:
-      - ./infra/nginx/nginx.ssl.local.conf:/etc/nginx/templates/default.conf.template:ro
-      - ./infra/ssl:/etc/nginx/ssl:ro
-      - ./infra/certbot/data:/var/www/certbot:ro
-    environment:
-      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD-SHELL', 'curl -f http://localhost:80/health || exit 1']
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 64M
-        reservations:
-          cpus: '0.05'
-          memory: 16M
-    networks:
-      ytprocessor-network:
-        aliases:
-          - nginx
-
-  # Optional: API documentation (for development)
-  swagger-ui:
-    image: swaggerapi/swagger-ui:v5.1.0 # Pinned version for stability
-    container_name: swagger-ui
-    restart: unless-stopped
-    environment:
-      # Route OpenAPI spec fetch through nginx reverse proxy (host:8080 -> nginx:80)
-      # This keeps all external traffic through the established reverse proxy architecture.
-      # Browser (at swagger-ui host:8081) fetches from nginx (host:8080), which proxies to api:8000
-      URL: http://127.0.0.1:8080/openapi.json
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
     ports:
-      - '8081:8080'
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-        reservations:
-          cpus: '0.05'
-          memory: 32M
+      - '127.0.0.1:9090:9090'
     depends_on:
       - api
-    networks:
-      ytprocessor-network:
-        aliases:
-          - swagger-ui
+    security_opt:
+      - no-new-privileges=true
+    user: '65534:65534'
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:9090/-/healthy']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    image: grafana/grafana:11.3.0
+    profiles: ['monitoring']
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD:
+        ${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD is required}
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/vooglaadija-chaos-demo.json
+      GF_PANELS_DISABLE_SANITIZE_HTML: 'true'
+    volumes:
+      - ./infra/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./infra/grafana/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/dashboard-provider.yml:ro
+      - ./monitoring/grafana-dashboard-demo.json:/etc/grafana/provisioning/dashboards/vooglaadija-chaos-demo.json:ro
+      - ./monitoring/grafana-dashboard-full.json:/etc/grafana/provisioning/dashboards/vooglaadija-chaos-full.json:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      - prometheus
+    security_opt:
+      - no-new-privileges=true
+    user: '472:472'
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ==========================================
+  # Backups (optional) — daily PostgreSQL dumps
+  # Usage: docker compose --profile backup up -d
+  # ==========================================
+  backup:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    image: postgres:15-alpine
+    profiles: ['backup']
+    restart: 'no'
+    exclude_from_hc: true # Coolify: one-shot manual backup run
+    volumes:
+      - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
+      - ./infra/backup/backup-data:/var/backup/ytprocessor
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${DB_USER:-postgres}
+      PGPASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      PGDATABASE: ${DB_NAME:-ytprocessor}
+      BACKUP_OUTPUT_DIR: /var/backup/ytprocessor
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    entrypoint: ['/bin/bash', '/usr/local/bin/backup.sh']
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  backup-cron:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+    image: alpine:latest
+    profiles: ['backup']
+    restart: unless-stopped
+    exclude_from_hc: true # Coolify: scheduler only, no health endpoint
+    volumes:
+      - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/backup/backup-data:/var/backup/ytprocessor
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${DB_USER:-postgres}
+      PGPASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      PGDATABASE: ${DB_NAME:-ytprocessor}
+      BACKUP_OUTPUT_DIR: /var/backup/ytprocessor
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    entrypoint: |
+      /bin/sh -c "
+        echo '0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root
+        crond -f -l 2
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
 volumes:
   postgres_data:
@@ -363,13 +487,7 @@ volumes:
     name: ytprocessor-redis-data
   storage:
     name: ytprocessor-storage
-  loki_data:
-    name: ytprocessor-loki-data
-
-networks:
-  ytprocessor-network:
-    name: ytprocessor-network
-    # Enable network isolation and policies
-    driver: bridge
-    # Internal network for service-to-service communication only
-    internal: false
+  prometheus_data:
+    name: ytprocessor-prometheus-data
+  grafana_data:
+    name: ytprocessor-grafana-data

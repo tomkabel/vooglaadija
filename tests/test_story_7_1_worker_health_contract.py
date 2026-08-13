@@ -33,7 +33,7 @@ def test_worker_docker_stage_exposes_health_port_and_uses_health_endpoint():
 
 @pytest.mark.unit
 def test_base_compose_worker_healthcheck_uses_http_health_endpoint():
-    """Base compose worker healthcheck should verify application readiness."""
+    """The single compose file's worker healthcheck verifies application readiness."""
     compose = _read_project_file("docker-compose.yml")
     worker = _service_block(compose, "worker")
 
@@ -44,10 +44,12 @@ def test_base_compose_worker_healthcheck_uses_http_health_endpoint():
 
 
 @pytest.mark.unit
-def test_production_compose_does_not_override_worker_healthcheck_to_tcp():
-    """Production compose should inherit the worker /health readiness check."""
-    production_compose = _read_project_file("docker-compose.production.yml")
-    worker = _service_block(production_compose, "worker")
+def test_no_legacy_production_override_shadows_worker_healthcheck():
+    """The obsolete production override file is gone; the base healthcheck is the contract."""
+    assert not (PROJECT_ROOT / "docker-compose.production.yml").exists()
 
-    assert "healthcheck:" not in worker
+    compose = _read_project_file("docker-compose.yml")
+    worker = _service_block(compose, "worker")
+
+    assert "healthcheck:" in worker
     assert "socket.socket" not in worker

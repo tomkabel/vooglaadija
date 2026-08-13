@@ -43,32 +43,26 @@ def _active_env_example_values() -> dict[str, str]:
 
 
 @pytest.mark.unit
-def test_production_compose_explicitly_enables_metrics_and_tracing():
-    """Production override should make observability enablement an explicit contract."""
-    production_compose = _read_project_file("docker-compose.production.yml")
+def test_compose_explicitly_enables_metrics_and_tracing():
+    """The compose file should make observability enablement an explicit contract."""
+    compose = _read_project_file("docker-compose.yml")
 
-    assert "FEATURE_METRICS_ENABLED: ${FEATURE_METRICS_ENABLED:-true}" in production_compose
-    assert "FEATURE_TRACING_ENABLED: ${FEATURE_TRACING_ENABLED:-true}" in production_compose
-    assert (
-        "CORS_ORIGINS: 'https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'" in production_compose
-    )
-    assert "COOKIE_SECURE: 'True'" in production_compose
-    assert "DATABASE_URL: postgresql+asyncpg://" not in production_compose
-    assert "REDIS_URL: redis://:" not in production_compose
-    assert "ports: !override []" in production_compose
+    assert "FEATURE_METRICS_ENABLED: ${FEATURE_METRICS_ENABLED:-true}" in compose
+    assert "FEATURE_TRACING_ENABLED: ${FEATURE_TRACING_ENABLED:-true}" in compose
+    assert "CORS_ORIGINS: ${CORS_ORIGINS:-" in compose
+    assert "COOKIE_SECURE: ${COOKIE_SECURE:-False}" in compose
+    assert "DATABASE_URL: postgresql+asyncpg://" not in compose
+    assert "REDIS_URL: redis://:" not in compose
 
 
 @pytest.mark.unit
-def test_production_compose_keeps_otel_collector_enabled():
-    """Production override should inherit the base OTel collector service."""
-    production_compose = _read_project_file("docker-compose.production.yml")
-    swagger_ui = _service_block(production_compose, "swagger-ui")
+def test_compose_keeps_otel_collector_enabled():
+    """The compose stack keeps the OTel collector service enabled for production."""
+    compose = _read_project_file("docker-compose.yml")
 
-    assert "Disable Non-Essential Services" not in production_compose
-    assert "otel-collector:" not in production_compose
-    assert "profiles: ['nonprod']" in swagger_ui
-    assert "replicas: 0" in swagger_ui
-    assert "interactive API docs are intentionally not exposed" in swagger_ui
+    assert "otel-collector:" in compose
+    assert "swagger-ui:" not in compose
+    assert "nonprod" not in compose
 
 
 @pytest.mark.unit

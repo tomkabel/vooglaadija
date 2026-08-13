@@ -4,8 +4,8 @@
 
 ```mermaid
 flowchart TD
-    Client([Client]) -->|HTTP/S| nginx[nginx<br/>SSL termination]
-    nginx -->|Proxy| api[FastAPI API]
+    Client([Client]) -->|HTTP/S| proxy[Caddy proxy<br/>wildcard TLS]
+    proxy -->|Proxy| api[FastAPI API]
     api -->|SQL| db[(PostgreSQL)]
     api -->|Queue / Pub-Sub| redis[(Redis)]
     redis -->|Consume| worker[Worker<br/>yt-dlp]

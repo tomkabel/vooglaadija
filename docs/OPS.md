@@ -72,19 +72,26 @@
 
 ## Docker Deployment
 
-Use the v2 plugin syntax (`docker compose`, not `docker-compose`):
+Use the v2 plugin syntax (`docker compose`, not `docker-compose`).
+
+**Production** is deployed through Coolify (see
+[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)): `./deploy/bootstrap.sh` provisions Docker +
+Coolify, assigns the domain, issues the wildcard TLS certificate (Cloudflare DNS-01, auto-renewed by
+Caddy) and deploys `docker-compose.yml` — the single source of truth for the stack.
+
+**Local development / standalone:**
 
 ```bash
-docker compose up -d
+cp .env.example .env        # set DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
-The compose file includes resource limits, health checks, read-only root filesystems, and SELinux
-labels (`:Z`).
+`docker-compose.yml` defines resource limits, health checks, read-only root filesystems, SELinux
+labels (`:Z`) and json-file log rotation for every service. `api`/`worker` pull prebuilt GHCR images
+(`IMAGE_TAG`, default `latest`); the local override builds them from the `Dockerfile`.
 
-`docker-compose.yml` defines `deploy.resources.limits` for every base service. The API inherits the
-base service limit, while the worker declares explicit CPU and memory limits so it can be sized
-separately from API request handling. Production worker DB pool overrides live in
-`docker-compose.production.yml` as `WORKER_DB_POOL_SIZE` and `WORKER_DB_MAX_OVERFLOW`.
+Worker DB pool overrides live in `docker-compose.yml` as `WORKER_DB_POOL_SIZE` (default 3) and
+`WORKER_DB_MAX_OVERFLOW` (default 2).
 
 Configuration validation runs when `core.config.Settings` is constructed outside `TESTING=1`.
 Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PATH`, weak
@@ -92,71 +99,28 @@ Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PA
 `CORS_ORIGINS` entries must be origin-only `http` or `https` URLs; paths, credentials, query
 strings, fragments, whitespace, malformed ports, and port zero are rejected.
 
-### Centralized Logs
+### Logging
 
-Docker Compose ships container stdout/stderr to Loki through the Loki Docker logging plugin. Install
-the plugin on each Docker host before starting the stack, and keep the alias as `loki` because the
-compose files use `logging.driver: 'loki'` for every active service:
-
-```bash
-docker plugin install grafana/loki-docker-driver:3.0.0 --alias loki --grant-all-permissions
-docker plugin enable loki
-docker compose up -d
-```
-
-The compose stack also starts the Loki backend (`grafana/loki:3.0.0`) on the existing
-`ytprocessor-network`. The Docker logging plugin sends logs to the host-published Loki endpoint at
-`http://localhost:3100/loki/api/v1/push`; Grafana reaches the same backend by service DNS at
-`http://loki:3100`.
-
-To open the centralized dashboard, start the demo stack so Grafana and Prometheus are included:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
-```
-
-Open Grafana at `http://localhost:3000` and use Explore with the `Loki` datasource. Example queries:
-
-```logql
-{service="api"} | json
-{service="worker", environment="production"} | json | level="error"
-{project="ytprocessor"} | json | request_id="req-123"
-{service="api"} | json app_service="service", app_environment="environment" | app_service="vooglaadija"
-```
-
-Application logs are emitted as one JSON object per line in production, so query-time `| json`
-parsing preserves fields such as `timestamp`, `level`, `logger`, `message`, `service`,
-`environment`, and request context like `request_id`. The Loki stream labels also include `service`
-and `environment` for container-level filtering; use explicit aliases such as
-`app_service="service"` when querying same-named fields from the JSON log body.
-
-Loki retention is configured in `infra/loki/loki.yml` as `168h` (7 days). This keeps the local and
-demo footprint bounded while retaining enough history for short incident reviews. Log chunks and
-index data are stored in the `ytprocessor-loki-data` Docker volume under `/loki`; increasing the
-retention window grows disk usage roughly with log volume, so resize or prune the volume before
-raising retention for production.
-
-Rollback if the Loki Docker logging plugin is unavailable:
-
-1. Stop the stack: `docker compose down`.
-1. Change every compose logging block to one consistent fallback driver, preferably Docker's `local`
-   driver, rather than mixing `json-file` with Loki.
-1. Remove or disable the `loki` service and `Loki` Grafana datasource only after all services use
-   the fallback driver.
-1. Start the stack and verify `docker compose logs api` works before re-enabling the Loki driver.
+Container logs use the built-in `json-file` driver with rotation (`max-size: 10m`, `max-file: 3`) —
+no host plugin required. Application logs are one JSON object per line in production, so
+`docker compose logs api` output preserves fields such as `timestamp`, `level`, `logger`, `message`,
+`service`, `environment`, and request context like `request_id`.
 
 ### Services
 
-| Service          | Image                                     | Exposed Port   | Purpose                  |
-| ---------------- | ----------------------------------------- | -------------- | ------------------------ |
-| `api`            | Build from `Dockerfile` (target `api`)    | `8000`         | FastAPI application      |
-| `worker`         | Build from `Dockerfile` (target `worker`) | `8082`         | Background job processor |
-| `db`             | `postgres:15-alpine`                      | `5432`         | PostgreSQL               |
-| `redis`          | `redis:7-alpine`                          | `6379`         | Queue and cache          |
-| `nginx`          | `nginx:alpine`                            | `80`, `443`    | Reverse proxy            |
-| `swagger-ui`     | `swaggerapi/swagger-ui:v5.1.0`            | `8081`         | API documentation        |
-| `otel-collector` | `otel/opentelemetry-collector:0.88.0`     | `4317`, `4318` | Observability collector  |
-| `loki`           | `grafana/loki:3.0.0`                      | `3100`         | Centralized log backend  |
+| Service          | Image                                             | Exposed Port      | Purpose                  |
+| ---------------- | ------------------------------------------------- | ----------------- | ------------------------ |
+| `api`            | `ghcr.io/tomkabel/vooglaadija:<IMAGE_TAG>`        | `8000` (internal) | FastAPI application      |
+| `worker`         | `ghcr.io/tomkabel/vooglaadija:worker-<IMAGE_TAG>` | `8082` (internal) | Background job processor |
+| `db`             | `postgres:15-alpine`                              | `5432` (internal) | PostgreSQL               |
+| `redis`          | `redis:7-alpine`                                  | `6379` (internal) | Queue and cache          |
+| `otel-collector` | `otel/opentelemetry-collector:0.88.0`             | `4317`, `4318`    | Observability collector  |
+| `prometheus`     | `prom/prometheus:v2.54.1` (profile `monitoring`)  | `127.0.0.1:9090`  | Metrics scraping         |
+| `grafana`        | `grafana/grafana:11.3.0` (profile `monitoring`)   | `127.0.0.1:3000`  | Dashboards               |
+| `backup`         | `postgres:15-alpine` (profile `backup`)           | —                 | Daily `pg_dump`          |
+
+In production, Coolify's Caddy proxy (ports 80/443) is the only public entry point; the local
+override binds debug ports to loopback.
 
 ---
 
