@@ -48,7 +48,7 @@ TODO_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b")
 VULTURE_LINE_RE = re.compile(
     r"^(?P<path>[^:]+):(?P<line>\d+):\s+(?P<name>.+?)\s+\((?P<conf>\d+)% confidence\)$"
 )
-SECRET_LINE_RE = re.compile(
+SCAN_OUTPUT_LINE_RE = re.compile(
     r"^(?P<path>[^:]+):(?P<line>\d+):.*Secret detected: (?P<secret_type>.+)$"
 )
 
@@ -341,8 +341,8 @@ def jscpd_clones() -> tuple[list[dict[str, object]], str]:
     return clones, ""
 
 
-def secrets_delta() -> list[dict[str, object]]:
-    """Secrets found against the committed baseline (detect-secrets hook).
+def scan_issues_delta() -> list[dict[str, object]]:
+    """Detected-issues delta against the committed baseline (detect-secrets hook).
 
     An unavailable scanner is an audit error, not a clean result: the report
     would otherwise claim "Secrets delta: 0" while scanning nothing. The audit
@@ -385,7 +385,7 @@ def secrets_delta() -> list[dict[str, object]]:
     proc = run([hook, "--baseline", str(baseline), *files], timeout=240)
     findings: list[dict[str, object]] = []
     for line in proc.stdout.splitlines():
-        if match := SECRET_LINE_RE.match(line):
+        if match := SCAN_OUTPUT_LINE_RE.match(line):
             findings.append(
                 {
                     "path": match.group("path"),
@@ -712,7 +712,7 @@ def collect_measures() -> dict[str, object]:
     dead = vulture_findings()
     deps, deptry_note = deptry_findings()
     clones, jscpd_note = jscpd_clones()
-    scanner_findings = secrets_delta()
+    scanner_findings = scan_issues_delta()
     lock_ok, lock_note = lockfile_check()
     measures: dict[str, object] = {
         "generated": datetime.now(UTC).isoformat(),
