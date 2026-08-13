@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-13T08:43:14.285388+00:00",
+  "generated": "2026-08-13T10:18:50.413166+00:00",
   "boundary_violations": 0,
   "unused_imports": 0,
   "tid251_violations": 0,
@@ -12,5 +12,5 @@
   "commented_out_files": 0,
   "window_globals": 3,
   "todos": 10,
-  "lock_check_ok": 1
+  "lock_failures": 0
 }

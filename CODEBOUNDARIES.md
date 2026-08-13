@@ -19,12 +19,13 @@ the API process and the worker process.
 
 ## Enforcement
 
-These rules are fitness functions (see [docs/ARCHITECTURE-STANDARD.md](docs/ARCHITECTURE-STANDARD.md)):
+These rules are fitness functions (see
+[docs/ARCHITECTURE-STANDARD.md](docs/ARCHITECTURE-STANDARD.md)):
 
 - **Global bans** (`worker` in `app/`/`core/`; `yt_dlp` outside its ACL file): ruff `TID251`
   banned-api in `pyproject.toml`.
-- **Zone-aware bans** (worker ⇏ `app.api|app.schemas|…`): `python scripts/import_analysis.py`
-  (AST verifier — TID251 cannot scope bans per directory).
+- **Zone-aware bans** (worker ⇏ `app.api|app.schemas|…`): `python scripts/import_analysis.py` (AST
+  verifier — TID251 cannot scope bans per directory).
 - Both run in the PR lint job and in the weekly audit.
 
 ## Removed Compatibility Shims

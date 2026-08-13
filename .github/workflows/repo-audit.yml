@@ -2,17 +2,15 @@ name: Weekly Repo Audit
 
 on:
   schedule:
-    - cron: '0 6 * * 1'  # Monday 06:00 UTC — before CodeQL (09:00)
+    - cron: '0 6 * * 1' # Monday 06:00 UTC — before CodeQL (09:00)
   workflow_dispatch:
 
 concurrency:
   group: weekly-repo-audit
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+# Least privilege: no default permissions; each job declares only what it needs.
+permissions: {}
 
 jobs:
   # ============================================
@@ -24,9 +22,15 @@ jobs:
     name: AUTO-BOT cleanup PR
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # contents: write   -> push the chore/auto-bot/weekly-cleanup branch
+    # pull-requests: write -> open the [AUTO-BOT] PR
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
+          ref: main # always audit the default branch, even on manual dispatch
           persist-credentials: true
 
       - name: Install uv
@@ -58,6 +62,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Fetch the existing bot branch (when present) so --force-with-lease
+          # is evaluated against current remote state; fail fast otherwise.
+          if git ls-remote --exit-code --heads origin chore/auto-bot/weekly-cleanup >/dev/null 2>&1; then
+            git fetch origin chore/auto-bot/weekly-cleanup
+          fi
           git checkout -B chore/auto-bot/weekly-cleanup
           git add -A
           git commit -m "chore: [AUTO-BOT] weekly cleanup (unused imports, formatting)"
@@ -68,7 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BODY="Automated safe fixes from the weekly repo audit. Mechanical changes only: unused imports/variables and formatting. Please review and merge; do not rebase the branch, it is force-updated weekly."
+          BODY="Automated safe fixes from the weekly repo audit. Mechanical changes only: unused imports/variables and formatting. Review and merge; do not rebase (force-updated weekly)."
           if ! gh pr view chore/auto-bot/weekly-cleanup --json url -q .url >/dev/null 2>&1; then
             gh pr create \
               --base main \
@@ -86,9 +95,15 @@ jobs:
     name: Deep scan + report issue
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # contents: read  -> check out the code for analysis
+    # issues: write   -> update the single repo-audit issue
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
+          ref: main # always audit the default branch, even on manual dispatch
           persist-credentials: false
 
       - name: Install uv
@@ -102,6 +117,16 @@ jobs:
 
       - name: Install hatch
         run: uv tool install hatch==1.16.5
+
+      - name: Install pinned JS tooling (jscpd)
+        uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9
+        with:
+          version: 10.33.2
+          run_install: |
+            - args: [--frozen-lockfile]
+
+      - name: Add node_modules/.bin to PATH (jscpd)
+        run: echo "$(pwd)/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run unit tests with coverage (hotspot x coverage correlation)
         run: hatch run test:unit

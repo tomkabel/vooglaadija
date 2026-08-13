@@ -5,6 +5,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "autoprefixer": "^10.4.20",
+    "jscpd": "5.0.14",
     "markdownlint-cli2": "^0.17.0",
     "postcss": "^8.5.10",
     "prettier": "^3.0.0",

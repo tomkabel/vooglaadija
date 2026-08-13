@@ -19,6 +19,11 @@ FORBIDDEN_WORKER_APP_PREFIXES = (
     "app.logging_config",
     "app.services.redis_client",
 )
+# Anti-corruption layer: yt-dlp types/exceptions must never leak past its
+# facade. Enforced here (not only via ruff TID251) because TID251's
+# per-file-ignores for worker/** would otherwise lift the ban for worker code.
+YT_DLP_ACL_MODULE = "app/services/yt_dlp_service.py"
+YT_DLP_PACKAGE = "yt_dlp"
 
 
 @dataclass(frozen=True)
@@ -123,6 +128,17 @@ def violation_reason(source_root: str, module: str) -> str | None:
     return None
 
 
+def yt_dlp_acl_reason(path: Path) -> str | None:
+    """Return a violation reason if a file bypasses the yt-dlp anti-corruption layer."""
+    relative = path.as_posix()
+    if relative == YT_DLP_ACL_MODULE:
+        return None
+    for reference in import_references(path):
+        if reference.module == YT_DLP_PACKAGE or reference.module.startswith(f"{YT_DLP_PACKAGE}."):
+            return "yt_dlp may be imported only from app/services/yt_dlp_service.py (ACL)"
+    return None
+
+
 def analyze_project(project_root: Path) -> list[ImportViolation]:
     """Analyze source files and return import-boundary violations."""
     violations: list[ImportViolation] = []
@@ -139,6 +155,20 @@ def analyze_project(project_root: Path) -> list[ImportViolation]:
                         reason=reason,
                     )
                 )
+        acl_reason = yt_dlp_acl_reason(path)
+        if acl_reason is not None:
+            for reference in import_references(path):
+                if reference.module == YT_DLP_PACKAGE or reference.module.startswith(
+                    f"{YT_DLP_PACKAGE}."
+                ):
+                    violations.append(
+                        ImportViolation(
+                            path=path,
+                            line_number=reference.line_number,
+                            statement=reference.statement,
+                            reason=acl_reason,
+                        )
+                    )
     return sorted(violations, key=lambda violation: (violation.path, violation.line_number))
 
 

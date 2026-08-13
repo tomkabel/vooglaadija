@@ -51,19 +51,25 @@ async def test_pop_order_mirrors_redis_lpush_rpop():
 
 @pytest.mark.unit
 async def test_production_serialization_matches_seam():
-    """core.queue producers serialize exactly as the seam expects."""
+    """core.queue producers serialize exactly as the seam expects.
+
+    Asserts the complete lpush call (queue key + payload): a regression that
+    writes the job id to any other Redis queue would strand jobs without the
+    worker ever seeing them.
+    """
     from core.queue import enqueue_job
 
     job_id = UUID("12345678-1234-5678-1234-567812345678")
-    recorded: list[str] = []
+    recorded: list[tuple[str, str]] = []
     mock_redis = MagicMock()
-    mock_redis.lpush = AsyncMock(side_effect=lambda key, payload: recorded.append(payload))
+    mock_redis.lpush = AsyncMock(side_effect=lambda key, payload: recorded.append((key, payload)))
 
     with patch("core.queue.redis_client", mock_redis):
         await enqueue_job(job_id)
 
+    assert recorded == [("download_queue", str(job_id))]
     queue = MemoryQueue()
-    await queue.enqueue(recorded[0])
+    await queue.enqueue(recorded[0][1])
     assert normalize_job_id(await queue.pop_next()) == job_id
 
 

@@ -287,26 +287,26 @@ def deptry_findings() -> tuple[list[dict[str, object]], str]:
 
 
 def jscpd_clones() -> tuple[list[dict[str, object]], str]:
-    """Duplicated code blocks via jscpd (Rust-native, v5)."""
-    executable = shutil.which("jscpd") or shutil.which("npx")
+    """Duplicated code blocks via jscpd (pinned binary from package.json).
+
+    jscpd is pinned to an exact version in the root devDependencies; the
+    deep-scan workflow installs it with `pnpm install --frozen-lockfile` and
+    exposes node_modules/.bin on PATH. npx with a floating @latest tag is
+    never used (CWE-829).
+    """
+    executable = shutil.which("jscpd")
     if executable is None:
-        return [], "jscpd not installed (npm i -g jscpd)"
+        return [], "jscpd not installed (pnpm install; binary at node_modules/.bin/jscpd)"
     out_dir = Path(tempfile.mkdtemp(prefix="jscpd-", dir=str(ROOT)))
-    cmd = (
-        ["jscpd", "--min-tokens", "50", "--reporters", "json", "--output", str(out_dir)]
-        if Path(executable).name == "jscpd"
-        else [
-            "npx",
-            "--yes",
-            "jscpd@latest",
-            "--min-tokens",
-            "50",
-            "--reporters",
-            "json",
-            "--output",
-            str(out_dir),
-        ]
-    )
+    cmd = [
+        "jscpd",
+        "--min-tokens",
+        "50",
+        "--reporters",
+        "json",
+        "--output",
+        str(out_dir),
+    ]
     cmd += [
         "--format",
         "python,javascript,markup,css",
@@ -342,13 +342,30 @@ def jscpd_clones() -> tuple[list[dict[str, object]], str]:
 
 
 def secrets_delta() -> list[dict[str, object]]:
-    """Secrets found against the committed baseline (detect-secrets hook)."""
+    """Secrets found against the committed baseline (detect-secrets hook).
+
+    An unavailable scanner is an audit error, not a clean result: the report
+    would otherwise claim "Secrets delta: 0" while scanning nothing. The audit
+    env installs the security group so the hook is present in CI.
+    """
     hook = shutil.which("detect-secrets-hook")
     if hook is None:
-        return []
+        return [
+            {
+                "path": "<detect-secrets-hook missing>",
+                "line": 0,
+                "type": "scanner unavailable — install the security dependency group",
+            }
+        ]
     baseline = ROOT / ".secrets.baseline"
     if not baseline.exists():
-        return []
+        return [
+            {
+                "path": "<.secrets.baseline missing>",
+                "line": 0,
+                "type": "no secret baseline — run detect-secrets scan and commit the baseline",
+            }
+        ]
     files = subprocess.run(
         ["git", "ls-files"],
         capture_output=True,
@@ -538,7 +555,9 @@ def baseline_values(measures: dict[str, object]) -> dict[str, int]:
         "commented_out_files": len(measures["commented_out"]),
         "window_globals": len(measures["window_globals"]),
         "todos": measures["todos"],
-        "lock_check_ok": 1 if measures["lock_ok"] else 0,
+        # Failure-state metric: 0 = lockfile valid, 1 = stale (increasing
+        # metrics improve by decreasing, consistent with trend_table()).
+        "lock_failures": 0 if measures["lock_ok"] else 1,
     }
 
 
@@ -716,15 +735,22 @@ def collect_measures() -> dict[str, object]:
         "window_globals": window_globals(),
         "todos": todo_count(),
         "large_files": large_files(),
-        "gate_summary": [
-            *boundary,
-            *unused,
-            *tid251,
-            *dead,
-            *deps,
-        ],
-        "measure_summary": [*complexity, *clones],
     }
+    lock_failure: list[dict[str, object]] = (
+        []
+        if lock_ok
+        else [{"path": "uv.lock", "line": 0, "message": f"stale lockfile — {lock_note}"}]
+    )
+    measures["gate_summary"] = [
+        *boundary,
+        *unused,
+        *tid251,
+        *dead,
+        *deps,
+        *secrets,
+        *lock_failure,
+    ]
+    measures["measure_summary"] = [*complexity, *clones]
     measures["fix_commands"] = fix_commands(measures)
     return measures
 
