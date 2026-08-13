@@ -1,0 +1,44 @@
+# Strict complexity thresholds for the weekly audit measurement pass.
+#
+# The main ruff config keeps these rules selected-but-ignored because the
+# legacy codebase sits above the thresholds; this strict config is what the
+# audit uses to MEASURE complexity (advisory, ranked by hotspot score).
+# Ratchet plan: once the backlog is cleared, promote these to gates in the
+# main config (docs/ARCHITECTURE-STANDARD.md).
+#
+# Run: ruff check --config scripts/audit/ruff-complexity.toml app/ core/ worker/ scripts/ alembic/
+# Note: ruff.toml format ([lint] table at top level) because this file is
+# not named pyproject.toml.
+
+line-length = 100
+target-version = "py312"
+
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+    ".hatch",
+    "tests",
+]
+
+[lint]
+select = [
+    "C901",    # cyclomatic complexity
+    "PLR0911", # too many returns
+    "PLR0912", # too many branches
+    "PLR0913", # too many arguments
+    "PLR0915", # too many statements
+    "PLR1702", # too many nested blocks
+]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-args = 6
+max-branches = 12
+max-returns = 6
+max-statements = 50
+max-nested-blocks = 4

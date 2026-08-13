@@ -195,3 +195,54 @@ during cleanup.
 
 **Fix:** The stale job reaper resets stuck jobs automatically based on `CLEANUP_INTERVAL_MINUTES`.
 You can also manually retry via `POST /api/v1/downloads/{id}/retry`.
+
+## Weekly Repo Audit
+
+The repository is governed by executable fitness functions
+([docs/ARCHITECTURE-STANDARD.md](ARCHITECTURE-STANDARD.md)). A scheduled workflow
+(`.github/workflows/repo-audit.yml`) runs every Monday 06:00 UTC and can be triggered manually via
+**Actions → Weekly Repo Audit → Run workflow**.
+
+### What it does
+
+1. **AUTO-BOT cleanup PR** (`chore/auto-bot/weekly-cleanup`): applies safe fixes only (unused
+   imports/variables via `ruff --fix`, formatting). Review and merge; the branch is force-updated
+   weekly, so do not rebase it.
+2. **Deep scan report**: runs the unit suite (coverage), then measures gates (boundary, banned
+   imports, dead code, unused deps, lockfile, secrets) and behavioral measures (complexity,
+   hotspots = complexity × churn, temporal coupling, defensive-code density, duplication). The
+   report updates a single `repo-audit` issue; the full JSON is in workflow artifacts.
+
+### Running locally
+
+```bash
+hatch run audit:quick      # shift-left: ruff + deptry (fast)
+hatch run audit:fix        # apply safe fixes, print changed-file manifest
+hatch run audit:weekly     # full deep scan (writes ./audit-report.md + .json)
+hatch run audit:complexity # strict complexity pass (advisory thresholds)
+hatch run audit:dead-code  # vulture (>=80% confidence)
+hatch run audit:boundary   # zone-aware import boundary verifier
+```
+
+### Baseline and trends
+
+`.github/audit-baseline.json` holds the accepted measurements. Regenerate only when a cleanup
+lands and the new state is intentional:
+
+```bash
+hatch run audit:weekly -- --baseline   # (or: python scripts/audit_report.py --baseline)
+```
+
+Commit the updated baseline in the same PR as the cleanup — the weekly report shows deltas vs
+this file, so it must change only via maintainer PRs.
+
+### Triage (in priority order)
+
+1. Gate findings (top of the issue) — fix or the next PR CI run fails.
+2. Hotspots with low coverage — refactor behind a stable facade (Strangler Fig protocol), never
+   arbitrary file splitting.
+3. Temporal-coupling pairs — investigate shared concepts implemented twice.
+4. Duplication clones — apply Rule of Three: refactor at the 3rd instance; alembic migration
+   boilerplate is exempt.
+5. Defensive-code density leaders — define errors out of existence with uniform result objects at
+   service boundaries.

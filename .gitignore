@@ -182,3 +182,11 @@ docs/CRITIQUE-ISSUES.md
 .agents/
 .kilocode/skills/*
 .agents/.story-automator-active
+
+# =============================================
+# Weekly repo audit artifacts (never committed)
+# =============================================
+audit-report/
+audit-report.md
+audit-report.json
+jscpd-*/
