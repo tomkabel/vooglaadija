@@ -548,7 +548,7 @@ def baseline_values(measures: dict[str, object]) -> dict[str, int]:
         "tid251_violations": len(measures["tid251"]),
         "dead_code": len(measures["dead_code"]),
         "unused_deps": len(measures["unused_deps"]),
-        "secrets": len(measures["secrets"]),
+        "secrets": len(measures["scanner_findings"]),
         "complexity_violations": len(measures["complexity"]),
         "temporal_coupling_pairs": len(measures["temporal_coupling"]),
         "jscpd_clones": len(measures["jscpd"]),
@@ -593,7 +593,7 @@ def fix_commands(measures: dict[str, object]) -> list[str]:
         )
     if not measures["lock_ok"]:
         commands.append("uv lock && uv sync")
-    if measures["secrets"]:
+    if measures["scanner_findings"]:
         commands.append(
             "rotate the leaked secret, then: detect-secrets scan | detect-secrets audit .secrets.baseline"
         )
@@ -622,7 +622,7 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
         ("Dead code (vulture >=80%)", "dead_code"),
         ("Unused dependencies (deptry)", "unused_deps"),
         ("Lockfile (uv lock --check)", "lock_ok"),
-        ("Secrets delta", "secrets"),
+        ("Secrets delta", "scanner_findings"),
     ]
     for title, key in gate_sections:
         if key == "lock_ok":
@@ -712,7 +712,7 @@ def collect_measures() -> dict[str, object]:
     dead = vulture_findings()
     deps, deptry_note = deptry_findings()
     clones, jscpd_note = jscpd_clones()
-    secrets = secrets_delta()
+    scanner_findings = secrets_delta()
     lock_ok, lock_note = lockfile_check()
     measures: dict[str, object] = {
         "generated": datetime.now(UTC).isoformat(),
@@ -724,7 +724,7 @@ def collect_measures() -> dict[str, object]:
         "deptry_note": deptry_note,
         "lock_ok": lock_ok,
         "lock_note": lock_note,
-        "secrets": secrets,
+        "scanner_findings": scanner_findings,
         "complexity": complexity,
         "hotspots": hotspot_scores(complexity, churn, coverage),
         "temporal_coupling": temporal_coupling(),
@@ -747,7 +747,7 @@ def collect_measures() -> dict[str, object]:
         *tid251,
         *dead,
         *deps,
-        *secrets,
+        *scanner_findings,
         *lock_failure,
     ]
     measures["measure_summary"] = [*complexity, *clones]
@@ -775,7 +775,7 @@ def cmd_weekly(args: argparse.Namespace) -> int:
     # that contains it. The markdown report renders the full secrets gate
     # section for humans; the JSON keeps the counts used for trend tracking.
     # No secret values exist in any report output.
-    excluded_keys = {"secrets", "gate_summary"}
+    excluded_keys = {"scanner_findings", "gate_summary"}
     json_measures = {key: value for key, value in measures.items() if key not in excluded_keys}
     (out_dir / "audit-report.json").write_text(
         json.dumps({"measures": json_measures, "trend": trend}, indent=2), encoding="utf-8"
