@@ -251,8 +251,8 @@ codes.
 
 The repo runs a weekly audit (Mondays 06:00 UTC) that applies safe cleanup as an automated
 `[AUTO-BOT]` PR and posts a hotspot-ranked advisory report to the `repo-audit` issue — cutting
-bloat, combining duplication, and flagging over-engineering against the architecture standard.
-See [docs/OPS.md](docs/OPS.md#weekly-repo-audit) and
+bloat, combining duplication, and flagging over-engineering against the architecture standard. See
+[docs/OPS.md](docs/OPS.md#weekly-repo-audit) and
 [docs/ARCHITECTURE-STANDARD.md](docs/ARCHITECTURE-STANDARD.md).
 
 ---

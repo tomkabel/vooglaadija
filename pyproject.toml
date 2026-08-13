@@ -323,7 +323,9 @@ description = "Weekly repo audit (bloat, duplication, over-engineering) and auto
 detached = true
 installer = "uv"
 skip-install = true
-features = ["audit", "lint"]
+# audit: vulture + deptry; lint: ruff; security: detect-secrets (secrets delta
+# check must run inside the audit env — an unavailable scanner is an error).
+features = ["audit", "lint", "security"]
 
 [tool.hatch.envs.audit.scripts]
 # Full deep scan: report + trend. Exit 0 unless internal error (advisory).
@@ -551,7 +553,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Zone exemptions: the worker itself, tests, tooling, and migrations may import
-# worker/ freely; the ACL file is the sole owner of the yt_dlp module.
+# worker/ freely. NOTE: the TID251 exemption for worker/** also lifts the
+# yt_dlp ban there, so the yt-dlp ACL is enforced independently by
+# scripts/import_analysis.py (see CODEBOUNDARIES.md).
 "worker/**/*.py" = ["TID251"]
 "tests/**/*.py" = ["TID251"]
 "scripts/**/*.py" = ["TID251"]

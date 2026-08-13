@@ -209,9 +209,9 @@ The repository is governed by executable fitness functions
    imports/variables via `ruff --fix`, formatting). Review and merge; the branch is force-updated
    weekly, so do not rebase it.
 2. **Deep scan report**: runs the unit suite (coverage), then measures gates (boundary, banned
-   imports, dead code, unused deps, lockfile, secrets) and behavioral measures (complexity,
-   hotspots = complexity × churn, temporal coupling, defensive-code density, duplication). The
-   report updates a single `repo-audit` issue; the full JSON is in workflow artifacts.
+   imports, dead code, unused deps, lockfile, secrets) and behavioral measures (complexity, hotspots
+   = complexity × churn, temporal coupling, defensive-code density, duplication). The report updates
+   a single `repo-audit` issue; the full JSON is in workflow artifacts.
 
 ### Running locally
 
@@ -226,15 +226,15 @@ hatch run audit:boundary   # zone-aware import boundary verifier
 
 ### Baseline and trends
 
-`.github/audit-baseline.json` holds the accepted measurements. Regenerate only when a cleanup
-lands and the new state is intentional:
+`.github/audit-baseline.json` holds the accepted measurements. Regenerate only when a cleanup lands
+and the new state is intentional:
 
 ```bash
 hatch run audit:weekly -- --baseline   # (or: python scripts/audit_report.py --baseline)
 ```
 
-Commit the updated baseline in the same PR as the cleanup — the weekly report shows deltas vs
-this file, so it must change only via maintainer PRs.
+Commit the updated baseline in the same PR as the cleanup — the weekly report shows deltas vs this
+file, so it must change only via maintainer PRs.
 
 ### Triage (in priority order)
 
