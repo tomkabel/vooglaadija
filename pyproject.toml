@@ -12,6 +12,7 @@ dependencies = [
     "alembic",
     "fastapi",
     "uvicorn[standard]",
+    "starlette>=1.0.0",  # direct import (deptry DEP003); transitive via fastapi
     "sqlalchemy[asyncio]",
     "asyncpg",
     "redis",
@@ -79,10 +80,10 @@ test = [
     "aiosqlite",
 ]
 lint = [
-    "ruff==0.16.3",
+    "ruff==0.16.3",  # pinned: matches uv.lock; lint gates must be deterministic
 ]
 type = [
-    "mypy",
+    "mypy==1.19.1",  # pinned: matches uv.lock; type gate deterministic
     "types-redis",
     "types-python-jose",
 ]
@@ -91,8 +92,12 @@ security = [
     "safety",
     "detect-secrets>=1.5.0",
 ]
+audit = [
+    "vulture==2.16",  # pinned: matches uv.lock; audit gates deterministic
+    "deptry==0.25.1",  # pinned: matches uv.lock; audit gates deterministic
+]
 dev = [
-    "vooglaadija[test,lint,type,security]",
+    "vooglaadija[test,lint,type,security,audit]",
 ]
 
 # PEP 735 Dependency Groups - single source of truth for dev dependencies
@@ -107,10 +112,10 @@ test = [
     "bcrypt==4.0.1",
 ]
 lint = [
-    "ruff==0.16.3",
+    "ruff==0.16.3",  # pinned: matches uv.lock; lint gates must be deterministic
 ]
 type-check = [
-    "mypy>=1.0.0",
+    "mypy==1.19.1",  # pinned: matches uv.lock; type gate deterministic
     "types-redis>=4.5.0",
     "types-python-jose>=0.1.0",
 ]
@@ -119,12 +124,17 @@ security = [
     "safety>=2.3.0",
     "detect-secrets>=1.5.0",
 ]
+audit = [
+    "vulture==2.16",  # pinned: matches uv.lock; audit gates deterministic
+    "deptry==0.25.1",  # pinned: matches uv.lock; audit gates deterministic
+]
 # Meta group that includes all other groups
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
     { include-group = "type-check" },
     { include-group = "security" },
+    { include-group = "audit" },
 ]
 
 # ============================================
@@ -146,9 +156,10 @@ description = "Default development environment"
 dev = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 dev-uvloop = "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --loop uvloop"
 test = "pytest tests/ -v --cov=app --cov=core --cov-report=term-missing"
-lint = "ruff check app/ core/ tests/ --output-format=github"
-"lint-format" = "ruff format --check app/ core/ tests/"
-type-check = "mypy app/ core/ --ignore-missing-imports --install-types --non-interactive"
+lint = "ruff check app/ core/ worker/ scripts/ alembic/ tests/ --output-format=github"
+"lint-format" = "ruff format --check app/ core/ worker/ scripts/ alembic/ tests/"
+type-check = "mypy app/ core/ worker/ --ignore-missing-imports --install-types --non-interactive"
+boundary = "python scripts/import_analysis.py"
 # Coverage convenience scripts
 cov = "pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing --cov-report=html"
 "cov-html" = "coverage html"
@@ -173,13 +184,17 @@ detached = true
 installer = "uv"
 skip-install = true
 # Use features to install lint dependencies
-features = ["lint"]
+features = ["lint", "audit"]
 
 [tool.hatch.envs.lint.scripts]
-check = "ruff check app/ core/ tests/ --output-format=github"
-format-check = "ruff format --check app/ core/ tests/"
-format = "ruff format app/ core/ tests/"
-fix = "ruff check --fix app/ core/ tests/"
+check = "ruff check app/ core/ worker/ scripts/ alembic/ tests/ --output-format=github"
+format-check = "ruff format --check app/ core/ worker/ scripts/ alembic/ tests/"
+format = "ruff format app/ core/ worker/ scripts/ alembic/ tests/"
+fix = "ruff check --fix app/ core/ worker/ scripts/ alembic/ tests/"
+boundary = "python scripts/import_analysis.py"
+lock-check = "uv lock --check"
+dead-code = "vulture app core worker scripts alembic --min-confidence 80"
+deps = "deptry ."
 
 # JS/CSS/JSON linting via Biome
 lint-js = "cd {root} && pnpm run lint:js"
@@ -228,7 +243,7 @@ installer = "uv"
 features = ["type"]
 
 [tool.hatch.envs.type.scripts]
-check = "mypy app/ core/ --ignore-missing-imports --install-types --non-interactive"
+check = "mypy app/ core/ worker/ --ignore-missing-imports --install-types --non-interactive"
 
 # ============================================
 # TEST ENVIRONMENT WITH MATRIX SUPPORT
@@ -265,10 +280,12 @@ features = ["test", "lint", "type", "security"]
 
 [tool.hatch.envs.ci.scripts]
 # Lint scripts
-lint = "ruff check app/ core/ tests/ --output-format=github"
-"lint-format" = "ruff format --check app/ core/ tests/"
+lint = "ruff check app/ core/ worker/ scripts/ alembic/ tests/ --output-format=github"
+"lint-format" = "ruff format --check app/ core/ worker/ scripts/ alembic/ tests/"
+boundary = "python scripts/import_analysis.py"
+lock-check = "uv lock --check"
 # Type check
-type-check = "mypy app/ core/ --ignore-missing-imports --install-types --non-interactive"
+type-check = "mypy app/ core/ worker/ --ignore-missing-imports --install-types --non-interactive"
 # Tests
 unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
 integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
@@ -297,6 +314,28 @@ scan-bandit = "bandit -r app/ core/ -f screen --confidence-level high --severity
 scan-safety = "safety scan --json --output=security-report.json || true"
 "bandit-report" = "bandit -r app/ core/ -f html -o bandit_report.html"
 "safety-report" = "safety scan --json --output=security-report.json || true"
+
+# ============================================
+# AUDIT ENVIRONMENT (weekly repo audit + auto-fix)
+# ============================================
+[tool.hatch.envs.audit]
+description = "Weekly repo audit (bloat, duplication, over-engineering) and auto-fix"
+detached = true
+installer = "uv"
+skip-install = true
+features = ["audit", "lint"]
+
+[tool.hatch.envs.audit.scripts]
+# Full deep scan: report + trend. Exit 0 unless internal error (advisory).
+weekly = "python scripts/audit_report.py --weekly"
+# Shift-left quick checks (fast, local).
+quick = "ruff check app/ core/ worker/ scripts/ alembic/ tests/ --output-format=github && deptry ."
+# Mechanical auto-fix (safe ruff fixes + formatting); prints changed-file manifest.
+fix = "python scripts/audit_report.py --fix"
+# Complexity measurement pass (advisory thresholds; strict config in scripts/audit/).
+complexity = "ruff check --config scripts/audit/ruff-complexity.toml app/ core/ worker/ scripts/ alembic/ --output-format=github"
+dead-code = "vulture app core worker scripts alembic --min-confidence 80"
+boundary = "python scripts/import_analysis.py"
 
 # ============================================
 # MONITORING ENVIRONMENT (NetData, etc.)
@@ -484,21 +523,43 @@ select = [
     "RUF",  # Ruff-specific rules
     "C90",  # mccabe complexity
     "PGH",  # pygrep-hooks
+    "TID",  # flake8-tidy-imports (banned imports: layering + yt-dlp ACL)
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
-    "PLR0913",  # too many arguments
+    "PLR0913",  # too many arguments (legacy; measured by audit complexity pass)
     "PLR2004",  # magic value comparison
     "PLC0415",  # import order (required for pytest fixtures in conftest.py)
     "B008",  # function call in default argument (required for FastAPI Depends)
-    "C901",  # too complex (legacy code, will refactor incrementally)
+    "C901",  # too complex (legacy; measured by audit complexity pass)
     "PLR0911",  # too many returns (legacy code)
-    "PLR0912",  # too many branches (legacy code)
-    "PLR0915",  # too many statements (legacy code)
+    "PLR0912",  # too many branches (legacy; measured by audit complexity pass)
+    "PLR0915",  # too many statements (legacy; measured by audit complexity pass)
     "PLW0603",  # global statement (required for lazy singleton pattern)
     "N802",  # function name case (do_GET required by http.server framework)
     "PLW0406",  # module imports itself (required for test mocking)
 ]
+
+# ============================================
+# ARCHITECTURE FITNESS FUNCTIONS (see docs/ARCHITECTURE-STANDARD.md)
+# ============================================
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Layering: neither app/ nor core/ may depend on the worker process.
+"worker" = ["app/ and core/ must not import worker/ (CODEBOUNDARIES.md)"]
+# Anti-corruption layer: yt-dlp types/exceptions must never leak past its facade.
+"yt_dlp" = ["yt-dlp is importable only from app/services/yt_dlp_service.py (ACL)"]
+
+[tool.ruff.lint.per-file-ignores]
+# Zone exemptions: the worker itself, tests, tooling, and migrations may import
+# worker/ freely; the ACL file is the sole owner of the yt_dlp module.
+"worker/**/*.py" = ["TID251"]
+"tests/**/*.py" = ["TID251"]
+"scripts/**/*.py" = ["TID251"]
+"alembic/**/*.py" = ["TID251"]
+"app/services/yt_dlp_service.py" = ["TID251"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
 
 [tool.ruff.format]
 quote-style = "double"
@@ -560,6 +621,26 @@ skips = [
     "B101",  # assert_used (common in tests)
     "B413",  # blacklist (sometimes used for hashing)
 ]
+
+# ============================================
+# DEPTRY CONFIGURATION (unused/undeclared dependencies)
+# ============================================
+[tool.deptry]
+# DEP002 exclusions (declared but not directly imported — all intentional):
+# - CLI tools exercised via hatch/CI: ruff, mypy, bandit, safety, detect-secrets,
+#   vulture, deptry, types-*, vooglaadija
+# - Test-only packages: pytest, pytest-asyncio, pytest-cov, pytest-xdist, aiosqlite
+# - Runtime-not-imported framework deps (loaded lazily at runtime):
+#   asyncpg (SQLAlchemy URL driver), bcrypt (passlib backend),
+#   email-validator (pydantic EmailStr), jinja2 (Jinja2Templates),
+#   python-multipart (FastAPI forms), yt-dlp (embedded subprocess script)
+# - Deliberate CVE-pinning of transitive deps: ecdsa, cryptography, pygments
+# - Test-exercised runtime deps (candidate removals if observability drops):
+#   orjson, tenacity
+per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp"] }
+# Module name differs from package name; required because the detached audit
+# env runs deptry without the project installed (no auto-detection possible).
+package_module_name_map = { "python-jose" = ["jose"] }
 
 # ============================================
 # SAFETY CONFIGURATION

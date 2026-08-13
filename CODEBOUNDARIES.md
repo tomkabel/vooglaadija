@@ -15,6 +15,17 @@ the API process and the worker process.
 - `worker/` must not import `app/api/`, `app/schemas/`, route dependencies, web-specific modules,
   ORM model shims, config shims, database shims, metrics shims, logging shims, or Redis-client
   shims.
+- `yt_dlp` is importable only from `app/services/yt_dlp_service.py` (anti-corruption layer).
+
+## Enforcement
+
+These rules are fitness functions (see [docs/ARCHITECTURE-STANDARD.md](docs/ARCHITECTURE-STANDARD.md)):
+
+- **Global bans** (`worker` in `app/`/`core/`; `yt_dlp` outside its ACL file): ruff `TID251`
+  banned-api in `pyproject.toml`.
+- **Zone-aware bans** (worker ⇏ `app.api|app.schemas|…`): `python scripts/import_analysis.py`
+  (AST verifier — TID251 cannot scope bans per directory).
+- Both run in the PR lint job and in the weekly audit.
 
 ## Removed Compatibility Shims
 
