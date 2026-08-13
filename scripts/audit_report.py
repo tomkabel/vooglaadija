@@ -770,8 +770,15 @@ def cmd_weekly(args: argparse.Namespace) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "audit-report.md").write_text(markdown, encoding="utf-8")
+    # Least-data: the machine-readable JSON intentionally excludes the raw
+    # secrets-findings metadata (path/line/type) and the derived gate summary
+    # that contains it. The markdown report renders the full secrets gate
+    # section for humans; the JSON keeps the counts used for trend tracking.
+    # No secret values exist in any report output.
+    excluded_keys = {"secrets", "gate_summary"}
+    json_measures = {key: value for key, value in measures.items() if key not in excluded_keys}
     (out_dir / "audit-report.json").write_text(
-        json.dumps({"measures": measures, "trend": trend}, indent=2), encoding="utf-8"
+        json.dumps({"measures": json_measures, "trend": trend}, indent=2), encoding="utf-8"
     )
     print(markdown)
     return 0
