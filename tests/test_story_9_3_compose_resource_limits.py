@@ -60,8 +60,6 @@ def test_story_required_service_memory_limits_match_contract():
     services = _load_yaml_file("docker-compose.yml")["services"]
 
     expected_memory_limits = {
-        "nginx": "64M",
-        "swagger-ui": "128M",
         "otel-collector": "256M",
         "worker": "512M",
     }
@@ -73,30 +71,11 @@ def test_story_required_service_memory_limits_match_contract():
 
 
 @pytest.mark.unit
-def test_production_overrides_do_not_shadow_base_resource_limits():
-    """Production overrides keep resource limits for base services they customize."""
-    base_services = _load_yaml_file("docker-compose.yml")["services"]
-    production_services = _load_yaml_file("docker-compose.production.yml")["services"]
+def test_local_override_does_not_shadow_base_resource_limits():
+    """The local override adds build targets/ports but never relaxes resource limits."""
+    local_services = _load_yaml_file("docker-compose.local.yml")["services"]
 
-    for service_name in ("worker", "nginx", "swagger-ui"):
-        base_limits = base_services[service_name]["deploy"]["resources"]["limits"]
-        override_deploy = production_services[service_name].get("deploy")
-
-        if override_deploy is None:
-            override_limits = base_limits
-        else:
-            override_limits = override_deploy.get("resources", {}).get("limits")
-
-        assert override_limits == base_limits
-
-
-@pytest.mark.unit
-def test_production_compose_preserves_swagger_resource_limits():
-    """The production swagger override keeps resource limits while disabling replicas."""
-    swagger_override = _load_yaml_file("docker-compose.production.yml")["services"]["swagger-ui"]
-
-    assert swagger_override["deploy"]["replicas"] == 0
-    assert swagger_override["deploy"]["resources"]["limits"] == {
-        "cpus": "0.25",
-        "memory": "128M",
-    }
+    for service_name in ("api", "worker"):
+        assert "deploy" not in local_services[service_name], (
+            f"{service_name} local override must not change resource limits"
+        )

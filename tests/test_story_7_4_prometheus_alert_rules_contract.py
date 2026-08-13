@@ -143,18 +143,19 @@ def test_prometheus_loads_story_7_4_alert_rules():
 
 
 @pytest.mark.unit
-def test_demo_prometheus_service_can_read_alert_rules():
-    """Demo compose should mount the Prometheus directory so alerts.yml is readable."""
-    config = _load_yaml_file("docker-compose.demo.yml")
+def test_monitoring_prometheus_service_can_read_alert_rules():
+    """The monitoring profile should mount the Prometheus directory so alerts.yml is readable."""
+    config = _load_yaml_file("docker-compose.yml")
     volumes = config["services"]["prometheus"]["volumes"]
 
+    assert config["services"]["prometheus"]["profiles"] == ["monitoring"]
     assert "./infra/prometheus:/etc/prometheus:ro" in volumes
 
 
 @pytest.mark.unit
-def test_demo_prometheus_admin_api_is_only_bound_locally():
-    """The demo Prometheus UI should stay local without enabling admin endpoints."""
-    config = _load_yaml_file("docker-compose.demo.yml")
+def test_monitoring_prometheus_admin_api_is_only_bound_locally():
+    """The Prometheus UI should stay local without enabling admin endpoints."""
+    config = _load_yaml_file("docker-compose.yml")
     prometheus = config["services"]["prometheus"]
 
     assert "127.0.0.1:9090:9090" in prometheus["ports"]

@@ -48,9 +48,11 @@ build/
 *.log
 infra/certbot/*.ini
 
-# Cloudflare credentials for certbot DNS challenge
-infra/certbot/cloudflare.ini
+# Cloudflare / ACME credentials (managed by Coolify's Caddy proxy in production)
 cloudflare.ini
+
+# Local backup dumps (backup profile)
+infra/backup/backup-data/
 
 # =============================================
 # AI Agent / Dev Tooling

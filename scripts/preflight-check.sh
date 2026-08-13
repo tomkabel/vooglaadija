@@ -2,11 +2,10 @@
 # ============================================
 # Vooglaadija Docker Preflight Check
 # ============================================
-# Detects and fixes common Docker Compose issues:
-#   1. Stale externally-created network without Compose labels
-#   2. Missing required .env variables
-#   3. Port conflicts with running containers
-#   4. Orphaned volumes from previous deployments
+# Detects common Docker Compose issues before starting the stack:
+#   1. Missing required .env variables
+#   2. Port conflicts with running containers
+#   3. Orphaned volumes from previous deployments
 #
 # Usage:
 #   ./scripts/preflight-check.sh           # Check + interactive fix
@@ -28,8 +27,7 @@ NC='\033[0m'
 AUTO_FIX=false
 CHECK_ONLY=false
 EXIT_CODE=0
-NETWORK_NAME="ytprocessor-network"
-COMPOSE_FILE="-f docker-compose.yml -f docker-compose.demo.yml"
+COMPOSE_FILE="-f docker-compose.yml -f docker-compose.local.yml"
 
 # ── Helpers ──────────────────────────────────────────────
 log_info()  { echo -e "${GREEN}[✓]${NC} $1"; }
@@ -46,58 +44,6 @@ confirm() {
 }
 
 # ── Checks ──────────────────────────────────────────────
-check_network() {
-  log_step "Network: ${NETWORK_NAME}"
-
-  # Check if the network exists at all
-  if ! docker network inspect "$NETWORK_NAME" &>/dev/null; then
-    log_info "Network '${NETWORK_NAME}' does not exist yet — Compose will create it."
-    return 0
-  fi
-
-  # Network exists — check if it has proper Compose labels
-  local compose_label
-  compose_label=$(docker network inspect "$NETWORK_NAME" \
-    --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null || echo "")
-
-  if [[ "$compose_label" == "ytprocessor-network" ]]; then
-    log_info "Network '${NETWORK_NAME}' is properly managed by Docker Compose."
-    return 0
-  fi
-
-  # Network exists but was NOT created by Compose
-  log_error "Network '${NETWORK_NAME}' exists but is NOT managed by Docker Compose."
-  echo -e "    The network was likely created manually with 'docker network create ${NETWORK_NAME}'"
-  echo -e "    or is a leftover from a tool like 'docker network prune'."
-  echo -e "    Docker Compose expects to manage this network with its own labels,"
-  echo -e "    but the existing network has label:"
-  echo -e "      com.docker.compose.network = '${compose_label:-<empty>}'"
-  echo -e "      (expected: '${NETWORK_NAME}')"
-  echo ""
-
-  if $CHECK_ONLY; then
-    echo -e "    ${YELLOW}Fix: Remove the stale network and let Compose recreate it:${NC}"
-    echo -e "      docker network rm ${NETWORK_NAME}"
-    echo -e "      docker compose ${COMPOSE_FILE} up -d"
-    return 0
-  fi
-
-  if confirm "Remove the stale network '${NETWORK_NAME}' and let Compose recreate it?"; then
-    echo ""
-    if docker network rm "$NETWORK_NAME" 2>&1; then
-      log_info "Removed stale network '${NETWORK_NAME}'. Compose will recreate it on next up."
-    else
-      log_error "Failed to remove network. Are containers still attached?"
-      echo -e "    ${YELLOW}Run 'docker compose down' first, then retry.${NC}"
-      echo -e "    Or force removal (may leave containers without network):"
-      echo -e "      docker network rm -f ${NETWORK_NAME}"
-    fi
-  else
-    log_warn "Skipping network fix. Compose may fail with network errors."
-    echo -e "    To fix later:  docker network rm ${NETWORK_NAME}"
-  fi
-}
-
 check_env_file() {
   log_step "Environment: .env file"
 
@@ -127,13 +73,15 @@ check_env_file() {
     log_warn "No .env file found."
     echo -e "    ${YELLOW}Create one from the template or set environment variables.${NC}"
     echo -e "    Required: DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY"
+    echo -e "    For production, use: sudo ./deploy/bootstrap.sh"
   fi
 }
 
 check_port_conflicts() {
   log_step "Ports: checking for conflicts"
 
-  local ports=("3000:Grafana" "9090:Prometheus" "8000:API" "8080:Nginx" "5432:Postgres" "6379:Redis")
+  # Local override binds these to loopback; Coolify's Caddy owns 80/443 in prod.
+  local ports=("3000:Grafana" "9090:Prometheus" "8000:API" "5432:Postgres" "6380:Redis" "8082:Worker")
   local conflict_found=false
 
   # Build a set of ports already used by Docker containers
@@ -164,6 +112,15 @@ check_port_conflicts() {
       log_warn "Port $port ($service) is in use by a non-Docker process: $owner"
       echo -e "    This may prevent the container from starting on that port."
       conflict_found=true
+    fi
+  done
+
+  # Ports 80/443: warn if occupied by a non-Coolify process (Coolify proxy uses them)
+  for port in 80 443; do
+    if ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN; then
+      if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^coolify-proxy$'; then
+        log_warn "Port $port is in use — Coolify's proxy will need it for TLS."
+      fi
     fi
   done
 
@@ -243,7 +200,6 @@ main() {
   echo ""
 
   check_env_file
-  check_network
   check_port_conflicts
   check_orphan_volumes
   check_grafana_dashboards
@@ -254,7 +210,8 @@ main() {
     echo -e "${GREEN}║  All checks passed! Ready to compose up.  ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${BLUE}docker compose ${COMPOSE_FILE} up -d${NC}"
+    echo -e "  ${BLUE}docker compose ${COMPOSE_FILE} up -d --build${NC}"
+    echo -e "  ${BLUE}Production:   sudo ./deploy/bootstrap.sh${NC}"
     echo ""
   else
     echo -e "${YELLOW}╔═══════════════════════════════════════════════════╗${NC}"

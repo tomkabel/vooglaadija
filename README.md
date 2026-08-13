@@ -77,9 +77,15 @@ Vooglaadija is a tool. Examples of legitimate uses include:
 
 ### Legal Disclaimer
 
-**You are responsible for ensuring you have the right to download any content before using Vooglaadija.** Downloading copyrighted content without authorization may violate YouTube's Terms of Service and applicable copyright law, including the DMCA §1201 anti-circumvention provisions in the US.
+**You are responsible for ensuring you have the right to download any content before using
+Vooglaadija.** Downloading copyrighted content without authorization may violate YouTube's Terms of
+Service and applicable copyright law, including the DMCA §1201 anti-circumvention provisions in the
+US.
 
-Vooglaadija is open-source software provided under GPLv3. The operators of this service do not endorse or encourage copyright infringement. This tool has substantial non-infringing uses and is designed for lawful purposes only. Users should consult qualified legal counsel if unsure about the legality of their use case.
+Vooglaadija is open-source software provided under GPLv3. The operators of this service do not
+endorse or encourage copyright infringement. This tool has substantial non-infringing uses and is
+designed for lawful purposes only. Users should consult qualified legal counsel if unsure about the
+legality of their use case.
 
 See the [Terms of Service](/web/terms) for full details.
 
@@ -119,22 +125,26 @@ See the [Terms of Service](/web/terms) for full details.
 
 ## Quick Start
 
-### Docker Compose (Recommended)
+### Production (any VPS — plug-n-play)
+
+Pull the repo onto any VPS and run the bootstrap. It asks for your domain and a Cloudflare API
+token, then provisions Docker + Coolify, auto-issues a wildcard TLS certificate (Let's Encrypt via
+Cloudflare DNS-01, auto-renewed), deploys the production Docker Compose stack and wires up
+continuous deployment from GitHub:
 
 ```bash
 git clone https://github.com/tomkabel/team21-vooglaadija.git
 cd team21-vooglaadija
-docker compose up -d
+sudo ./deploy/bootstrap.sh
 ```
 
-The stack runs API, Worker, PostgreSQL, Redis, nginx, OpenTelemetry Collector, and Swagger UI.
+See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 
 ### Local Development
 
 ```bash
 git clone https://github.com/tomkabel/team21-vooglaadija.git
 cd team21-vooglaadija
-hatch env create
 
 cp .env.example .env
 # Minimum required:
@@ -142,17 +152,24 @@ cp .env.example .env
 #   REDIS_PASSWORD=<strong-password>
 #   SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+```
+
+Or without Docker:
+
+```bash
+hatch env create
 hatch run db-migrate
 hatch run dev              # API
 python -m worker.main      # Worker (separate terminal)
 ```
 
-### Access Points
+### Access Points (local)
 
 - Web Dashboard: <http://localhost:8000/web/downloads>
 - Login: <http://localhost:8000/web/login>
 - API Docs: <http://localhost:8000/docs>
-- Standalone Swagger: <http://localhost:8081>
+- Grafana: <http://localhost:3000> (enable with `docker compose ... --profile monitoring up -d`)
 
 ---
 
@@ -221,30 +238,31 @@ codes.
 
 ## Documentation
 
-| Document                                     | Description                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------- |
-| [docs/API.md](docs/API.md)                   | Full API reference with auth requirements, status codes, and schemas |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and component responsibilities                   |
-| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | Development workflow, tests, and code standards                      |
-| [docs/OPS.md](docs/OPS.md)                   | Environment variables, deployment, and troubleshooting               |
+| Document                                                       | Description                                                          |
+| -------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [docs/API.md](docs/API.md)                                     | Full API reference with auth requirements, status codes, and schemas |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                   | System architecture and component responsibilities                   |
+| [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) | Plug-n-play VPS deployment with wildcard TLS + Coolify CD            |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)                   | Development workflow, tests, and code standards                      |
+| [docs/OPS.md](docs/OPS.md)                                     | Environment variables, deployment, and troubleshooting               |
 
 ---
 
 ## Tech Stack
 
-| Technology     | Purpose           |
-| -------------- | ----------------- |
-| Python 3.12+   | Runtime           |
-| FastAPI        | API framework     |
-| SQLAlchemy     | ORM               |
-| PostgreSQL     | Database          |
-| Redis          | Queue and cache   |
-| Docker         | Containerization  |
-| nginx          | Reverse proxy     |
-| Tailwind CSS   | Frontend styling  |
-| Prometheus     | Metrics           |
-| sse-starlette  | Real-time updates |
-| GitHub Actions | CI/CD             |
+| Technology     | Purpose                                    |
+| -------------- | ------------------------------------------ |
+| Python 3.12+   | Runtime                                    |
+| FastAPI        | API framework                              |
+| SQLAlchemy     | ORM                                        |
+| PostgreSQL     | Database                                   |
+| Redis          | Queue and cache                            |
+| Docker         | Containerization                           |
+| Caddy          | Reverse proxy + wildcard TLS (via Coolify) |
+| Tailwind CSS   | Frontend styling                           |
+| Prometheus     | Metrics                                    |
+| sse-starlette  | Real-time updates                          |
+| GitHub Actions | CI/CD                                      |
 
 ### Runtime Dependencies
 
@@ -271,8 +289,8 @@ codes.
 
 ```mermaid
 flowchart TD
-    Client([Client]) -->|HTTP/S| nginx[nginx]
-    nginx -->|Proxy| api[FastAPI API]
+    Client([Client]) -->|HTTP/S| proxy[Caddy proxy<br/>(Coolify, wildcard TLS)]
+    proxy -->|Proxy| api[FastAPI API]
     api -->|SQL| db[(PostgreSQL)]
     api -->|Queue| redis[(Redis)]
     redis -->|Consume| worker[Worker<br/>yt-dlp]
@@ -284,8 +302,10 @@ flowchart TD
 
 The API server handles authentication, job management, HTMX rendering, SSE streaming, and
 observability. The worker consumes jobs from Redis, extracts media via yt-dlp, and manages file
-lifecycle. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full diagram and component
-details.
+lifecycle. Production deployments run on any VPS via Coolify (see
+[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)); its Caddy proxy terminates TLS with
+an auto-renewed wildcard certificate. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
+diagram and component details.
 
 ---
 

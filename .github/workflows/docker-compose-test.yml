@@ -38,25 +38,10 @@ jobs:
           # Set CI-safe values
           sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=ci_test_password|' .env
           sed -i 's|^REDIS_PASSWORD=.*|REDIS_PASSWORD=ci_test_redis_password|' .env
-          sed -i 's|^SECRET_KEY=$|SECRET_KEY=ci-test-secret-key-minimum-32-characters-long|' .env
+          sed -i 's|^SECRET_KEY=.*|SECRET_KEY=ci-test-secret-key-minimum-32-characters-long|' .env
           # Remove or fix REDIS_URL - it defaults to localhost in .env.example which doesn't work in Docker
           # Leave it empty so docker-compose uses the service name from the compose file
           sed -i 's|^REDIS_URL=.*|REDIS_URL=|' .env
-
-      # Generate self-signed SSL certificates for nginx (not tracked in git)
-      - name: Generate SSL certificates for nginx
-        run: |
-          echo "Generating self-signed SSL certificates for CI..."
-          mkdir -p infra/ssl
-          openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
-            -keyout infra/ssl/privkey.pem \
-            -out infra/ssl/fullchain.pem \
-            -subj "/C=US/ST=Test/L=Test/O=CI/CN=localhost" \
-            2>/dev/null
-          chmod 644 infra/ssl/fullchain.pem
-          chmod 644 infra/ssl/privkey.pem
-          echo "SSL certificates generated successfully"
-          ls -la infra/ssl/
 
       # ============================================
       # 2. BUILD & START SERVICES
@@ -68,7 +53,6 @@ jobs:
             echo "Docker compose failed, capturing diagnostics..."
             docker compose -f docker-compose.yml -f docker-compose.local.yml ps
             docker compose logs --tail=100 api 2>&1 || true
-            docker compose logs --tail=100 nginx 2>&1 || true
             exit 1
           }
 
@@ -86,23 +70,25 @@ jobs:
             local attempt=1
 
             while [ $attempt -le $max_attempts ]; do
-              status=$(docker inspect --format='{{.State.Health.Status}}' "ytprocessor-$service" 2>/dev/null || echo "unknown")
+              cid=$(docker compose ps -q "$service" 2>/dev/null || true)
+              if [ -z "$cid" ]; then
+                echo "Attempt $attempt/$max_attempts: $service container not found"
+                sleep 5
+                attempt=$((attempt + 1))
+                continue
+              fi
+              status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "unknown")
 
               if [ "$status" = "healthy" ]; then
                 echo "$service is healthy"
                 return 0
               elif [ "$status" = "unhealthy" ]; then
                 echo "ERROR: $service is unhealthy"
-                # Capture diagnostic info on failure
                 echo "=== API logs (last 50 lines) ==="
                 docker compose logs --tail=50 api 2>&1 || true
                 echo ""
-                echo "=== Nginx logs (last 50 lines) ==="
-                docker compose logs --tail=50 nginx 2>&1 || true
-                echo ""
                 echo "=== Container inspect ==="
-                docker inspect ytprocessor-api 2>&1 | head -100 || true
-                docker inspect ytprocessor-nginx 2>&1 | head -100 || true
+                docker inspect "$cid" 2>&1 | head -100 || true
                 return 1
               else
                 echo "Attempt $attempt/$max_attempts: $service status = $status"
@@ -113,8 +99,6 @@ jobs:
             done
 
             echo "ERROR: $service did not become healthy within timeout"
-            # Capture diagnostic info on timeout
-            echo "=== API logs (last 50 lines) ==="
             docker compose logs --tail=50 api 2>&1 || true
             return 1
           }
@@ -123,7 +107,6 @@ jobs:
           wait_for_health "api" || exit 1
           wait_for_health "db" || exit 1
           wait_for_health "redis" || exit 1
-          wait_for_health "nginx" || exit 1
 
           echo "All Docker health checks passed"
 
@@ -134,25 +117,16 @@ jobs:
         run: |
           echo "Checking worker container status..."
 
-          # Debug: Show worker logs before checking status
           echo "=== Worker logs (last 100 lines) ==="
           docker compose logs worker 2>&1 | tail -100 || true
 
-          echo ""
-          echo "=== Worker container inspect ==="
-          docker inspect ytprocessor-worker 2>&1 | head -50 || true
-
-          echo ""
-          echo "=== Checking container status ==="
-          # Check container is running
-          container_status=$(docker inspect --format='{{.State.Status}}' ytprocessor-worker 2>/dev/null || echo "not_found")
+          worker_cid=$(docker compose ps -q worker 2>/dev/null || true)
+          container_status=$(docker inspect --format='{{.State.Status}}' "$worker_cid" 2>/dev/null || echo "not_found")
           if [ "$container_status" != "running" ]; then
             echo "ERROR: Worker container status is '$container_status', expected 'running'"
             exit 1
           fi
 
-          # Check for unhandled Python exceptions in worker logs
-          # Skip normal ERROR/INFO log messages — only catch actual crashes
           echo "Checking worker logs for crashes..."
           worker_logs=$(docker compose logs worker 2>&1)
 
@@ -167,19 +141,19 @@ jobs:
       # ============================================
       # 5. VERIFY HEALTH ENDPOINTS
       # ============================================
-      - name: Test API health via nginx proxy
+      - name: Test API health endpoint
         run: |
-          echo "Testing API health via nginx at :8080..."
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/health || echo "000")
+          echo "Testing API health at :8000..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health || echo "000")
 
           if [ "$response" != "200" ]; then
-            echo "ERROR: Proxied health check failed with status $response"
+            echo "ERROR: API health check failed with status $response"
             exit 1
           fi
 
-          response_body=$(curl -s http://localhost:8080/api/v1/health)
-          echo "Proxied health response: $response_body"
-          echo "Proxied health check passed"
+          response_body=$(curl -s http://localhost:8000/api/v1/health)
+          echo "API health response: $response_body"
+          echo "API health check passed"
 
       # ============================================
       # 6. VERIFY SERVICE LOGS
@@ -189,7 +163,6 @@ jobs:
           echo "Checking service logs for crashes..."
 
           # Check application services for crash indicators
-          # Only check api and worker — db/redis log normal errors during startup
           services=("api" "worker")
           has_errors=false
 
@@ -220,7 +193,7 @@ jobs:
           # Try to register a user - this tests full API connectivity
           # Even if it fails (user exists), it proves the API stack works
           response=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST http://localhost:8080/api/v1/auth/register \
+            -X POST http://localhost:8000/api/v1/auth/register \
             -H "Content-Type: application/json" \
             -d '{"email":"smoke-test@example.com","password":"testpass123"}' \
             || echo "000")
@@ -244,14 +217,16 @@ jobs:
 
           echo ""
           echo "=== Docker Health Status ==="
-          for container in ytprocessor-api ytprocessor-db ytprocessor-redis ytprocessor-nginx; do
-            health=$(docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "N/A")
-            echo "$container: $health"
+          for service in api db redis; do
+            cid=$(docker compose ps -q "$service" 2>/dev/null || true)
+            health=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "N/A")
+            echo "$service ($cid): $health"
           done
 
           echo ""
           echo "=== Worker Container State ==="
-          docker inspect --format='Status: {{.State.Status}}, ExitCode: {{.State.ExitCode}}' ytprocessor-worker || echo "Worker not found"
+          worker_cid=$(docker compose ps -q worker 2>/dev/null || true)
+          docker inspect --format='Status: {{.State.Status}}, ExitCode: {{.State.ExitCode}}' "$worker_cid" || echo "Worker not found"
 
       # ============================================
       # 9. COLLECT ARTIFACTS
@@ -267,15 +242,15 @@ jobs:
           docker compose logs worker > logs/worker.log 2>&1 || true
           docker compose logs db > logs/db.log 2>&1 || true
           docker compose logs redis > logs/redis.log 2>&1 || true
-          docker compose logs nginx > logs/nginx.log 2>&1 || true
 
           # Collect container status
           docker compose ps > logs/container-status.txt 2>&1 || true
           docker ps -a >> logs/container-status.txt 2>&1 || true
 
           # Collect docker inspect for each container
-          for container in ytprocessor-api ytprocessor-worker ytprocessor-db ytprocessor-redis ytprocessor-nginx; do
-            docker inspect $container > logs/inspect-$container.json 2>/dev/null || true
+          for service in api worker db redis; do
+            cid=$(docker compose ps -q "$service" 2>/dev/null || true)
+            [ -n "$cid" ] && docker inspect "$cid" > "logs/inspect-$service.json" 2>/dev/null || true
           done
 
           echo "Artifacts collected in logs/"
@@ -308,10 +283,9 @@ jobs:
           echo "============================================"
           echo "DOCKER COMPOSE INTEGRATION TESTS PASSED"
           echo "============================================"
-          echo "All 5 services verified:"
-          echo "  api     - Health check passed (Docker + HTTP)"
+          echo "All 4 services verified:"
+          echo "  api     - Health check passed (Docker + HTTP on :8000)"
           echo "  db      - Health check passed (pg_isready)"
           echo "  redis   - Health check passed (redis-cli ping)"
           echo "  worker  - Running without errors (log verified)"
-          echo "  nginx   - Proxy functioning (health via :8080)"
           echo "============================================"

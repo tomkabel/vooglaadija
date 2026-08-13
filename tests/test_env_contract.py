@@ -9,13 +9,13 @@ REQUIRED_PLACEHOLDER_KEYS = {
     "DB_PASSWORD",
     "REDIS_PASSWORD",
     "SECRET_KEY",
-    "NETDATA_CLAIM_TOKEN",
 }
 COMPOSE_PASSWORD_URL_PATTERNS = (
     "DATABASE_URL: postgresql+asyncpg://",
     "REDIS_URL: redis://:",
 )
 PRODUCTION_DOMAIN_LITERAL = "youtube.tomabel.ee"
+LEGACY_VPS_IP = "37.114.46.226"
 
 
 def _git(*args: str) -> list[str]:
@@ -83,8 +83,7 @@ def test_env_example_documents_local_secret_setup():
     assert "secrets.token_urlsafe" in template
     assert "DB_PASSWORD" in template
     assert "REDIS_PASSWORD" in template
-    assert "NETDATA_CLAIM_TOKEN" in template
-    assert "Netdata Cloud" in template
+    assert "deploy/bootstrap.sh" in template
 
 
 @pytest.mark.unit
@@ -135,89 +134,87 @@ def test_rotated_runtime_values_preserve_auth_and_service_url_contracts(monkeypa
 @pytest.mark.unit
 def test_compose_paths_do_not_embed_rotated_passwords_in_urls():
     """Compose paths pass rotated passwords as components so Settings URL-encodes them."""
-    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
-    demo_compose = (REPO_ROOT / "docker-compose.demo.yml").read_text()
+    compose = (REPO_ROOT / "docker-compose.yml").read_text()
 
     for pattern in COMPOSE_PASSWORD_URL_PATTERNS:
-        assert pattern not in production_compose
-        assert pattern not in demo_compose
+        assert pattern not in compose
 
-    assert "DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}" in demo_compose
-    assert "REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}" in demo_compose
+    assert "DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}" in compose
+    assert "REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}" in compose
 
 
 @pytest.mark.unit
-def test_production_deploy_domain_is_parameterized():
-    """Production deploy files use DEPLOY_DOMAIN rather than a fixed hostname."""
+def test_production_configuration_is_parameterized_and_portable():
+    """Production files use DEPLOY_DOMAIN and never embed the legacy host/IP."""
     files = [
         ".env.example",
-        ".github/workflows/deploy-production.yml",
-        "docker-compose.production.yml",
-        "infra/deploy/deploy.sh",
-        "infra/deploy/README.md",
-        "infra/nginx/nginx.production.conf",
-        "infra/ssl/README.md",
+        "docker-compose.yml",
+        "deploy/bootstrap.sh",
+        "docs/PRODUCTION_DEPLOYMENT.md",
+        ".github/workflows/docker.yml",
     ]
 
     for relative_path in files:
-        assert PRODUCTION_DOMAIN_LITERAL not in (REPO_ROOT / relative_path).read_text()
+        content = (REPO_ROOT / relative_path).read_text()
+        assert PRODUCTION_DOMAIN_LITERAL not in content
+        assert LEGACY_VPS_IP not in content
 
     env_example = (REPO_ROOT / ".env.example").read_text()
-    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
-    nginx_template = (REPO_ROOT / "infra/nginx/nginx.production.conf").read_text()
-    deploy_script = (REPO_ROOT / "infra/deploy/deploy.sh").read_text()
+    bootstrap = (REPO_ROOT / "deploy/bootstrap.sh").read_text()
+    compose = (REPO_ROOT / "docker-compose.yml").read_text()
 
     assert "DEPLOY_DOMAIN=example.com" in env_example
-    assert (
-        "CORS_ORIGINS: 'https://${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'" in production_compose
-    )
-    assert "DEPLOY_DOMAIN: '${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}'" in production_compose
-    assert "server_name ${DEPLOY_DOMAIN};" in nginx_template
-    assert "/etc/letsencrypt/live/${DEPLOY_DOMAIN}/fullchain.pem" in nginx_template
-    assert ': "${DEPLOY_DOMAIN:?DEPLOY_DOMAIN is required}"' in deploy_script
-    assert 'DOMAIN="$DEPLOY_DOMAIN"' in deploy_script
+    assert '"${DEPLOY_DOMAIN}"' in bootstrap or "${DEPLOY_DOMAIN}" in bootstrap
+    assert "CORS_ORIGINS: ${CORS_ORIGINS:-" in compose
+    assert "CLOUDFLARE_API_TOKEN" in bootstrap
+    assert "read -r -s" in bootstrap  # token prompted without echoing
 
 
 @pytest.mark.unit
-def test_remote_deploy_uses_secret_files_not_ssh_env_payloads():
-    """Production deploy passes secret material through files, not SSH env args."""
-    workflow = (REPO_ROOT / ".github/workflows/deploy-production.yml").read_text()
-    remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
+def test_bootstrap_generates_secrets_at_runtime():
+    """The bootstrap generates secrets at runtime instead of committing values."""
+    bootstrap = (REPO_ROOT / "deploy/bootstrap.sh").read_text()
 
-    assert "GHCR_PAT=.*bash -s" not in workflow
-    assert "ENV_B64=.*bash -s" not in workflow
-    assert "GHCR_PAT_FILE" in workflow
-    assert "ENV_FILE_PATH" in workflow
-    assert ': "${GHCR_PAT_FILE:?GHCR_PAT_FILE is required}"' in remote_script
-    assert ': "${ENV_FILE_PATH:?ENV_FILE_PATH is required}"' in remote_script
-    assert (
-        'docker login "$GHCR_REGISTRY" -u "$GHCR_OWNER" --password-stdin < "$GHCR_PAT_FILE"'
-        in remote_script
-    )
-    assert "printf '%s' \"$ENV_B64\"" not in remote_script
+    assert "openssl rand" in bootstrap
+    assert "SECRET_KEY_PREVIOUS" in bootstrap
+    assert "CORS_ORIGINS" in bootstrap
 
 
 @pytest.mark.unit
-def test_remote_deploy_verifies_rollback_images_before_restore():
-    """Rollback verifies captured backup image tags before changing services."""
-    remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
-
-    assert 'docker manifest inspect "$image"' in remote_script
-    assert "verify_backup_images" in remote_script
-    assert "Backup image is unavailable" in remote_script
-
-
-@pytest.mark.unit
-def test_deploy_health_gates_require_healthy_payloads():
+def test_bootstrap_deploy_health_gates_require_healthy_payloads():
     """Deploy-time health checks must inspect the JSON status, not only HTTP 200."""
-    workflow = (REPO_ROOT / ".github/workflows/deploy-production.yml").read_text()
-    remote_script = (REPO_ROOT / "infra/deploy/remote-deploy.sh").read_text()
+    bootstrap = (REPO_ROOT / "deploy/bootstrap.sh").read_text()
 
-    healthy_pattern = r'"status"[[:space:]]*:[[:space:]]*"healthy"'
+    assert "grep -q '\"healthy\"'" in bootstrap
+    assert "https://${DEPLOY_DOMAIN}/health" in bootstrap
 
-    assert healthy_pattern in workflow
-    assert "health_endpoint_is_healthy" in remote_script
-    assert healthy_pattern in remote_script
+
+@pytest.mark.unit
+def test_bootstrap_uses_caddy_dns01_for_wildcard_tls():
+    """Wildcard TLS is provisioned via Caddy + Cloudflare DNS-01, not certbot."""
+    bootstrap = (REPO_ROOT / "deploy/bootstrap.sh").read_text()
+    docs = (REPO_ROOT / "docs/PRODUCTION_DEPLOYMENT.md").read_text()
+
+    assert "caddy-dns/cloudflare" in bootstrap
+    assert "caddy.acme_dns=cloudflare" in bootstrap
+    assert "certbot" not in bootstrap.lower()
+    assert "wildcard" in docs.lower()
+    assert "dns-01" in docs.lower()
+
+
+@pytest.mark.unit
+def test_compose_has_no_certbot_or_legacy_proxy_services():
+    """The compose stack no longer runs nginx/certbot/swagger-ui/loki services."""
+    compose = (REPO_ROOT / "docker-compose.yml").read_text()
+
+    for service_name in ("nginx", "certbot", "swagger-ui", "loki"):
+        assert f"\n  {service_name}:\n" not in compose
+
+    assert ".nginx-reload-required" not in compose
+    # docker.sock is only allowed for the opt-in backup scheduler
+    docker_sock_lines = [line for line in compose.splitlines() if "docker.sock" in line]
+    assert len(docker_sock_lines) == 1
+    assert "backup-cron" in docker_sock_lines[0] or "backup" in compose
 
 
 @pytest.mark.unit
@@ -251,27 +248,6 @@ def test_pydantic_settings_dependency_stays_on_patched_floor():
 
 
 @pytest.mark.unit
-def test_production_certbot_no_longer_mounts_docker_socket():
-    """Certbot renewal does not require a writable Docker socket."""
-    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
-    certbot_compose = (REPO_ROOT / "infra/certbot/docker-compose.certbot.yml").read_text()
-
-    assert "/var/run/docker.sock" not in production_compose
-    assert "/var/run/docker.sock" not in certbot_compose
-    assert "docker exec ytprocessor-nginx" not in production_compose
-    assert "docker exec ytprocessor-nginx" not in certbot_compose
-
-
-@pytest.mark.unit
-def test_production_nginx_consumes_certbot_reload_marker():
-    """Production nginx should watch the shared certbot reload marker and reload itself."""
-    production_compose = (REPO_ROOT / "docker-compose.production.yml").read_text()
-
-    assert ".nginx-reload-required" in production_compose
-    assert "nginx -s reload" in production_compose
-
-
-@pytest.mark.unit
 def test_dockerfile_verifies_swagger_assets_before_installing_them():
     """Dockerfile verifies downloaded Swagger assets with SHA-384 checksums."""
     dockerfile = (REPO_ROOT / "Dockerfile").read_text()
@@ -284,10 +260,8 @@ def test_dockerfile_verifies_swagger_assets_before_installing_them():
 @pytest.mark.unit
 def test_netdata_claim_contract_keeps_tokens_out_of_logs():
     """Netdata claim wiring uses plural room env and redacts token output."""
-    monitoring_compose = (REPO_ROOT / "docker-compose.monitoring.yml").read_text()
     claim_script = (REPO_ROOT / "scripts/claim-netdata.sh").read_text()
 
-    assert "NETDATA_CLAIM_ROOMS:-${NETDATA_CLAIM_ROOM:-}" in monitoring_compose
     assert "Token: <redacted>" in claim_script
     assert "-token=<redacted>" in claim_script
     assert "${CLAIM_TOKEN:0:10}" not in claim_script

@@ -23,7 +23,6 @@ def test_pre_commit_runs_detect_secrets_with_committed_baseline():
     assert "        args: [--baseline, .secrets.baseline]\n" in config
     assert "pnpm-lock\\.yaml|uv\\.lock" in config
     assert "^frontend/css/dist/" in config
-    assert "^infra/ssl/" in config
     assert "      - id: detect-private-key\n" in config
 
 
@@ -53,7 +52,6 @@ def test_security_hatch_environment_exposes_blocking_secret_scan():
     assert "app/static/js/htmx.min.js" in security_scripts["scan-secrets"]
     assert "frontend/css/dist/*" in security_scripts["scan-secrets"]
     assert "frontend/pnpm-lock.yaml" in security_scripts["scan-secrets"]
-    assert "infra/ssl/*" in security_scripts["scan-secrets"]
     assert "pnpm-lock.yaml" in security_scripts["scan-secrets"]
     assert "uv.lock" in security_scripts["scan-secrets"]
     assert "|| true" not in security_scripts["scan-secrets"]
