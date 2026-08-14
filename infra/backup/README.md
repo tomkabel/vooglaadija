@@ -51,10 +51,7 @@ Always verify your backups work — a backup that has never been restored is onl
 # List backups
 ls -la infra/backup/backup-data/
 
-# Restore into a uniquely named scratch database (no --create; it only exists
-# inside the container), verify, then drop it:
-docker exec -i ytprocessor-db pg_restore -U postgres -d postgres -v < backup_file.dump 2>&1 | tail -5
-
+# Restore into a uniquely named scratch database, verify, then drop it:
 docker exec ytprocessor-db psql -U postgres -d postgres \
   -c 'CREATE DATABASE scratch_restore_test;'
 docker exec -i ytprocessor-db pg_restore -U postgres -d scratch_restore_test < backup_file.dump

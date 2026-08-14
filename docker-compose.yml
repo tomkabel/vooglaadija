@@ -463,7 +463,8 @@ services:
       RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
     entrypoint: |
       /bin/sh -c "
-        apk add --no-cache postgresql15-client >/dev/null 2>&1 || true
+        set -e
+        apk add --no-cache postgresql15-client >/dev/null 2>&1
         echo '0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root
         crond -f -l 2
       "
