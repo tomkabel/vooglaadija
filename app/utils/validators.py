@@ -128,7 +128,7 @@ async def _validate_hostname_not_private(hostname: str) -> bool:
         loop = asyncio.get_running_loop()
         addrs = await loop.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
         for _family, _type, _proto, _cname, sockaddr in addrs:
-            if _is_private_ip(sockaddr[0]):
+            if _is_private_ip(str(sockaddr[0])):
                 logger.warning("ssrf_private_ip_detected", hostname=hostname, ip=sockaddr[0])
                 return False
         return True
@@ -167,7 +167,7 @@ async def _check_redirect_target(url: str) -> bool:
                     if target:
                         addrs = socket.getaddrinfo(target, None, type=socket.SOCK_STREAM)
                         for _family, _type, _proto, _cname, sockaddr in addrs:
-                            if _is_private_ip(sockaddr[0]):
+                            if _is_private_ip(str(sockaddr[0])):
                                 return False
             # Non-redirect HTTP errors are fine — doesn't affect SSRF check
         except (urllib.error.URLError, TimeoutError, OSError):

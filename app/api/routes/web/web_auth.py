@@ -207,10 +207,10 @@ async def change_password(
 ):
     """Change current user's password and rotate CSRF after success."""
     return await _change_password_response(
-        request,
-        current_password,
-        new_password,
-        new_password_confirm,
-        current_user,
-        db,
+        request=request,
+        current_password=current_password,
+        new_password=new_password,
+        new_password_confirm=new_password_confirm,
+        current_user=current_user,
+        db=db,
     )
