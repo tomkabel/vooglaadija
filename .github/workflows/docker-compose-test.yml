@@ -149,14 +149,14 @@ jobs:
       - name: Test API health endpoint
         run: |
           echo "Testing API health at :8000..."
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health || echo "000")
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo "000")
 
           if [ "$response" != "200" ]; then
             echo "ERROR: API health check failed with status $response"
             exit 1
           fi
 
-          response_body=$(curl -s http://localhost:8000/api/v1/health)
+          response_body=$(curl -s http://localhost:8000/health)
           echo "API health response: $response_body"
           echo "API health check passed"
 
