@@ -113,6 +113,7 @@ services:
   # API — FastAPI application
   # ==========================================
   api:
+    container_name: ytprocessor-api
     image: ghcr.io/tomkabel/vooglaadija:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
@@ -157,6 +158,7 @@ services:
   # Worker — background job processor (yt-dlp)
   # ==========================================
   worker:
+    container_name: ytprocessor-worker
     image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
@@ -204,6 +206,7 @@ services:
   # PostgreSQL
   # ==========================================
   db:
+    container_name: ytprocessor-db
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
@@ -240,6 +243,7 @@ services:
   # Redis — job queue and cache
   # ==========================================
   redis:
+    container_name: ytprocessor-redis
     image: redis:7-alpine
     restart: unless-stopped
     # Use exec form for proper signal handling

@@ -121,16 +121,19 @@ preflight() {
 
   if command -v dig >/dev/null 2>&1; then HAVE_DIG=true; else HAVE_DIG=false; fi
 
-  # Detect public IP (distro-agnostic) and validate it
-  PUBLIC_IP=""
-  for endpoint in "https://api.ipify.org" "https://ifconfig.me/ip" "https://ipinfo.io/ip"; do
-    PUBLIC_IP=$(curl -fsS4 --max-time 10 "$endpoint" 2>/dev/null | tr -d '[:space:]' | head -c 64 || true)
-    is_valid_ipv4 "$PUBLIC_IP" && break
-    PUBLIC_IP=""
-  done
+  # Detect public IP (distro-agnostic) and validate it. PUBLIC_IP can be
+  # provided via the environment (useful for --non-interactive runs).
+  PUBLIC_IP="${PUBLIC_IP:-}"
+  if ! is_valid_ipv4 "$PUBLIC_IP"; then
+    for endpoint in "https://api.ipify.org" "https://ifconfig.me/ip" "https://ipinfo.io/ip"; do
+      PUBLIC_IP=$(curl -fsS4 --max-time 10 "$endpoint" 2>/dev/null | tr -d '[:space:]' | head -c 64 || true)
+      is_valid_ipv4 "$PUBLIC_IP" && break
+      PUBLIC_IP=""
+    done
+  fi
   while [[ -z "$PUBLIC_IP" ]] || ! is_valid_ipv4 "$PUBLIC_IP"; do
     if $NON_INTERACTIVE; then
-      die "Could not detect a valid public IPv4 address automatically. Set PUBLIC_IP and re-run."
+      die "Could not detect a valid public IPv4 address automatically. Set PUBLIC_IP=<server-ipv4> and re-run."
     fi
     prompt PUBLIC_IP "Could not detect public IP automatically. Enter the server's public IPv4"
     if [[ -n "$PUBLIC_IP" ]] && ! is_valid_ipv4 "$PUBLIC_IP"; then
@@ -190,25 +193,40 @@ cloudflare_api() { # method path [data]
 dns_setup() {
   log_step "Phase 2: DNS verification (Cloudflare)"
 
-  local zone_resp zone_id
-  zone_resp=$(cloudflare_api GET "/zones?name=${DEPLOY_DOMAIN}" || true)
-  zone_id=$(printf '%s' "$zone_resp" | python3 -c "
+  # Resolve the Cloudflare zone for DEPLOY_DOMAIN. The domain is often a
+  # subdomain (e.g. app.example.com) whose zone is the parent (example.com),
+  # so match by suffix and prefer the longest matching zone name.
+  local zone_info zone_id zone_name
+  # Walk a few pages so accounts with many zones still resolve correctly.
+  zone_info=""
+  for page in 1 2 3; do
+    zone_info=$(cloudflare_api GET "/zones?per_page=100&page=${page}" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
-    zones = [z for z in d.get('result', []) if z.get('name') == sys.argv[1]]
-    print(zones[0]['id'] if zones else '')
+    domain = sys.argv[1]
+    zones = [z for z in d.get('result', [])
+             if domain == z.get('name') or domain.endswith('.' + z.get('name', ''))]
+    if zones:
+        zones.sort(key=lambda z: len(z.get('name', '')), reverse=True)
+        print(zones[0]['id'] + '|' + zones[0]['name'])
 except Exception:
     print('')
-" "$DEPLOY_DOMAIN")
+" "$DEPLOY_DOMAIN" || true)
+    [[ -n "$zone_info" ]] && break
+  done
+  zone_id="${zone_info%%|*}"
+  zone_name="${zone_info#*|}"
 
   if [[ -z "$zone_id" ]]; then
-    log_warn "Domain '$DEPLOY_DOMAIN' was not found in this Cloudflare account (or the token lacks Zone:Read)."
+    log_warn "No Cloudflare zone found for '$DEPLOY_DOMAIN' (or the token lacks Zone:Read)."
     log_warn "The DNS-01 challenge requires the zone to be managed by Cloudflare."
     log_warn "Add the domain to Cloudflare (dash.cloudflare.com → Add a site), set your A records, then re-run."
     confirm "Continue anyway?" || exit 1
     return 0
   fi
+
+  log_info "Matched Cloudflare zone: ${zone_name:-$DEPLOY_DOMAIN}"
 
   # Ensure apex + wildcard A records point to this server (create if missing)
   for name in "$DEPLOY_DOMAIN" "*.$DEPLOY_DOMAIN"; do
