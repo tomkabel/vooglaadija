@@ -164,7 +164,7 @@ def test_production_configuration_is_parameterized_and_portable():
     compose = (REPO_ROOT / "docker-compose.yml").read_text()
 
     assert "DEPLOY_DOMAIN=example.com" in env_example
-    assert '"${DEPLOY_DOMAIN}"' in bootstrap or "${DEPLOY_DOMAIN}" in bootstrap
+    assert "${DEPLOY_DOMAIN}" in bootstrap
     assert "CORS_ORIGINS: ${CORS_ORIGINS:-" in compose
     assert "CLOUDFLARE_API_TOKEN" in bootstrap
     assert "read -r -s" in bootstrap  # token prompted without echoing
@@ -211,10 +211,9 @@ def test_compose_has_no_certbot_or_legacy_proxy_services():
         assert f"\n  {service_name}:\n" not in compose
 
     assert ".nginx-reload-required" not in compose
-    # docker.sock is only allowed for the opt-in backup scheduler
-    docker_sock_lines = [line for line in compose.splitlines() if "docker.sock" in line]
-    assert len(docker_sock_lines) == 1
-    assert "backup-cron" in docker_sock_lines[0] or "backup" in compose
+    # No runtime container mounts the host Docker socket (backup-cron uses the
+    # PostgreSQL client + cron image instead)
+    assert "docker.sock" not in compose
 
 
 @pytest.mark.unit

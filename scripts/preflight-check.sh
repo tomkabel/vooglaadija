@@ -84,32 +84,47 @@ check_port_conflicts() {
   local ports=("3000:Grafana" "9090:Prometheus" "8000:API" "5432:Postgres" "6380:Redis" "8082:Worker")
   local conflict_found=false
 
-  # Build a set of ports already used by Docker containers
-  # This prevents false positives when the compose stack is already running.
+  # Resolve this Compose project's name so we only skip ports published by
+  # containers that belong to THIS project. Ports held by unrelated containers
+  # (or non-Docker processes) are real conflicts and must be reported.
+  local compose_project=""
+  compose_project=$(docker compose -f docker-compose.yml config --format json 2>/dev/null | \
+    python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null || true)
+
+  # Build a set of ports already used by THIS project's containers
   local docker_ports=()
-  while IFS= read -r line; do
-    docker_ports+=("$line")
-  done < <(docker container ls --format '{{.Ports}}' 2>/dev/null | \
-    grep -oP ':\K\d+' | sort -u || true)
+  if [[ -n "$compose_project" ]]; then
+    local cid
+    while IFS= read -r cid; do
+      [[ -z "$cid" ]] && continue
+      local project_label ports
+      project_label=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid" 2>/dev/null || true)
+      [[ "$project_label" != "$compose_project" ]] && continue
+      ports=$(docker port "$cid" 2>/dev/null | grep -oP '-> .*:\K\d+$' | sort -u || true)
+      while IFS= read -r p; do
+        [[ -n "$p" ]] && docker_ports+=("$p")
+      done <<< "$ports"
+    done < <(docker container ls -q 2>/dev/null || true)
+  fi
 
   for entry in "${ports[@]}"; do
     local port="${entry%%:*}"
     local service="${entry#*:}"
 
-    # Skip if this port is already occupied by a Docker container
-    local is_docker=false
+    # Skip if this port is already occupied by a container of THIS compose project
+    local is_project_docker=false
     for dp in "${docker_ports[@]}"; do
       if [[ "$dp" == "$port" ]]; then
-        is_docker=true
+        is_project_docker=true
         break
       fi
     done
-    $is_docker && continue
+    $is_project_docker && continue
 
     if ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN; then
       local owner
       owner=$(ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'users:\(\K[^)]+' || echo "unknown")
-      log_warn "Port $port ($service) is in use by a non-Docker process: $owner"
+      log_warn "Port $port ($service) is in use by a non-Docker process or another container: $owner"
       echo -e "    This may prevent the container from starting on that port."
       conflict_found=true
     fi

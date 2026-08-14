@@ -92,6 +92,7 @@ async def login_page(
 async def login_form(
     request: Request,
     response: Response,
+    *,
     db: DbSession,
     email: Annotated[str, Form(max_length=255)],
     password: Annotated[str, Form(max_length=255)],
@@ -197,6 +198,7 @@ async def logout(request: Request):
 @limiter.limit("10/minute")
 async def change_password(
     request: Request,
+    *,
     current_password: Annotated[str, Form(max_length=255)],
     new_password: Annotated[str, Form(max_length=255)],
     new_password_confirm: Annotated[str, Form(max_length=255)],

@@ -36,7 +36,7 @@
 | `REFRESH_TOKEN_EXPIRE_DAYS`   | Refresh token expiry                         | `7`                     |
 | `FILE_EXPIRE_HOURS`           | Download link expiry                         | `24`                    |
 | `STORAGE_PATH`                | Local storage directory                      | `./storage`             |
-| `COOKIE_SECURE`               | Require HTTPS for cookies                    | `False`                 |
+| `COOKIE_SECURE`               | Require HTTPS for cookies                    | `True`                  |
 
 ### Observability
 
@@ -57,7 +57,7 @@
 | --------------------- | ------------------------- | --------------------------- |
 | `NETDATA_CLAIM_TOKEN` | NetData Cloud claim token | _(optional)_                |
 | `NETDATA_CLAIM_URL`   | NetData Cloud claim URL   | `https://app.netdata.cloud` |
-| `NETDATA_CLAIM_ROOM`  | NetData Cloud room ID     | _(optional)_                |
+| `NETDATA_CLAIM_ROOMS` | NetData Cloud room ID(s)  | _(optional)_                |
 
 ### Worker
 

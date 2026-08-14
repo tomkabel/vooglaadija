@@ -90,9 +90,8 @@ services:
         limits:
           cpus: '0.25'
           memory: 128M
-    image: alpine:latest
+    image: alpine:3.20
     restart: 'no'
-    exclude_from_hc: true # Coolify: ignore this one-shot service in health checks
     volumes:
       - storage:/app/storage:rw
     command: |
@@ -119,7 +118,7 @@ services:
     environment:
       <<: *common-env
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:8081,http://127.0.0.1:8080}
-      COOKIE_SECURE: ${COOKIE_SECURE:-False}
+      COOKIE_SECURE: ${COOKIE_SECURE:-True}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       # Enable observability
@@ -422,7 +421,6 @@ services:
     image: postgres:15-alpine
     profiles: ['backup']
     restart: 'no'
-    exclude_from_hc: true # Coolify: one-shot manual backup run
     volumes:
       - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
       - ./infra/backup/backup-data:/var/backup/ytprocessor
@@ -445,18 +443,11 @@ services:
         max-file: '3'
 
   backup-cron:
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-    image: alpine:latest
+    image: alpine:3.20
     profiles: ['backup']
     restart: unless-stopped
-    exclude_from_hc: true # Coolify: scheduler only, no health endpoint
     volumes:
       - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infra/backup/backup-data:/var/backup/ytprocessor
     environment:
       PGHOST: db
@@ -468,12 +459,15 @@ services:
       RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
     entrypoint: |
       /bin/sh -c "
+        apk add --no-cache postgresql15-client >/dev/null 2>&1 || true
         echo '0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root
         crond -f -l 2
       "
-    depends_on:
-      db:
-        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
     logging:
       driver: json-file
       options:

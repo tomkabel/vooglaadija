@@ -60,8 +60,8 @@ class Settings(BaseSettings):
     storage_path: str = "./storage"
     bcrypt_rounds: int = 12
 
-    # Cookie security — False for local dev (no HTTPS), True for production
-    cookie_secure: bool = False
+    # Cookie security — True for production (HTTPS), override to False for local HTTP dev
+    cookie_secure: bool = True
 
     # Feature flags — following FEATURE_*_ENABLED convention
     feature_chaos_api_enabled: bool = False
