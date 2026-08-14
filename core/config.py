@@ -138,6 +138,9 @@ class Settings(BaseSettings):
             self.database_url = "sqlite+aiosqlite:///:memory:"
         if not self.redis_url:
             self.redis_url = "redis://localhost:6379"
+        # Tests drive the app over plain HTTP (ASGITransport), where Secure
+        # cookies would be dropped. The production default stays True.
+        self.cookie_secure = False
         return self
 
     def _validate_ports(self) -> None:
