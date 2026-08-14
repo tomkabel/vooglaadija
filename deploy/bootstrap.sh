@@ -447,8 +447,9 @@ EOF
   done
 
   if ! $module_ok; then
-    log_warn "Caddy proxy did not become healthy with the Cloudflare DNS module."
-    log_warn "Check: docker logs coolify-proxy"
+    log_error "Caddy proxy did not become healthy with the Cloudflare DNS module."
+    log_error "Check: docker logs coolify-proxy"
+    die "Wildcard TLS cannot be provisioned without the Cloudflare DNS-01 module. Fix the proxy and re-run."
   fi
 }
 
@@ -488,11 +489,19 @@ ensure_api_token() {
 # HTTP status in COOLIFY_API_HTTP_CODE (e.g. "201").
 coolify_api() { # method path [data]
   local method="$1" path="$2" data="${3:-}"
+  # Keep the token out of curl's argv (visible via ps): pass the
+  # Authorization header through a 0600 header file instead.
+  local header_file
+  header_file=$(mktemp)
+  chmod 600 "$header_file"
+  printf 'Authorization: Bearer %s\n' "$COOLIFY_API_TOKEN" > "$header_file"
+
   local args=(-sS --max-time 30 -X "$method" "http://127.0.0.1:8000/api/v1${path}")
-  args+=(-H "Authorization: Bearer ${COOLIFY_API_TOKEN}" -H "Content-Type: application/json")
+  args+=(-H @"$header_file" -H "Content-Type: application/json")
   [[ -n "$data" ]] && args+=(-d "$data")
   local resp
   resp=$(curl "${args[@]}" -w $'\n%{http_code}' 2>/dev/null || true)
+  rm -f "$header_file"
   COOLIFY_API_HTTP_CODE=$(printf '%s' "$resp" | tail -n1)
   [[ "$COOLIFY_API_HTTP_CODE" =~ ^[0-9]+$ ]] || COOLIFY_API_HTTP_CODE="000"
   printf '%s' "$resp" | sed '$d'
@@ -578,7 +587,9 @@ except Exception:
 ")
   fi
 
+  APP_EXISTED=false
   if [[ -n "$app_uuid" ]] && ! $FORCE; then
+    APP_EXISTED=true
     log_info "Application already exists (${app_uuid}) — reusing it."
   else
     local payload
@@ -636,10 +647,32 @@ set_environment() {
   log_step "Phase 8: Environment variables (generated secrets)"
 
   local db_password redis_password secret_key grafana_password
-  db_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
-  redis_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
-  secret_key=$(openssl rand -hex 32)
-  grafana_password=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)
+  if [[ "${APP_EXISTED:-false}" == "true" ]]; then
+    # Re-run over an existing deployment: keep the stored credentials so the
+    # already-initialized PostgreSQL volume and Redis instance stay in sync.
+    log_info "Preserving existing deployment secrets (re-run)..."
+    local values
+    values=$(coolify_api GET "/applications/${APP_UUID}/envs" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    envs = d if isinstance(d, list) else d.get('envs', d.get('data', []))
+    vals = {e['key']: e.get('value', '') for e in envs}
+    print('|'.join(vals.get(k, '') for k in
+                   ('DB_PASSWORD', 'REDIS_PASSWORD', 'SECRET_KEY', 'GF_SECURITY_ADMIN_PASSWORD')))
+except Exception:
+    print('||||')
+" || true)
+    db_password=$(printf '%s' "$values" | cut -d'|' -f1)
+    redis_password=$(printf '%s' "$values" | cut -d'|' -f2)
+    secret_key=$(printf '%s' "$values" | cut -d'|' -f3)
+    grafana_password=$(printf '%s' "$values" | cut -d'|' -f4)
+  fi
+  # Generate secrets for fresh deployments (or for any key missing above).
+  [[ -n "${db_password:-}" ]] || db_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
+  [[ -n "${redis_password:-}" ]] || redis_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
+  [[ -n "${secret_key:-}" ]] || secret_key=$(openssl rand -hex 32)
+  [[ -n "${grafana_password:-}" ]] || grafana_password=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)
 
   local payload
   payload=$(python3 - "$db_password" "$redis_password" "$secret_key" "$grafana_password" "$DEPLOY_DOMAIN" <<'PY'
@@ -781,6 +814,7 @@ main() {
     summary ok
   else
     summary failed
+    exit 1
   fi
 }
 
