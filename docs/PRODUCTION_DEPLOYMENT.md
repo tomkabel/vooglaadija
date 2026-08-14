@@ -115,7 +115,7 @@ Or use the Coolify UI (deployment logs, container logs, metrics).
 
 ### Update secrets or environment
 
-Coolify UI → vooglaadija → Environment Variables. Restart the application afterwards.
+Coolify UI → vooglaadija → Environment Variables. Restart the application afterward.
 
 ### Enable optional profiles
 
@@ -123,7 +123,7 @@ The compose file ships with optional profiles. Edit the application's _Docker Co
 in Coolify (Advanced) to include a profile, e.g.:
 
 ```text
-up -d --pull always --remove-orphans --profile monitoring
+--profile monitoring up -d --pull always --remove-orphans
 ```
 
 - `monitoring` — Prometheus (loopback :9090) + Grafana (loopback :3000, preloaded dashboards)
@@ -175,15 +175,20 @@ move an existing instance:
 
 1. Back up the database from the old server (`pg_dump` or the old `backup` profile).
 2. Run `./deploy/bootstrap.sh` on the new server with the same domain.
-3. Restore: `docker exec -i ytprocessor-db psql -U postgres -d ytprocessor < dump.sql` (or
-   `pg_restore -U postgres -d ytprocessor dump.dump` for `-Fc` dumps).
+3. Restore inside the database container:
+   - plain SQL dump: `docker exec -i ytprocessor-db psql -U postgres -d ytprocessor < dump.sql`
+   - custom-format archive:
+     `docker exec -i ytprocessor-db pg_restore -U postgres -d ytprocessor --clean --if-exists < dump.dump`
 4. Point the domain's DNS at the new server (bootstrap can do this if the token allows).
 
 ## Security notes
 
 - Firewall: only ports 22, 80, 443 need to be open
-  (`ufw allow ssh && ufw allow 80/tcp && ufw allow 443/tcp`). Coolify's UI is on `:8000` — bind it
-  to loopback or protect it.
+  (`ufw allow ssh && ufw allow 80/tcp && ufw allow 443/tcp`). The Coolify dashboard listens on
+  `:8000` with a default admin password — do **not** leave it exposed to the internet:
+  - restrict it to your IP: `ufw allow from <your-ip> to any port 8000`, or
+  - use an SSH tunnel instead: `ssh -L 8000:127.0.0.1:8000 user@server`, then open
+    <http://127.0.0.1:8000> locally and keep port 8000 closed in the firewall.
 - Containers run as non-root with dropped capabilities, read-only rootfs and `no-new-privileges`
   (see `x-base-service` in `docker-compose.yml`).
 - Secrets live only in Coolify's encrypted store — never in the repo.

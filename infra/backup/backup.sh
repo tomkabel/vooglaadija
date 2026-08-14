@@ -24,7 +24,7 @@ fi
 export PGPASSWORD
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${OUTPUT_DIR}/ytprocessor_${TIMESTAMP}.sql.gz"
+BACKUP_FILE="${OUTPUT_DIR}/ytprocessor_${TIMESTAMP}.dump"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting backup of ${PGDATABASE}..."
 
@@ -47,6 +47,6 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backup complete: ${BACKUP_FILE} (${SIZE})"
 
 # Cleanup old backups (keep last 7 days by default)
 RETENTION_DAYS="${RETENTION_DAYS:-7}"
-find "${OUTPUT_DIR}" -name "ytprocessor_*.sql.gz" -mtime +${RETENTION_DAYS} -delete 2>/dev/null || true
+find "${OUTPUT_DIR}" -name "ytprocessor_*.dump" -mtime +${RETENTION_DAYS} -delete 2>/dev/null || true
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Old backups cleaned up (retention: ${RETENTION_DAYS} days)"

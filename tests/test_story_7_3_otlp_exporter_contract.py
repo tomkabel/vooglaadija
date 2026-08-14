@@ -102,8 +102,9 @@ def test_compose_and_env_document_otlp_endpoint_contract():
     )
     assert collector_env["OTEL_EXPORTER_OTLP_INSECURE"] == "${OTEL_EXPORTER_OTLP_INSECURE:-false}"
     # Collector ports are exposed internally (no host binding; proxy/CI use local override)
-    assert "4317" in otel_collector["expose"]
-    assert "4318" in otel_collector["expose"]
+    exposed = {str(port) for port in otel_collector["expose"]}
+    assert "4317" in exposed
+    assert "4318" in exposed
     assert "ports" not in otel_collector
     assert "DATABASE_URL: postgresql+asyncpg://" not in base_compose
     assert "REDIS_URL: redis://:" not in base_compose

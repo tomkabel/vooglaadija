@@ -147,7 +147,7 @@ async def _check_redirect_target(url: str) -> bool:
     """
 
     class _NoFollowRedirects(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: PLR0917
             req._redirect_target = newurl  # stash for inspection
             raise urllib.error.HTTPError(url, code, "SSRF redirect check", headers, fp)
 

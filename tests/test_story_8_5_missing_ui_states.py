@@ -62,7 +62,7 @@ async def test_settings_username_save_button_has_scoped_loading_contract():
     """The rendered settings page and JS expose username-only save loading state."""
     settings_js = _source("app/static/js/settings.js")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
         access_token = await create_test_user_and_login(client)
         response = await client.get("/web/settings", cookies={"access_token": access_token})
 
@@ -91,7 +91,7 @@ async def test_settings_username_save_button_has_scoped_loading_contract():
 @pytest.mark.asyncio
 async def test_settings_username_htmx_fragments_cover_success_and_error_states():
     """The username save endpoint returns HTMX fragments for success and critical errors."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
         access_token = await create_test_user_and_login(client)
         client.cookies.set("access_token", access_token)
 
@@ -138,7 +138,7 @@ async def test_chaos_lab_polling_failure_state_is_page_scoped():
     previous = settings.feature_chaos_api_enabled
     settings.feature_chaos_api_enabled = True
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
             response = await client.get("/web/chaos-lab")
     finally:
         settings.feature_chaos_api_enabled = previous
@@ -176,11 +176,11 @@ async def test_chaos_lab_status_route_covers_success_and_feature_flag_error(monk
         "app.api.routes.web.web_dashboard.get_all_chaos_status",
         new=AsyncMock(return_value=status),
     ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
             success_response = await client.get("/web/chaos-lab/status")
 
     monkeypatch.setattr(settings, "feature_chaos_api_enabled", False)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
         page_404_response = await client.get("/web/chaos-lab")
         status_404_response = await client.get("/web/chaos-lab/status")
 

@@ -13,6 +13,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: api
+    environment:
+      # Local dev runs over plain HTTP, so cookies must not require HTTPS.
+      COOKIE_SECURE: 'False'
     ports:
       - '127.0.0.1:8000:8000'
 
@@ -35,5 +38,5 @@ services:
 
   otel-collector:
     ports:
-      - '4317:4317'
-      - '4318:4318'
+      - '127.0.0.1:4317:4317'
+      - '127.0.0.1:4318:4318'

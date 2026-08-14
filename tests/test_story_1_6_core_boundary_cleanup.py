@@ -39,8 +39,10 @@ def test_worker_deleted_shim_import_reports_actionable_failure(tmp_path):
     violations = import_analysis.analyze_project(tmp_path)
 
     assert [violation.format(tmp_path) for violation in violations] == [
-        "worker/processor.py:1: from app.services import redis_client "
-        "(worker must not import API, schema, model, or removed shim app modules)"
+        (
+            "worker/processor.py:1: from app.services import redis_client "
+            "(worker must not import API, schema, model, or removed shim app modules)"
+        )
     ]
 
 
@@ -55,14 +57,18 @@ def test_worker_deleted_shim_import_reports_actionable_failure(tmp_path):
         (
             "core/queue.py",
             "from worker.main import run\n",
-            "core/queue.py:1: from worker.main import run "
-            "(core must not import app or worker modules)",
+            (
+                "core/queue.py:1: from worker.main import run "
+                "(core must not import app or worker modules)"
+            ),
         ),
         (
             "app/main.py",
             "from worker.processor import process_job\n",
-            "app/main.py:1: from worker.processor import process_job "
-            "(app must not import worker modules)",
+            (
+                "app/main.py:1: from worker.processor import process_job "
+                "(app must not import worker modules)"
+            ),
         ),
     ],
 )
@@ -104,23 +110,31 @@ def test_worker_allows_core_worker_and_api_independent_app_services(tmp_path):
     [
         (
             "from app.api.routes import downloads\n",
-            "worker/processor.py:1: from app.api.routes import downloads "
-            "(worker must not import API, schema, model, or removed shim app modules)",
+            (
+                "worker/processor.py:1: from app.api.routes import downloads "
+                "(worker must not import API, schema, model, or removed shim app modules)"
+            ),
         ),
         (
             "from app.schemas.downloads import DownloadResponse\n",
-            "worker/processor.py:1: from app.schemas.downloads import DownloadResponse "
-            "(worker must not import API, schema, model, or removed shim app modules)",
+            (
+                "worker/processor.py:1: from app.schemas.downloads import DownloadResponse "
+                "(worker must not import API, schema, model, or removed shim app modules)"
+            ),
         ),
         (
             f"from {'.'.join(('app', 'models'))} import User\n",
-            f"worker/processor.py:1: from {'.'.join(('app', 'models'))} import User "
-            "(worker must not import API, schema, model, or removed shim app modules)",
+            (
+                f"worker/processor.py:1: from {'.'.join(('app', 'models'))} import User "
+                "(worker must not import API, schema, model, or removed shim app modules)"
+            ),
         ),
         (
             "from app import config\n",
-            "worker/processor.py:1: from app import config "
-            "(worker must not import API, schema, model, or removed shim app modules)",
+            (
+                "worker/processor.py:1: from app import config "
+                "(worker must not import API, schema, model, or removed shim app modules)"
+            ),
         ),
     ],
 )
@@ -150,8 +164,10 @@ def test_import_boundary_cli_reports_deterministic_failure_output(tmp_path):
     assert result.stderr == ""
     assert result.stdout.splitlines() == [
         "app/main.py:1: import worker.processor (app must not import worker modules)",
-        "worker/processor.py:1: from app.api.routes import downloads "
-        "(worker must not import API, schema, model, or removed shim app modules)",
+        (
+            "worker/processor.py:1: from app.api.routes import downloads "
+            "(worker must not import API, schema, model, or removed shim app modules)"
+        ),
     ]
 
 

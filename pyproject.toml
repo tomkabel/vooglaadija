@@ -79,7 +79,7 @@ test = [
     "aiosqlite",
 ]
 lint = [
-    "ruff",
+    "ruff==0.16.3",
 ]
 type = [
     "mypy",
@@ -107,7 +107,7 @@ test = [
     "bcrypt==4.0.1",
 ]
 lint = [
-    "ruff>=0.1.0",
+    "ruff==0.16.3",
 ]
 type-check = [
     "mypy>=1.0.0",

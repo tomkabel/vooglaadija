@@ -10,7 +10,7 @@ Async video media extraction API with job queue and real-time status streaming.
 
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-GPLv3-A41E35?style=for-the-badge&logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0.html)
-[![Version](https://img.shields.io/badge/Version-1.0.0-22D3EE?style=for-the-badge)](https://github.com/tomkabel/team21-vooglaadija)
+[![Version](https://img.shields.io/badge/Version-1.0.0-22D3EE?style=for-the-badge)](https://github.com/tomkabel/vooglaadija)
 [![FastAPI](https://img.shields.io/badge/FastAPI-26A69A?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -133,8 +133,8 @@ Cloudflare DNS-01, auto-renewed), deploys the production Docker Compose stack an
 continuous deployment from GitHub:
 
 ```bash
-git clone https://github.com/tomkabel/team21-vooglaadija.git
-cd team21-vooglaadija
+git clone https://github.com/tomkabel/vooglaadija.git
+cd vooglaadija
 sudo ./deploy/bootstrap.sh
 ```
 
@@ -143,8 +143,8 @@ See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 ### Local Development
 
 ```bash
-git clone https://github.com/tomkabel/team21-vooglaadija.git
-cd team21-vooglaadija
+git clone https://github.com/tomkabel/vooglaadija.git
+cd vooglaadija
 
 cp .env.example .env
 # Minimum required:
@@ -317,7 +317,7 @@ GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 <div align="center">
 
-[![GitHub](https://img.shields.io/badge/View_on-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/tomkabel/team21-vooglaadija)
-[![Issues](https://img.shields.io/badge/Report_Issue-EE3B3B?style=for-the-badge&logo=github)](https://github.com/tomkabel/team21-vooglaadija/issues)
+[![GitHub](https://img.shields.io/badge/View_on-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/tomkabel/vooglaadija)
+[![Issues](https://img.shields.io/badge/Report_Issue-EE3B3B?style=for-the-badge&logo=github)](https://github.com/tomkabel/vooglaadija/issues)
 
 </div>

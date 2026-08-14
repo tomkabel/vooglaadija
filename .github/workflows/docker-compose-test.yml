@@ -121,6 +121,11 @@ jobs:
           docker compose logs worker 2>&1 | tail -100 || true
 
           worker_cid=$(docker compose ps -q worker 2>/dev/null || true)
+          if [ -z "$worker_cid" ]; then
+            echo "ERROR: Worker container was not created by compose"
+            docker compose ps 2>&1 || true
+            exit 1
+          fi
           container_status=$(docker inspect --format='{{.State.Status}}' "$worker_cid" 2>/dev/null || echo "not_found")
           if [ "$container_status" != "running" ]; then
             echo "ERROR: Worker container status is '$container_status', expected 'running'"

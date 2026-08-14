@@ -68,6 +68,7 @@ async def _demo_user_or_raise(db: DbSession, demo_email: str) -> User:
 
 async def _change_password_response(
     request: Request,
+    *,
     current_password: str,
     new_password: str,
     new_password_confirm: str,

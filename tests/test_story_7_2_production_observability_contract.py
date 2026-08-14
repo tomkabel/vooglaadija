@@ -50,7 +50,7 @@ def test_compose_explicitly_enables_metrics_and_tracing():
     assert "FEATURE_METRICS_ENABLED: ${FEATURE_METRICS_ENABLED:-true}" in compose
     assert "FEATURE_TRACING_ENABLED: ${FEATURE_TRACING_ENABLED:-true}" in compose
     assert "CORS_ORIGINS: ${CORS_ORIGINS:-" in compose
-    assert "COOKIE_SECURE: ${COOKIE_SECURE:-False}" in compose
+    assert "COOKIE_SECURE: ${COOKIE_SECURE:-True}" in compose
     assert "DATABASE_URL: postgresql+asyncpg://" not in compose
     assert "REDIS_URL: redis://:" not in compose
 

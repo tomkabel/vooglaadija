@@ -62,8 +62,8 @@ def test_base_compose_services_exist_and_use_json_file_rotation():
         assert logging_config is not None, f"{service_name} must define logging"
         assert logging_config["driver"] == LOG_DRIVER
         options = logging_config["options"]
-        assert options["max-size"] == LOG_MAX_SIZE
-        assert options["max-file"] == LOG_MAX_FILES
+        assert str(options["max-size"]) == LOG_MAX_SIZE
+        assert str(options["max-file"]) == LOG_MAX_FILES
 
 
 @pytest.mark.unit
