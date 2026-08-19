@@ -15,11 +15,11 @@ frontend/ ──► app/ ──► core/ ◄── worker/
 
 | Rule                                                                                                                                                             | Enforcement                                                                | Rationale                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `core/` must not import `app/` or `worker/`                                                                                                                      | ruff `TID251` banned-api (`worker`) + `scripts/import_analysis.py`  | 6.031: representation independence; 6.033: modularity             |
+| `core/` must not import `app/` or `worker/`                                                                                                                      | ruff `TID251` banned-api (`worker`) + `scripts/import_analysis.py`         | 6.031: representation independence; 6.033: modularity             |
 | `app/` must not import `worker/`                                                                                                                                 | ruff `TID251` banned-api (`worker`) + `import_analysis.py`                 | dependency arrow points inward                                    |
 | `worker/` must not import `app.api`, `app.schemas`, `app.models`, `app.config`, `app.database`, `app.metrics`, `app.logging_config`, `app.services.redis_client` | `scripts/import_analysis.py` (zone-aware AST check; TID251 is global-only) | worker is a separate process, not a second entry point to the API |
 | `worker/` may import only `core/`, `worker/`, and API-independent `app.services.*`                                                                               | `scripts/import_analysis.py`                                               |                                                                   |
-| No shim/re-export modules (`app/config.py`, `app/database.py`, …)                                                                                                | code review (import_analysis.py covers layering + the yt-dlp ACL only)       | CRITIQUE.md lesson: indirection layers hide real boundaries       |
+| No shim/re-export modules (`app/config.py`, `app/database.py`, …)                                                                                                | code review (import_analysis.py covers layering + the yt-dlp ACL only)     | CRITIQUE.md lesson: indirection layers hide real boundaries       |
 
 ## Anti-Corruption Layer — yt-dlp (gate)
 
@@ -55,8 +55,8 @@ following thresholds are measured weekly; when the backlog is cleared they promo
 - Cold stable files are NOT findings, even if large.
 - Files with hotspot score > 0 AND coverage < 60% are top priority (Feathers: feedback loops).
 - Temporal coupling: file pairs co-changed in ≥ 80% of commits touching either (min 5 co-commits)
-  flag leaky abstractions — especially cross-layer pairs (`app/api` ↔ `frontend`, `app` ↔ `worker`).
-  Investigation should look for shared concepts implemented twice.
+  flag leaky abstractions — especially cross-layer pairs (`app/api` ↔ `frontend`, `app` ↔
+  `worker`). Investigation should look for shared concepts implemented twice.
 
 ## Error definition (measure)
 
