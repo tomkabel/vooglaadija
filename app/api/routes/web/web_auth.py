@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Query, Request, Response
+from fastapi import APIRouter, Depends, Form, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
@@ -90,15 +90,19 @@ async def login_page(
 class LoginForm:
     """Bound login form fields with validation (capped return_url)."""
 
-    def __init__(
-        self,
-        email: Annotated[str, Form(max_length=255)],
-        password: Annotated[str, Form(max_length=255)],
-        return_url: Annotated[str | None, Form(max_length=500)] = None,
-    ) -> None:
+    def __init__(self, email: str, password: str, return_url: str | None) -> None:
         self.email = email
         self.password = password
         self.return_url = return_url
+
+
+async def parse_login_form(
+    email: Annotated[str, Form(max_length=255)],
+    password: Annotated[str, Form(max_length=255)],
+    return_url: Annotated[str | None, Form(max_length=500)] = None,
+) -> LoginForm:
+    """Dependency that validates the login form fields (incl. return_url)."""
+    return LoginForm(email=email, password=password, return_url=return_url)
 
 
 @router.post("/login")
@@ -108,7 +112,7 @@ async def login_form(
     response: Response,
     *,
     db: DbSession,
-    form: LoginForm,
+    form: LoginForm = Depends(parse_login_form),
 ):
     """Handle login form submission via HTMX or regular POST."""
     if not await validate_csrf_token(request):
