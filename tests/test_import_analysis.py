@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from scripts.import_analysis import analyze_project, yt_dlp_acl_reason
 
 

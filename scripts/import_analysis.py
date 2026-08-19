@@ -134,9 +134,7 @@ def yt_dlp_acl_reason(path: Path, project_root: Path | None = None) -> str | Non
     # is a repo-relative path, so an absolute path (path.as_posix()) would never
     # match and the facade would be falsely flagged.
     relative = (
-        path.relative_to(project_root).as_posix()
-        if project_root is not None
-        else path.as_posix()
+        path.relative_to(project_root).as_posix() if project_root is not None else path.as_posix()
     )
     if relative == YT_DLP_ACL_MODULE:
         return None
