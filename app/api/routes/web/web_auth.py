@@ -87,6 +87,20 @@ async def login_page(
     return response
 
 
+class LoginForm:
+    """Bound login form fields with validation (capped return_url)."""
+
+    def __init__(
+        self,
+        email: Annotated[str, Form(max_length=255)],
+        password: Annotated[str, Form(max_length=255)],
+        return_url: Annotated[str | None, Form(max_length=500)] = None,
+    ) -> None:
+        self.email = email
+        self.password = password
+        self.return_url = return_url
+
+
 @router.post("/login")
 @limiter.limit("5/minute")
 async def login_form(
@@ -94,18 +108,16 @@ async def login_form(
     response: Response,
     *,
     db: DbSession,
-    email: Annotated[str, Form(max_length=255)],
-    password: Annotated[str, Form(max_length=255)],
-    return_url: Annotated[str | None, Form(max_length=500)] = None,
+    form: LoginForm,
 ):
     """Handle login form submission via HTMX or regular POST."""
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
         )
-    result = await db.execute(select(User).where(User.email == email, not_deleted()))
+    result = await db.execute(select(User).where(User.email == form.email, not_deleted()))
     user = result.scalar_one_or_none()
-    if user is None or not await verify_password(password, user.password_hash):
+    if user is None or not await verify_password(form.password, user.password_hash):
         return _htmx_or_redirect(
             request, 401, _error_html("Invalid email or password"), "/web/login?error=1"
         )
@@ -115,7 +127,7 @@ async def login_form(
         )
     access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
-    safe_redirect = _validate_redirect_url(return_url, "/web/downloads")
+    safe_redirect = _validate_redirect_url(form.return_url, "/web/downloads")
     return _login_success_response(request, access_token, refresh_token, safe_redirect, response)
 
 
