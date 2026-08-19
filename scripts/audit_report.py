@@ -273,9 +273,7 @@ def deptry_findings() -> tuple[list[dict[str, object]], str]:
     could not run: if the JSON file is absent we return the tool's error text as
     the note so the failure is visible rather than silently green.
     """
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".json", dir=str(ROOT), delete=False
-    ) as handle:
+    with tempfile.NamedTemporaryFile("w", suffix=".json", dir=str(ROOT), delete=False) as handle:
         json_path = Path(handle.name)
     try:
         proc = run(["deptry", ".", "--json-output", str(json_path)], timeout=180)
@@ -670,9 +668,7 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
         for item in measures[key][:10]:
             if isinstance(item, dict):
                 detail = item.get("message", item.get("name", item.get("type", "")))
-                out.append(
-                    f"- `{item.get('path', '')}:{item.get('line', '')}` {detail}"
-                )
+                out.append(f"- `{item.get('path', '')}:{item.get('line', '')}` {detail}")
     if measures.get("deptry_note"):
         out.append("")
         out.append(f"_deptry could not run: {measures['deptry_note'][:300]}_")
