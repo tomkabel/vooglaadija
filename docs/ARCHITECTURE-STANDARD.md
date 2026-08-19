@@ -19,7 +19,7 @@ frontend/ ──► app/ ──► core/ ◄── worker/
 | `app/` must not import `worker/`                                                                                                                                 | ruff `TID251` banned-api (`worker`) + `import_analysis.py`                 | dependency arrow points inward                                    |
 | `worker/` must not import `app.api`, `app.schemas`, `app.models`, `app.config`, `app.database`, `app.metrics`, `app.logging_config`, `app.services.redis_client` | `scripts/import_analysis.py` (zone-aware AST check; TID251 is global-only) | worker is a separate process, not a second entry point to the API |
 | `worker/` may import only `core/`, `worker/`, and API-independent `app.services.*`                                                                               | `scripts/import_analysis.py`                                               |                                                                   |
-| No shim/re-export modules (`app/config.py`, `app/database.py`, …)                                                                                                | code review (import_analysis.py covers layering + the yt-dlp ACL only)     | CRITIQUE.md lesson: indirection layers hide real boundaries       |
+| No shim/re-export modules (`app/config.py`, `app/database.py`, …)                                                                                                | `scripts/import_analysis.py` (forbidden shim-path check)                   | CRITIQUE.md lesson: indirection layers hide real boundaries       |
 
 ## Anti-Corruption Layer — yt-dlp (gate)
 

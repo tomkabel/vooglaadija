@@ -38,6 +38,8 @@ HOTSPOT_LIMIT = 10
 COMPLEXITY_CONFIG = ROOT / "scripts" / "audit" / "ruff-complexity.toml"
 VULTURE_WHITELIST = ROOT / "scripts" / "audit" / "vulture_whitelist.py"
 BASELINE_PATH = ROOT / ".github" / "audit-baseline.json"
+# Repo-relative on purpose (see scan_issues_delta).
+BASELINE_FILE = ".secrets.baseline"
 
 COMMENTED_CODE_RE = re.compile(
     r"^\s*#\s*(import |from |def |class |if |for |while |return |try:|except |"
@@ -47,9 +49,6 @@ WINDOW_GLOBAL_RE = re.compile(r"\bwindow\.([A-Za-z_]\w*)\s*=")
 TODO_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b")
 VULTURE_LINE_RE = re.compile(
     r"^(?P<path>[^:]+):(?P<line>\d+):\s+(?P<name>.+?)\s+\((?P<conf>\d+)% confidence\)$"
-)
-SCAN_OUTPUT_LINE_RE = re.compile(
-    r"^(?P<path>[^:]+):(?P<line>\d+):.*Secret detected: (?P<secret_type>.+)$"
 )
 
 
@@ -70,6 +69,25 @@ def run(
         return subprocess.CompletedProcess(cmd, 127, "", f"not found: {cmd[0]}")
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(cmd, 124, "", f"timed out after {timeout}s")
+
+
+def tool_error(
+    tool: str, proc: subprocess.CompletedProcess[str], *, ok_codes: tuple[int, ...]
+) -> str:
+    """Return a message when ``tool`` did not run successfully, else ``""``.
+
+    Exit codes carry meaning: a linter exits non-zero *because it found
+    findings*, so every caller declares the codes that mean "the tool ran".
+    Anything else (ruff/vulture ``2`` = tool error, ``124`` = timeout, ``127`` =
+    missing binary) means the check could not run — parsing its empty stdout and
+    reporting "0 findings" would turn a tool failure into a clean report.
+    """
+    if proc.returncode in ok_codes:
+        return ""
+    output = proc.stderr.strip() or proc.stdout.strip()
+    lines = output.splitlines()
+    reason = lines[-1].strip() if lines else "no output"
+    return f"{tool} failed (exit {proc.returncode}): {reason[:200]}"
 
 
 def python_files() -> list[Path]:
@@ -143,9 +161,39 @@ def _iter_commit_file_sets() -> list[set[str]]:
     return commit_files
 
 
-def complexity_violations() -> list[dict[str, object]]:
+def ruff_json_findings(
+    cmd: list[str], label: str, timeout: int = 120
+) -> tuple[list[dict[str, object]], str]:
+    """Run a JSON-emitting ruff check and return ``(findings, error)``.
+
+    Shared by every ruff-backed check (single implementation per concept):
+    ruff exits ``0`` when clean, ``1`` when it reports findings and ``2`` when
+    the tool itself fails, so ``2`` (and run()'s 124/127) must never be parsed
+    as "no findings".
+    """
+    proc = run(cmd, timeout=timeout)
+    error = tool_error(label, proc, ok_codes=(0, 1))
+    if error:
+        return [], error
+    try:
+        raw = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return [], f"{label} produced unparseable JSON output"
+    findings: list[dict[str, object]] = [
+        {
+            "path": _relative(entry["filename"]),
+            "line": entry.get("location", {}).get("row"),
+            "code": entry["code"],
+            "message": entry["message"],
+        }
+        for entry in raw
+    ]
+    return findings, ""
+
+
+def complexity_violations() -> tuple[list[dict[str, object]], str]:
     """Violations of the strict complexity thresholds (measure, not gate)."""
-    proc = run(
+    return ruff_json_findings(
         [
             "ruff",
             "check",
@@ -154,25 +202,9 @@ def complexity_violations() -> list[dict[str, object]]:
             "--output-format=json",
             *SOURCE_DIRS,
         ],
+        "ruff (complexity pass)",
         timeout=180,
     )
-    violations: list[dict[str, object]] = []
-    if not proc.stdout.strip().startswith("["):
-        return violations
-    try:
-        raw = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return violations
-    for entry in raw:
-        violations.append(
-            {
-                "path": _relative(entry["filename"]),
-                "line": entry.get("location", {}).get("row"),
-                "code": entry["code"],
-                "message": entry["message"],
-            }
-        )
-    return violations
 
 
 def _relative(path: str) -> str:
@@ -236,8 +268,8 @@ def window_globals() -> list[dict[str, object]]:
     return findings
 
 
-def vulture_findings() -> list[dict[str, object]]:
-    """Dead code via vulture (>=80% confidence).
+def vulture_findings() -> tuple[list[dict[str, object]], str]:
+    """Dead code via vulture (>=80% confidence); returns ``(findings, error)``.
 
     Whitelist (scripts/audit/vulture_whitelist.py) is auto-detected by vulture
     via its "# vulture whitelist" marker because scripts/ is part of the scan.
@@ -260,7 +292,9 @@ def vulture_findings() -> list[dict[str, object]]:
                     "confidence": int(match.group("conf")),
                 }
             )
-    return findings
+    # vulture: 0 = clean, 3 = dead code reported, 1 = invalid input,
+    # 2 = invalid arguments.
+    return findings, tool_error("vulture", proc, ok_codes=(0, 3))
 
 
 def deptry_findings() -> tuple[list[dict[str, object]], str]:
@@ -360,15 +394,47 @@ def jscpd_clones() -> tuple[list[dict[str, object]], str]:
     return clones, ""
 
 
+def _parse_scan_report(stdout: str) -> list[dict[str, object]]:
+    """Parse the hook's ``--json`` report into location-only entries.
+
+    Only the reported location metadata (file, line, detector name) is kept; the
+    hook's hashed values are dropped here, so no scanned value ever reaches a
+    report.
+    """
+    try:
+        report = json.loads(stdout or "{}")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(report, dict):
+        return []
+    results = report.get("results", {})
+    if not isinstance(results, dict):
+        return []
+    entries: list[dict[str, object]] = []
+    for path, items in sorted(results.items()):
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            entries.append(
+                {
+                    "path": path,
+                    "line": item.get("line_number", 0),
+                    "type": item.get("type", "unknown"),
+                }
+            )
+    return entries
+
+
 def scan_issues_delta() -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Detected-issues delta against the committed baseline (detect-secrets hook).
 
-    Returns ``(findings, errors)``. An unavailable scanner or a missing baseline
-    is an audit *error*, not a clean result and **not** a secret: it is reported
-    separately so the report never claims "Secrets delta: 0" while scanning
-    nothing, and never mislabels a missing tool as a leaked secret (which would
-    otherwise trigger the "rotate the leaked secret" remediation text).
-    The audit env installs the security group so the hook is present in CI.
+    Returns ``(findings, errors)``. An unavailable scanner, a missing baseline
+    or a failed scan is an audit *error*, not a clean result and **not** a
+    secret: it is reported separately so the report never claims "Secrets delta:
+    0" while scanning nothing, and never mislabels a tool failure as a leaked
+    secret (which would otherwise trigger the "rotate the leaked secret"
+    remediation text). The audit env installs the security group so the hook is
+    present in CI.
     """
     errors: list[dict[str, object]] = []
     hook = shutil.which("detect-secrets-hook")
@@ -381,13 +447,13 @@ def scan_issues_delta() -> tuple[list[dict[str, object]], list[dict[str, object]
             }
         )
         return [], errors
-    baseline = ROOT / ".secrets.baseline"
+    baseline = ROOT / BASELINE_FILE
     if not baseline.exists():
         errors.append(
             {
                 "path": "<.secrets.baseline missing>",
                 "line": 0,
-                "type": "no secret baseline — run detect-secrets scan and commit the baseline",
+                "type": "no baseline — run detect-secrets scan and commit the baseline",
             }
         )
         return [], errors
@@ -407,17 +473,25 @@ def scan_issues_delta() -> tuple[list[dict[str, object]], list[dict[str, object]
         "uv.lock",
     )
     files = [f for f in files if not any(f.startswith(ex) for ex in excluded)]
-    proc = run([hook, "--baseline", str(baseline), *files], timeout=240)
-    findings: list[dict[str, object]] = []
-    for line in proc.stdout.splitlines():
-        if match := SCAN_OUTPUT_LINE_RE.match(line):
-            findings.append(
-                {
-                    "path": match.group("path"),
-                    "line": int(match.group("line")),
-                    "type": match.group("secret_type"),
-                }
-            )
+    # --json makes the report machine-readable: the human-readable output prints
+    # "Secret Type"/"Location" blocks that no single-line pattern can parse.
+    # The baseline is passed *repo-relative* (run() executes in ROOT): detect-
+    # secrets' own is_baseline_file filter compares the scanned path against this
+    # value, so an absolute path makes the hook scan the baseline itself and
+    # report every recorded hash as a new finding.
+    proc = run([hook, "--json", "--baseline", BASELINE_FILE, *files], timeout=240)
+    findings = _parse_scan_report(proc.stdout)
+    # The hook exits 1 both when it reports issues and when it cannot run (an
+    # unreadable baseline, for instance), so a non-zero exit that yields nothing
+    # parseable means the delta is unknown, not empty.
+    if proc.returncode != 0 and not findings:
+        errors.append(
+            {
+                "path": "<scan failed>",
+                "line": 0,
+                "type": tool_error("detect-secrets-hook", proc, ok_codes=(0,)),
+            }
+        )
     return findings, errors
 
 
@@ -450,64 +524,36 @@ def lockfile_check() -> tuple[bool, str]:
     return proc.returncode == 0, (proc.stderr or proc.stdout).strip()
 
 
-def boundary_violations() -> list[dict[str, object]]:
+def boundary_violations() -> tuple[list[dict[str, object]], str]:
     """Import-boundary violations (zone-aware AST verifier)."""
-    proc = run(["python", "scripts/import_analysis.py"], timeout=120)
+    proc = run([sys.executable, "scripts/import_analysis.py"], timeout=120)
     violations: list[dict[str, object]] = []
     for line in proc.stdout.splitlines():
         if ":" in line and not line.startswith("Import boundary check"):
             path, rest = line.split(":", 1)
             violations.append({"path": path, "detail": rest.strip()})
-    return violations
+    # The verifier exits 1 *with* the violations printed; a crash exits non-zero
+    # and prints nothing parseable, so that combination is a tool failure rather
+    # than a clean boundary.
+    if violations:
+        return violations, ""
+    return violations, tool_error("scripts/import_analysis.py", proc, ok_codes=(0,))
 
 
-def unused_imports() -> list[dict[str, object]]:
+def unused_imports() -> tuple[list[dict[str, object]], str]:
     """Unused imports/variables (ruff F401/F841) — gate category."""
-    proc = run(
+    return ruff_json_findings(
         ["ruff", "check", "--select", "F401,F841", "--output-format=json", *SOURCE_DIRS],
-        timeout=120,
+        "ruff (F401/F841)",
     )
-    findings: list[dict[str, object]] = []
-    if not proc.stdout.strip().startswith("["):
-        return findings
-    try:
-        raw = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return findings
-    for entry in raw:
-        findings.append(
-            {
-                "path": _relative(entry["filename"]),
-                "line": entry.get("location", {}).get("row"),
-                "code": entry["code"],
-                "message": entry["message"],
-            }
-        )
-    return findings
 
 
-def tid251_violations() -> list[dict[str, object]]:
+def tid251_violations() -> tuple[list[dict[str, object]], str]:
     """Banned imports (layering + yt-dlp ACL) from the main ruff config."""
-    proc = run(
-        ["ruff", "check", "--select", "TID251", "--output-format=json", *SOURCE_DIRS], timeout=120
+    return ruff_json_findings(
+        ["ruff", "check", "--select", "TID251", "--output-format=json", *SOURCE_DIRS],
+        "ruff (TID251)",
     )
-    findings: list[dict[str, object]] = []
-    if not proc.stdout.strip().startswith("["):
-        return findings
-    try:
-        raw = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return findings
-    for entry in raw:
-        findings.append(
-            {
-                "path": _relative(entry["filename"]),
-                "line": entry.get("location", {}).get("row"),
-                "code": entry["code"],
-                "message": entry["message"],
-            }
-        )
-    return findings
 
 
 def large_files() -> list[dict[str, object]]:
@@ -629,8 +675,14 @@ def fix_commands(measures: dict[str, object]) -> list[str]:
         )
     if measures.get("scanner_errors"):
         commands.append(
-            "secret scanner unavailable or baseline missing — install the security "
-            "dependency group and commit .secrets.baseline before trusting the secrets gate"
+            "secret scanner unavailable or scan failed — install the security "
+            "dependency group, commit .secrets.baseline, and re-run before trusting "
+            "the secrets gate"
+        )
+    if measures.get("tool_errors"):
+        commands.append(
+            "hatch run audit:weekly   # a check could not run (see 'Checks that could "
+            "not run'); its findings are unknown, not zero"
         )
     if measures["complexity"]:
         commands.append(
@@ -647,11 +699,15 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
         "",
         (
             f"Gate findings: **{len(measures['gate_summary'])}** | Measure findings: **{len(measures['measure_summary'])}** | "
+            f"Checks that could not run: **{len(measures['tool_errors'])}** | "
             f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
         ),
         "",
     ]
     out.append("## Gates (would fail PR CI)")
+    # Sections whose tool failed report "unknown" — printing "0" next to a
+    # failure is the masking this channel exists to prevent.
+    failed = {str(err.get("key", "")) for err in measures["tool_errors"]}
     gate_sections = [
         ("Boundary violations", "boundary"),
         ("Unused imports/variables (F401/F841)", "unused_imports"),
@@ -668,6 +724,9 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
             else:
                 out.append(f"### Lockfile (uv lock --check): STALE — {measures['lock_note']}")
             continue
+        if key in failed:
+            out.append(f"### {title}: unknown — check failed (see below)")
+            continue
         out.append(f"### {title}: {len(measures[key])}")
         for item in measures[key][:10]:
             if isinstance(item, dict):
@@ -676,6 +735,15 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
     if measures.get("deptry_note"):
         out.append("")
         out.append(f"_deptry could not run: {measures['deptry_note'][:300]}_")
+    if measures.get("tool_errors"):
+        out.append("")
+        out.append("### Checks that could not run (findings unknown, NOT zero)")
+        out.append(
+            "_The counts above are missing these checks. Fix the tooling and re-run "
+            "before treating the gates as clean._"
+        )
+        for err in measures["tool_errors"]:
+            out.append(f"- `{err.get('tool', '')}`: {err.get('message', '')}")
     if measures.get("scanner_errors"):
         out.append("")
         out.append("### Secrets scanner errors (NOT leaks)")
@@ -708,7 +776,10 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
         out.append("- No temporal coupling pairs above the threshold.")
     out.append("")
     out.append("### Complexity (strict pass)")
-    out.append(f"- {len(measures['complexity'])} violations")
+    if "complexity" in failed:
+        out.append("- unknown — the complexity pass failed (see 'Checks that could not run')")
+    else:
+        out.append(f"- {len(measures['complexity'])} violations")
     for entry in measures["complexity"][:10]:
         out.append(f"- `{entry['path']}:{entry['line']}` {entry['code']} {entry['message']}")
     out.append("")
@@ -752,16 +823,31 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
 def collect_measures() -> dict[str, object]:
     """Run every check and assemble the measurement payload."""
     churn = git_churn()
-    complexity = complexity_violations()
+    complexity, complexity_error = complexity_violations()
     coverage = coverage_rates()
-    unused = unused_imports()
-    tid251 = tid251_violations()
-    boundary = boundary_violations()
-    dead = vulture_findings()
+    unused, unused_error = unused_imports()
+    tid251, tid251_error = tid251_violations()
+    boundary, boundary_error = boundary_violations()
+    dead, dead_error = vulture_findings()
     deps, deptry_note = deptry_findings()
     clones, jscpd_note = jscpd_clones()
     scanner_findings, scanner_errors = scan_issues_delta()
     lock_ok, lock_note = lockfile_check()
+    # A tool that could not run yields *unknown*, not zero: these entries keep
+    # the failure visible instead of letting an empty stdout read as "clean".
+    # ``key`` ties the failure to its report section so the section cannot print
+    # a reassuring "0" next to it.
+    tool_errors: list[dict[str, object]] = [
+        {"tool": tool, "key": key, "message": message}
+        for tool, key, message in (
+            ("unused imports/variables", "unused_imports", unused_error),
+            ("banned imports (TID251)", "tid251", tid251_error),
+            ("boundary verifier", "boundary", boundary_error),
+            ("dead code (vulture)", "dead_code", dead_error),
+            ("complexity pass", "complexity", complexity_error),
+        )
+        if message
+    ]
     measures: dict[str, object] = {
         "generated": datetime.now(UTC).isoformat(),
         "boundary": boundary,
@@ -774,6 +860,7 @@ def collect_measures() -> dict[str, object]:
         "lock_note": lock_note,
         "scanner_findings": scanner_findings,
         "scanner_errors": scanner_errors,
+        "tool_errors": tool_errors,
         "complexity": complexity,
         "hotspots": hotspot_scores(complexity, churn, coverage),
         "temporal_coupling": temporal_coupling(),
@@ -840,18 +927,35 @@ def cmd_fix() -> int:
 
     Only *tracked* modifications count as fixes (untracked files are never the
     auto-fix's doing) so the manifest maps 1:1 to the diff for the AUTO-BOT PR.
+    Returns 1 when ruff itself failed: "no changes" must mean "nothing to fix",
+    never "the fixer never ran".
     """
-    run(["ruff", "check", "--fix", "--select", "F401,F841", *SOURCE_DIRS, "tests"], timeout=180)
-    run(["ruff", "format", *SOURCE_DIRS, "tests"], timeout=180)
+    fix_proc = run(
+        ["ruff", "check", "--fix", "--select", "F401,F841", *SOURCE_DIRS, "tests"], timeout=180
+    )
+    format_proc = run(["ruff", "format", *SOURCE_DIRS, "tests"], timeout=180)
+    # ruff check exits 1 when findings remain unfixed (unsafe fixes are skipped
+    # by design); ruff format has no findings exit code, so only 0 is success.
+    failures = [
+        message
+        for message in (
+            tool_error("ruff check --fix", fix_proc, ok_codes=(0, 1)),
+            tool_error("ruff format", format_proc, ok_codes=(0,)),
+        )
+        if message
+    ]
     proc = run(["git", "status", "--porcelain"])
     changed = [
         line[3:] for line in proc.stdout.splitlines() if line.strip() and not line.startswith("??")
     ]
-    if not changed:
-        print("AUTOFIX_CLEAN")
-        return 0
     for path in changed:
         print(f"CHANGED: {path}")
+    if failures:
+        for message in failures:
+            print(f"AUTOFIX_ERROR: {message}")
+        return 1
+    if not changed:
+        print("AUTOFIX_CLEAN")
     return 0
 
 

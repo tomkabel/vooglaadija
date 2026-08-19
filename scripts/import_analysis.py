@@ -24,6 +24,18 @@ FORBIDDEN_WORKER_APP_PREFIXES = (
 # per-file-ignores for worker/** would otherwise lift the ban for worker code.
 YT_DLP_ACL_MODULE = "app/services/yt_dlp_service.py"
 YT_DLP_PACKAGE = "yt_dlp"
+# No-shim rule (CODEBOUNDARIES.md "Removed Compatibility Shims"): these
+# re-export modules were deleted when core/ was extracted. Recreating one hides
+# the real boundary again, so their mere existence is a violation — the rule is
+# a gate, not a review convention.
+FORBIDDEN_SHIM_PATHS = (
+    "app/config.py",
+    "app/database.py",
+    "app/metrics.py",
+    "app/logging_config.py",
+    "app/services/redis_client.py",
+    "app/models/__init__.py",
+)
 
 
 @dataclass(frozen=True)
@@ -144,9 +156,27 @@ def yt_dlp_acl_reason(path: Path, project_root: Path | None = None) -> str | Non
     return None
 
 
+def shim_violations(project_root: Path) -> list[ImportViolation]:
+    """Return violations for re-created re-export shim modules."""
+    violations: list[ImportViolation] = []
+    for relative_path in FORBIDDEN_SHIM_PATHS:
+        path = project_root / relative_path
+        if path.exists():
+            violations.append(
+                ImportViolation(
+                    path=path,
+                    line_number=1,
+                    statement=f"module {relative_path}",
+                    reason="removed compatibility shim must not be re-created; "
+                    "import the canonical core.* module directly",
+                )
+            )
+    return violations
+
+
 def analyze_project(project_root: Path) -> list[ImportViolation]:
     """Analyze source files and return import-boundary violations."""
-    violations: list[ImportViolation] = []
+    violations: list[ImportViolation] = shim_violations(project_root)
     for path in iter_python_files(project_root):
         source_root = path.relative_to(project_root).parts[0]
         for reference in import_references(path):
