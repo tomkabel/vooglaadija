@@ -96,9 +96,9 @@ async def login_form(
     db: DbSession,
     email: Annotated[str, Form(max_length=255)],
     password: Annotated[str, Form(max_length=255)],
+    return_url: Annotated[str | None, Form(max_length=500)] = None,
 ):
     """Handle login form submission via HTMX or regular POST."""
-    return_url = (await request.form()).get("return_url")
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
             request, 403, _error_html("Invalid CSRF token"), "/web/login?error=csrf"
