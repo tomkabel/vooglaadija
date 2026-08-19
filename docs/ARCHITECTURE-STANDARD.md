@@ -55,8 +55,8 @@ following thresholds are measured weekly; when the backlog is cleared they promo
 - Cold stable files are NOT findings, even if large.
 - Files with hotspot score > 0 AND coverage < 60% are top priority (Feathers: feedback loops).
 - Temporal coupling: file pairs co-changed in ≥ 80% of commits touching either (min 5 co-commits)
-  flag leaky abstractions — especially cross-layer pairs (`app/api` ↔ `frontend`, `app` ↔
-  `worker`). Investigation should look for shared concepts implemented twice.
+  flag leaky abstractions — especially cross-layer pairs (`app/api` ↔ `frontend`, `app` ↔ `worker`).
+  Investigation should look for shared concepts implemented twice.
 
 ## Error definition (measure)
 
