@@ -50,11 +50,14 @@ jobs:
 
       - name: Detect changes
         id: changes
+        # Same scope as `git add -u` below: tracked modifications only. Untracked
+        # leftovers (coverage files, tool output) are never the auto-fix's work,
+        # and counting them here would stage nothing and fail `git commit`.
         run: |
-          if git status --porcelain | grep -q .; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
+          if git diff --quiet HEAD --; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Push cleanup branch

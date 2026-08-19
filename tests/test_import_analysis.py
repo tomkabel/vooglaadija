@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.import_analysis import analyze_project, yt_dlp_acl_reason
+from scripts.import_analysis import FORBIDDEN_SHIM_PATHS, analyze_project, yt_dlp_acl_reason
 
 
 def _write(root: Path, rel: str, content: str) -> Path:
@@ -86,3 +86,25 @@ def test_yt_dlp_banned_in_worker_zone(tmp_path: Path) -> None:
     # there independently.
     _write(tmp_path, "worker/x.py", "from yt_dlp import YoutubeDL\n")
     assert any("yt_dlp may be imported only from" in v for v in _violations(tmp_path))
+
+
+# --------------------------------------------------------------------------
+# No-shim rule (CODEBOUNDARIES.md "Removed Compatibility Shims")
+# --------------------------------------------------------------------------
+def test_recreated_shim_module_is_a_violation(tmp_path: Path) -> None:
+    _write(tmp_path, "app/config.py", "from core.config import settings\n")
+    assert any("removed compatibility shim" in v for v in _violations(tmp_path))
+
+
+def test_shim_check_covers_every_removed_module(tmp_path: Path) -> None:
+    for relative in FORBIDDEN_SHIM_PATHS:
+        _write(tmp_path, relative, "from core.config import settings\n")
+    assert len([v for v in _violations(tmp_path) if "removed compatibility shim" in v]) == len(
+        FORBIDDEN_SHIM_PATHS
+    )
+
+
+def test_canonical_modules_are_not_flagged_as_shims(tmp_path: Path) -> None:
+    _write(tmp_path, "core/config.py", "settings = object()\n")
+    _write(tmp_path, "app/services/user_service.py", "from core.config import settings\n")
+    assert _violations(tmp_path) == []

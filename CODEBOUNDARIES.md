@@ -26,6 +26,8 @@ These rules are fitness functions (see
   banned-api in `pyproject.toml`.
 - **Zone-aware bans** (worker ⇏ `app.api|app.schemas|…`): `python scripts/import_analysis.py` (AST
   verifier — TID251 cannot scope bans per directory).
+- **No-shim rule** (the removed re-export modules below): `python scripts/import_analysis.py` fails
+  if any of those paths reappears.
 - Both run in the PR lint job and in the weekly audit.
 
 ## Removed Compatibility Shims
@@ -40,7 +42,7 @@ Story 1.6 removed the temporary re-export shims that existed during the `core/` 
 - `app/models/__init__.py`
 
 Do not recreate these modules. New and existing code must use the canonical `core.*` modules
-directly.
+directly; `scripts/import_analysis.py` reports any of these paths as a boundary violation.
 
 Run the boundary verifier before review:
 
