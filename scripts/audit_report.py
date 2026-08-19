@@ -264,23 +264,42 @@ def vulture_findings() -> list[dict[str, object]]:
 
 
 def deptry_findings() -> tuple[list[dict[str, object]], str]:
-    """Unused/missing/misplaced dependencies via deptry."""
-    proc = run(["deptry", ".", "--output-format", "json"], timeout=180)
-    if proc.returncode not in (0, 1) or not proc.stdout.strip().startswith("{"):
-        proc = run(["deptry", "."], timeout=180)
-        return [], proc.stdout.strip()
+    """Unused/missing/misplaced dependencies via deptry.
+
+    deptry writes JSON to a file via ``--json-output`` and emits a top-level
+    *array* of issue objects (each with ``error.code``/``error.message``,
+    ``module``, and ``location.file``); some versions also wrap them under an
+    ``"issues"`` key. We never claim a clean "0 unused deps" result when deptry
+    could not run: if the JSON file is absent we return the tool's error text as
+    the note so the failure is visible rather than silently green.
+    """
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", dir=str(ROOT), delete=False
+    ) as handle:
+        json_path = Path(handle.name)
     try:
-        raw = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return [], proc.stdout.strip()
+        proc = run(["deptry", ".", "--json-output", str(json_path)], timeout=180)
+        if not json_path.exists():
+            return [], proc.stderr.strip() or proc.stdout.strip()
+        try:
+            raw = json.loads(json_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return [], proc.stderr.strip() or proc.stdout.strip()
+    finally:
+        json_path.unlink(missing_ok=True)
     findings = []
-    for issue in raw.get("issues", []):
+    issues: list[dict[str, object]] = (
+        raw if isinstance(raw, list) else raw.get("issues", []) if isinstance(raw, dict) else []
+    )
+    for issue in issues:
+        error = issue.get("error", {}) if isinstance(issue, dict) else {}
+        location = issue.get("location", {}) if isinstance(issue, dict) else {}
         findings.append(
             {
-                "type": issue.get("type"),
-                "module": issue.get("module"),
-                "location": issue.get("location"),
-                "message": issue.get("message"),
+                "type": error.get("code") if isinstance(error, dict) else None,
+                "module": issue.get("module") if isinstance(issue, dict) else None,
+                "location": location.get("file") if isinstance(location, dict) else None,
+                "message": error.get("message") if isinstance(error, dict) else None,
             }
         )
     return findings, ""
@@ -312,7 +331,7 @@ def jscpd_clones() -> tuple[list[dict[str, object]], str]:
         "python,javascript,markup,css",
         "--ignore",
         "**/node_modules/**,**/.git/**,**/docs/**,**/research/**,**/infra/**,**/tests/**,"
-        "**/uv.lock, **/package-lock.json, **/pnpm-lock.yaml",
+        "**/uv.lock,**/package-lock.json,**/pnpm-lock.yaml",
         ".",
     ]
     proc = run(cmd, timeout=240)
@@ -341,31 +360,37 @@ def jscpd_clones() -> tuple[list[dict[str, object]], str]:
     return clones, ""
 
 
-def scan_issues_delta() -> list[dict[str, object]]:
+def scan_issues_delta() -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Detected-issues delta against the committed baseline (detect-secrets hook).
 
-    An unavailable scanner is an audit error, not a clean result: the report
-    would otherwise claim "Secrets delta: 0" while scanning nothing. The audit
-    env installs the security group so the hook is present in CI.
+    Returns ``(findings, errors)``. An unavailable scanner or a missing baseline
+    is an audit *error*, not a clean result and **not** a secret: it is reported
+    separately so the report never claims "Secrets delta: 0" while scanning
+    nothing, and never mislabels a missing tool as a leaked secret (which would
+    otherwise trigger the "rotate the leaked secret" remediation text).
+    The audit env installs the security group so the hook is present in CI.
     """
+    errors: list[dict[str, object]] = []
     hook = shutil.which("detect-secrets-hook")
     if hook is None:
-        return [
+        errors.append(
             {
                 "path": "<detect-secrets-hook missing>",
                 "line": 0,
                 "type": "scanner unavailable — install the security dependency group",
             }
-        ]
+        )
+        return [], errors
     baseline = ROOT / ".secrets.baseline"
     if not baseline.exists():
-        return [
+        errors.append(
             {
                 "path": "<.secrets.baseline missing>",
                 "line": 0,
                 "type": "no secret baseline — run detect-secrets scan and commit the baseline",
             }
-        ]
+        )
+        return [], errors
     files = subprocess.run(
         ["git", "ls-files"],
         capture_output=True,
@@ -393,7 +418,7 @@ def scan_issues_delta() -> list[dict[str, object]]:
                     "type": match.group("secret_type"),
                 }
             )
-    return findings
+    return findings, errors
 
 
 def coverage_rates() -> dict[str, float]:
@@ -420,6 +445,8 @@ def coverage_rates() -> dict[str, float]:
 def lockfile_check() -> tuple[bool, str]:
     """One-Version Rule: lockfile must be up to date with pyproject.toml."""
     proc = run(["uv", "lock", "--check"], timeout=120)
+    if proc.returncode == 127:
+        return False, "uv not found on PATH (audit env should install it via setup-uv)"
     return proc.returncode == 0, (proc.stderr or proc.stdout).strip()
 
 
@@ -548,6 +575,9 @@ def baseline_values(measures: dict[str, object]) -> dict[str, int]:
         "tid251_violations": len(measures["tid251"]),
         "dead_code": len(measures["dead_code"]),
         "unused_deps": len(measures["unused_deps"]),
+        # Only genuine secret findings count here; scanner/baseline errors are
+        # tracked separately (scanner_errors) so a missing tool never reads as a
+        # leaked secret in the trend.
         "secrets": len(measures["scanner_findings"]),
         "complexity_violations": len(measures["complexity"]),
         "temporal_coupling_pairs": len(measures["temporal_coupling"]),
@@ -597,6 +627,11 @@ def fix_commands(measures: dict[str, object]) -> list[str]:
         commands.append(
             "rotate the leaked secret, then: detect-secrets scan | detect-secrets audit .secrets.baseline"
         )
+    if measures.get("scanner_errors"):
+        commands.append(
+            "secret scanner unavailable or baseline missing — install the security "
+            "dependency group and commit .secrets.baseline before trusting the secrets gate"
+        )
     if measures["complexity"]:
         commands.append(
             "ruff check --config scripts/audit/ruff-complexity.toml app/ core/ worker/ scripts/ alembic/  "
@@ -634,9 +669,22 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
         out.append(f"### {title}: {len(measures[key])}")
         for item in measures[key][:10]:
             if isinstance(item, dict):
+                detail = item.get("message", item.get("name", item.get("type", "")))
                 out.append(
-                    f"- `{item.get('path', '')}:{item.get('line', '')}` {item.get('message', item.get('name', ''))}"
+                    f"- `{item.get('path', '')}:{item.get('line', '')}` {detail}"
                 )
+    if measures.get("deptry_note"):
+        out.append("")
+        out.append(f"_deptry could not run: {measures['deptry_note'][:300]}_")
+    if measures.get("scanner_errors"):
+        out.append("")
+        out.append("### Secrets scanner errors (NOT leaks)")
+        out.append(
+            "_These indicate the secrets scan could not run, not that a secret was found. "
+            "Fix the scanner before trusting the Secrets delta above._"
+        )
+        for err in measures["scanner_errors"][:10]:
+            out.append(f"- `{err.get('path', '')}`: {err.get('type', '')}")
     out.append("")
     out.append("## Measures (advisory, ranked by hotspot score)")
     out.append("### Hotspot ranking (complexity violations x churn)")
@@ -712,7 +760,7 @@ def collect_measures() -> dict[str, object]:
     dead = vulture_findings()
     deps, deptry_note = deptry_findings()
     clones, jscpd_note = jscpd_clones()
-    scanner_findings = scan_issues_delta()
+    scanner_findings, scanner_errors = scan_issues_delta()
     lock_ok, lock_note = lockfile_check()
     measures: dict[str, object] = {
         "generated": datetime.now(UTC).isoformat(),
@@ -725,6 +773,7 @@ def collect_measures() -> dict[str, object]:
         "lock_ok": lock_ok,
         "lock_note": lock_note,
         "scanner_findings": scanner_findings,
+        "scanner_errors": scanner_errors,
         "complexity": complexity,
         "hotspots": hotspot_scores(complexity, churn, coverage),
         "temporal_coupling": temporal_coupling(),
@@ -748,6 +797,7 @@ def collect_measures() -> dict[str, object]:
         *dead,
         *deps,
         *scanner_findings,
+        *scanner_errors,
         *lock_failure,
     ]
     measures["measure_summary"] = [*complexity, *clones]
@@ -771,11 +821,12 @@ def cmd_weekly(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "audit-report.md").write_text(markdown, encoding="utf-8")
     # Least-data: the machine-readable JSON intentionally excludes the raw
-    # secrets-findings metadata (path/line/type) and the derived gate summary
-    # that contains it. The markdown report renders the full secrets gate
+    # secrets-findings metadata (path/line/type), the derived gate summary
+    # that contains it, and the scanner-error list (an operational condition,
+    # not a trend metric). The markdown report renders the full secrets gate
     # section for humans; the JSON keeps the counts used for trend tracking.
     # No secret values exist in any report output.
-    excluded_keys = {"scanner_findings", "gate_summary"}
+    excluded_keys = {"scanner_findings", "scanner_errors", "gate_summary"}
     json_measures = {key: value for key, value in measures.items() if key not in excluded_keys}
     (out_dir / "audit-report.json").write_text(
         json.dumps({"measures": json_measures, "trend": trend}, indent=2), encoding="utf-8"
