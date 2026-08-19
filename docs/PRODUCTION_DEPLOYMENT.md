@@ -133,7 +133,7 @@ in Coolify (Advanced) to include a profile, e.g.:
 ### Database access
 
 ```bash
-docker exec -it ytprocessor-db psql -U postgres -d ytprocessor
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec db psql -U postgres -d ytprocessor
 ```
 
 ### Migrations
@@ -141,7 +141,7 @@ docker exec -it ytprocessor-db psql -U postgres -d ytprocessor
 Migrations run automatically on container startup (`entrypoint.sh`). To run manually:
 
 ```bash
-docker exec ytprocessor-api python -m alembic upgrade head
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec api python -m alembic upgrade head
 ```
 
 ### Backups
@@ -164,7 +164,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml restart api   #
 | `https://<domain>` returns 502/504              | Check the API container in Coolify logs; verify the domain is assigned to the `api` service                                                                      |
 | Certificate not issued                          | Check `docker logs coolify-proxy`; verify the Cloudflare token has `Zone.DNS:Edit`; wait for DNS propagation                                                     |
 | Wildcard subdomains don't resolve               | Create `*.domain` A record (bootstrap does this automatically when the token permits)                                                                            |
-| Container stuck restarting                      | `docker logs ytprocessor-api`; common cause: missing env vars (Coolify UI highlights required ones)                                                              |
+| Container stuck restarting                      | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars (Coolify UI highlights required ones)                   |
 | Deploy doesn't pick up new image                | The start command must include `--pull always` (bootstrap sets this); otherwise update it in Coolify → Advanced                                                  |
 | Coolify proxy reverted to Traefik after upgrade | Re-run `./deploy/bootstrap.sh --force` or re-apply the Caddy DNS-01 config from [Coolify docs](https://coolify.io/docs/knowledge-base/proxy/caddy/dns-challenge) |
 
@@ -175,10 +175,12 @@ move an existing instance:
 
 1. Back up the database from the old server (`pg_dump` or the old `backup` profile).
 2. Run `./deploy/bootstrap.sh` on the new server with the same domain.
-3. Restore inside the database container:
-   - plain SQL dump: `docker exec -i ytprocessor-db psql -U postgres -d ytprocessor < dump.sql`
+3. Restore inside the database container (use the `db` compose service; in a
+   Coolify-managed stack, run the command inside the Coolify project directory
+   or via the Coolify terminal):
+   - plain SQL dump: `docker compose -f docker-compose.yml -f docker-compose.local.yml exec -i db psql -U postgres -d ytprocessor < dump.sql`
    - custom-format archive:
-     `docker exec -i ytprocessor-db pg_restore -U postgres -d ytprocessor --clean --if-exists < dump.dump`
+     `docker compose -f docker-compose.yml -f docker-compose.local.yml exec -i db pg_restore -U postgres -d ytprocessor --clean --if-exists < dump.dump`
 4. Point the domain's DNS at the new server (bootstrap can do this if the token allows).
 
 ## Security notes

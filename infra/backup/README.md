@@ -25,7 +25,7 @@ docker compose --profile backup run --rm backup
 
 ```bash
 # Via docker (custom-format archive, gzip-compressed)
-docker exec -T ytprocessor-db pg_dump -U postgres -d ytprocessor -Fc -Z 6 > backup_$(date +%Y%m%d).dump
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec -T db pg_dump -U postgres -d ytprocessor -Fc -Z 6 > backup_$(date +%Y%m%d).dump
 ```
 
 ## Restore from Backup
@@ -34,10 +34,10 @@ Restore a custom-format `.dump` archive into the running database:
 
 ```bash
 # Custom-format archive
-docker exec -i ytprocessor-db pg_restore -U postgres -d ytprocessor --clean --if-exists < backup_file.dump
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec -i db pg_restore -U postgres -d ytprocessor --clean --if-exists < backup_file.dump
 
 # Plain SQL dump
-docker exec -i ytprocessor-db psql -U postgres -d ytprocessor < backup_file.sql
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec -i db psql -U postgres -d ytprocessor < backup_file.sql
 ```
 
 > `pg_dump -Fc` archives are **not** gzip files despite the `-Z 6` flag — the compression is built
@@ -52,14 +52,14 @@ Always verify your backups work — a backup that has never been restored is onl
 ls -la infra/backup/backup-data/
 
 # Restore into a uniquely named scratch database, verify, then drop it:
-docker exec ytprocessor-db psql -U postgres -d postgres \
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec db psql -U postgres -d postgres \
   -c 'CREATE DATABASE scratch_restore_test;'
-docker exec -i ytprocessor-db pg_restore -U postgres -d scratch_restore_test < backup_file.dump
-docker exec ytprocessor-db psql -U postgres -d scratch_restore_test \
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec -i db pg_restore -U postgres -d scratch_restore_test < backup_file.dump
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec db psql -U postgres -d scratch_restore_test \
   -c '\dt' \
   -c 'SELECT count(*) FROM users;'
 # Verification complete — drop the scratch database:
-docker exec ytprocessor-db psql -U postgres -d postgres \
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec db psql -U postgres -d postgres \
   -c 'DROP DATABASE scratch_restore_test;'
 ```
 
