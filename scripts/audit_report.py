@@ -328,8 +328,10 @@ def jscpd_clones() -> tuple[list[dict[str, object]], str]:
         "--format",
         "python,javascript,markup,css",
         "--ignore",
-        "**/node_modules/**,**/.git/**,**/docs/**,**/research/**,**/infra/**,**/tests/**,"
-        "**/uv.lock,**/package-lock.json,**/pnpm-lock.yaml",
+        (
+            "**/node_modules/**,**/.git/**,**/docs/**,**/research/**,**/infra/**,**/tests/**,"
+            "**/uv.lock,**/package-lock.json,**/pnpm-lock.yaml"
+        ),
         ".",
     ]
     proc = run(cmd, timeout=240)
@@ -643,8 +645,10 @@ def render_markdown(measures: dict[str, object], trend: list[dict[str, object]])
     out: list[str] = [
         f"# Weekly Repo Audit — {datetime.now(UTC).date().isoformat()}",
         "",
-        f"Gate findings: **{len(measures['gate_summary'])}** | Measure findings: **{len(measures['measure_summary'])}** | "
-        f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
+        (
+            f"Gate findings: **{len(measures['gate_summary'])}** | Measure findings: **{len(measures['measure_summary'])}** | "
+            f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
+        ),
         "",
     ]
     out.append("## Gates (would fail PR CI)")
