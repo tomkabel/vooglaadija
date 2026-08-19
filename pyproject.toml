@@ -547,9 +547,12 @@ ignore = [
 # ============================================
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 # Layering: neither app/ nor core/ may depend on the worker process.
-"worker" = ["app/ and core/ must not import worker/ (CODEBOUNDARIES.md)"]
+# NOTE: ruff's banned-api value is a string (message) or a {msg = "..."} table;
+# a TOML array is NOT accepted and would fail config parsing (breaking all ruff
+# invocations). Keep this as a string.
+"worker" = "app/ and core/ must not import worker/ (CODEBOUNDARIES.md)"
 # Anti-corruption layer: yt-dlp types/exceptions must never leak past its facade.
-"yt_dlp" = ["yt-dlp is importable only from app/services/yt_dlp_service.py (ACL)"]
+"yt_dlp" = "yt-dlp is importable only from app/services/yt_dlp_service.py (ACL)"
 
 [tool.ruff.lint.per-file-ignores]
 # Zone exemptions: the worker itself, tests, tooling, and migrations may import

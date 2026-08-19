@@ -128,9 +128,16 @@ def violation_reason(source_root: str, module: str) -> str | None:
     return None
 
 
-def yt_dlp_acl_reason(path: Path) -> str | None:
+def yt_dlp_acl_reason(path: Path, project_root: Path | None = None) -> str | None:
     """Return a violation reason if a file bypasses the yt-dlp anti-corruption layer."""
-    relative = path.as_posix()
+    # Compare against the path *relative to the project root*: YT_DLP_ACL_MODULE
+    # is a repo-relative path, so an absolute path (path.as_posix()) would never
+    # match and the facade would be falsely flagged.
+    relative = (
+        path.relative_to(project_root).as_posix()
+        if project_root is not None
+        else path.as_posix()
+    )
     if relative == YT_DLP_ACL_MODULE:
         return None
     for reference in import_references(path):
@@ -155,7 +162,7 @@ def analyze_project(project_root: Path) -> list[ImportViolation]:
                         reason=reason,
                     )
                 )
-        acl_reason = yt_dlp_acl_reason(path)
+        acl_reason = yt_dlp_acl_reason(path, project_root)
         if acl_reason is not None:
             for reference in import_references(path):
                 if reference.module == YT_DLP_PACKAGE or reference.module.startswith(
