@@ -463,7 +463,7 @@ ensure_api_token() {
 
   local token
   token=$(docker exec coolify php artisan tinker --execute="
-    \App\Models\InstanceSettings::get()->update(['is_api_enabled' => true]);
+    \App\Models\InstanceSettings::first()->update(['is_api_enabled' => true]);
     \$user = \App\Models\User::first();
     if (!\$user) { echo 'NO_USER'; }
     else {
