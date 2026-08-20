@@ -127,8 +127,8 @@ jobs:
         uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9
         with:
           version: 10.33.2
-          run_install: |
-            - args: [--frozen-lockfile]
+          run_install:
+            args: [--frozen-lockfile]
 
       - name: Add node_modules/.bin to PATH (jscpd)
         run: echo "$(pwd)/node_modules/.bin" >> "$GITHUB_PATH"
