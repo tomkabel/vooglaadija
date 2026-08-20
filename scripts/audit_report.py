@@ -845,6 +845,7 @@ def collect_measures() -> dict[str, object]:
             ("boundary verifier", "boundary", boundary_error),
             ("dead code (vulture)", "dead_code", dead_error),
             ("complexity pass", "complexity", complexity_error),
+            ("unused dependencies (deptry)", "unused_deps", deptry_note),
         )
         if message
     ]
