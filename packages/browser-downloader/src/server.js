@@ -67,8 +67,10 @@ export function createApp() {
   });
 
   app.post('/download', async (req, res) => {
+    const startMs = performance.now();
     const body = req.body;
     if (!body || typeof body !== 'object') {
+      recordDownload('failed', null, 'invalid_request', startMs);
       return res.status(400).json({
         status: 'failed',
         error: 'invalid_request',
@@ -77,6 +79,7 @@ export function createApp() {
     }
     const { url, output_dir } = body;
     if (typeof url !== 'string' || typeof output_dir !== 'string') {
+      recordDownload('failed', null, 'invalid_request', startMs);
       return res.status(400).json({
         status: 'failed',
         error: 'invalid_request',
@@ -93,6 +96,7 @@ export function createApp() {
       await validateUrl(url);
       await validateOutputDir(output_dir);
     } catch (err) {
+      recordDownload('failed', null, 'invalid_request', startMs);
       return res
         .status(400)
         .json({ status: 'failed', error: 'invalid_request', message: err.message });
@@ -108,11 +112,6 @@ export function createApp() {
       res.setHeader('content-type', 'application/x-ndjson');
     }
     let streamOpen = wantsNdjson;
-    const writeEvent = (obj) => {
-      if (streamOpen) {
-        res.write(`${JSON.stringify(obj)}\n`);
-      }
-    };
 
     const tier1Timeout = parseTimeout(process.env.BD_TIER1_TIMEOUT_MS, 30_000);
     const tier2Timeout = parseTimeout(process.env.BD_TIER2_TIMEOUT_MS, 30_000);
@@ -122,9 +121,11 @@ export function createApp() {
       release = limiter.acquire();
     } catch (err) {
       if (err instanceof ConcurrencyLimitError) {
+        recordDownload('failed', null, 'concurrency_limit', startMs);
         return res.status(503).json({ status: 'failed', error: 'concurrency_limit' });
       }
       console.error('[download] concurrency acquire error:', err);
+      recordDownload('failed', null, 'concurrency_limit', startMs);
       return res.status(503).json({ status: 'failed', error: 'concurrency_limit' });
     }
 
@@ -135,7 +136,25 @@ export function createApp() {
     // new request takes the freed slot, so live browsers grow past
     // MAX_CONCURRENCY without bound.
     const cancel = new AbortController();
-    const startMs = performance.now();
+
+    // Client disconnect: cancel the download as soon as the client goes away
+    // instead of holding the semaphore slot until the request timeout. Also
+    // never let a socket write after teardown — an 'error' event on the
+    // response with no listener crashes the process (Express 4 does not route
+    // async rejections either).
+    const onClientAbort = () => cancel.abort();
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        onClientAbort();
+      }
+    });
+    res.on('error', () => onClientAbort());
+    const canRespond = () => !(res.destroyed || res.writableEnded);
+    const writeEvent = (obj) => {
+      if (streamOpen && canRespond()) {
+        res.write(`${JSON.stringify(obj)}\n`);
+      }
+    };
     try {
       // Race the download against an overall request timeout. If the download
       // hangs (e.g. a hung browser/streamlink), the timeout aborts the work and
@@ -167,11 +186,13 @@ export function createApp() {
       ]);
       recordDownload(result.status, result.tier_used ?? null, result.error ?? null, startMs);
       if (wantsNdjson) {
+        if (!canRespond()) return;
         writeEvent(result);
         streamOpen = false;
         res.end();
         return;
       }
+      if (!canRespond()) return;
       if (result.status === 'success') {
         return res.status(200).json(result);
       }
@@ -184,11 +205,13 @@ export function createApp() {
       // set, which the normal path records above.
       recordDownload('failed', null, code, startMs);
       if (wantsNdjson) {
+        if (!canRespond()) return;
         writeEvent({ status: 'failed', error: code, tier_used: null });
         streamOpen = false;
         res.end();
         return;
       }
+      if (!canRespond()) return;
       return res.status(502).json({ status: 'failed', error: code, tier_used: null });
     } finally {
       if (requestTimer) {
@@ -249,5 +272,12 @@ export function startServer(app, port = PORT) {
 const mainHref = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
 const isMain = import.meta.url === mainHref;
 if (isMain) {
+  // Express 4 does not route async-handler rejections; a rejection that
+  // escapes the handlers above would otherwise be an unhandledRejection and
+  // crash the process, killing every in-flight download. Log it instead —
+  // the final error middleware still answers 502 for errors that propagate.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[server] unhandledRejection:', reason);
+  });
   startServer(createApp(), PORT);
 }

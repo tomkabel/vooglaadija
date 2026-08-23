@@ -125,9 +125,9 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
             data={"email": email, "password": password},
             headers={"X-CSRF-Token": csrf_token},
         )
-        # __Host-* cookies carry the Secure flag, so the client's cookie jar
-        # only stores them for an https origin — after this the jar re-sends
-        # them automatically on every request.
+        # Token cookies are written with the Secure flag only when
+        # cookie_secure=True; under TESTING defaults they are unprefixed, so
+        # the client's cookie jar re-sends them on every request.
         csrf_token = (
             login_response.cookies.get("csrf_token")
             or client.cookies.get("csrf_token")

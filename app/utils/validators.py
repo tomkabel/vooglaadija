@@ -49,11 +49,13 @@ _TIKTOK_DOMAINS = {
     "www.tiktok.com",
     "m.tiktok.com",
     "vm.tiktok.com",
+    "tiktokv.com",
 }
 
 _INSTAGRAM_DOMAINS = {
     "instagram.com",
     "www.instagram.com",
+    "instagr.am",
 }
 
 _EXTRA_DOMAINS = (

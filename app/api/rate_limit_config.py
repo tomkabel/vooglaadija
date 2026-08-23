@@ -7,7 +7,6 @@ from typing import Any
 
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -52,7 +51,28 @@ class NoOpLimiter:
 
 
 # Use NoOpLimiter in test mode, real limiter otherwise
-limiter = NoOpLimiter() if is_testing else Limiter(key_func=get_remote_address)
+def _client_ip(request: Request) -> str:
+    """Rate-limit bucket key.
+
+    Behind the deploy proxy every client shares the proxy IP via
+    ``request.client.host``, which would make every bucket effectively global
+    (one client's 429s lock out the whole site). Prefer the leftmost
+    ``X-Forwarded-For`` entry, which the proxy prepends with the real client
+    IP. Falls back to the socket address when the header is absent.
+
+    Trust note: this assumes a proxy that overwrites/validates XFF (the
+    compose deployment only exposes the API through one). If the API is ever
+    exposed directly, clients could rotate buckets by spoofing the header.
+    """
+    forwarded: str | None = request.headers.get("x-forwarded-for")
+    if forwarded:
+        first = forwarded.split(",", 1)[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
+limiter = NoOpLimiter() if is_testing else Limiter(key_func=_client_ip)
 
 
 def _parse_retry_after(detail: str) -> int:

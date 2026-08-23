@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ACCESS_TOKEN_TYPE, verify_token
+from app.auth import ACCESS_TOKEN_TYPE, get_auth_cookie_names, verify_token
 from app.services.token_blacklist import is_token_blacklisted
 from core.database import get_db
 from core.models.user import User, not_deleted
@@ -88,7 +88,7 @@ async def get_current_user_from_cookie(
     if credentials is not None:
         token = credentials.credentials
     else:
-        token = request.cookies.get("__Host-access_token")
+        token = request.cookies.get(get_auth_cookie_names()[0])
     return await _resolve_user_from_token(db, token, expected_type=ACCESS_TOKEN_TYPE)
 
 

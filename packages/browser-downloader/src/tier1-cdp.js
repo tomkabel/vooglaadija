@@ -34,12 +34,19 @@ const MANIFEST_CAP = 8 * 1024 * 1024; // 8MiB — manifests are small
 // Bound the per-intercept requestHeaders map so captured credentials/headers
 // cannot accumulate unbounded across a long-lived navigation.
 const REQUEST_HEADERS_CAP = 256;
+// Cap on tracked media candidates: entries are removed on loadingFinished,
+// but a pathological page can fire hundreds of media-like responses before
+// the fallthrough timer fires — bound the map (and its size tracking).
+const CANDIDATES_CAP = 256;
 
 const VIDEO_CT_RE = /^video\//i;
 const VIDEO_URL_RE = /\.(mp4|webm|ts|m4v|m4s)(\?|$)/i;
 const MANIFEST_RE = /\.(m3u8|mpd)(\?|$)/i;
+// Strong block-page signals (challenge phrases). The weak single words are
+// matched only against the page title — see BLOCK_TITLE_RE.
 const BLOCK_RE =
-  /just a moment|access denied|are you a robot|captcha|verify you are human|blocked|forbidden|unauthorized/i;
+  /just a moment|access denied|are you a robot|captcha|verify you are human|403 forbidden/i;
+const BLOCK_TITLE_RE = /\b(blocked|forbidden|unauthorized)\b/i;
 
 // -- DRM manifest heuristics (Phase 2.1) -----------------------------------
 
@@ -186,6 +193,8 @@ export async function interceptMedia(page, url, opts = {}) {
   }
 
   const candidates = new Map();
+  // Per-requestId cumulative decoded bytes received so far (Network.dataReceived).
+  const receivedSizes = new Map();
   // Per-requestId storage of captured request headers (from CDP).
   const requestHeaders = new Map();
 
@@ -262,6 +271,7 @@ export async function interceptMedia(page, url, opts = {}) {
         return;
       }
       candidates.delete(params.requestId);
+      receivedSizes.delete(params.requestId);
       try {
         const isManifest = MANIFEST_RE.test(candidate.url);
         // Pre-read guard: reject candidates whose encoded transfer size already
@@ -368,6 +378,29 @@ export async function interceptMedia(page, url, opts = {}) {
         VIDEO_CT_RE.test(ct) || VIDEO_URL_RE.test(respUrl) || MANIFEST_RE.test(respUrl);
       if (isCandidate) {
         candidates.set(params.requestId, { url: respUrl, ct });
+        if (candidates.size > CANDIDATES_CAP) {
+          const oldest = candidates.keys().next().value;
+          candidates.delete(oldest);
+          receivedSizes.delete(oldest);
+        }
+      }
+    };
+
+    // -- CDP: bound cumulative decoded size DURING transfer ----------------
+    // A chunked/compressed response can under-report (or omit) the encoded
+    // length, so the loadingFinished pre-read guard alone still lets a huge
+    // body be materialized by Network.getResponseBody. Reject as soon as the
+    // decoded bytes received exceed the cap.
+    const onDataReceived = (params) => {
+      const { requestId } = params;
+      if (!(requestId && candidates.has(requestId))) {
+        return;
+      }
+      const total = (receivedSizes.get(requestId) ?? 0) + (params.dataLength ?? 0);
+      receivedSizes.set(requestId, total);
+      const cap = MANIFEST_RE.test(candidates.get(requestId).url) ? MANIFEST_CAP : bodyCap;
+      if (total > cap) {
+        onTerminal(new DownloaderError('network_error', 'response body exceeds size cap'));
       }
     };
 
@@ -407,11 +440,20 @@ export async function interceptMedia(page, url, opts = {}) {
     const onDomReady = async () => {
       try {
         const blocked = await page.evaluate(
-          ({ source, flags }) => {
-            const text = `${document.title || ''} ${document.body?.innerText || ''}`;
-            return new RegExp(source, flags).test(text);
+          ({ strong, strongFlags, title, titleFlags }) => {
+            const titleText = document.title || '';
+            const text = `${titleText} ${document.body?.innerText || ''}`;
+            return (
+              new RegExp(strong, strongFlags).test(text) ||
+              new RegExp(title, titleFlags).test(titleText)
+            );
           },
-          { source: BLOCK_RE.source, flags: BLOCK_RE.flags },
+          {
+            strong: BLOCK_RE.source,
+            strongFlags: BLOCK_RE.flags,
+            title: BLOCK_TITLE_RE.source,
+            titleFlags: BLOCK_TITLE_RE.flags,
+          },
         );
         if (blocked) {
           onTerminal(new DownloaderError('anti_bot_block'));
@@ -423,6 +465,7 @@ export async function interceptMedia(page, url, opts = {}) {
 
     client.on('Network.requestWillBeSent', onRequestWillBeSent);
     client.on('Network.responseReceived', onResponseReceived);
+    client.on('Network.dataReceived', onDataReceived);
     client.on('Network.loadingFinished', onLoadingFinished);
     page.on('response', onMainResponse);
     page

@@ -111,9 +111,17 @@ async def _reconcile_deferred_from_db(max_batch: int) -> list[str]:
             service = "youtube"
             marker = "Circuit breaker open ("
             if error and marker in error:
-                start = error.index(marker) + len(marker)
-                end = error.index(")", start)
-                service = error[start:end]
+                try:
+                    start = error.index(marker) + len(marker)
+                    end = error.index(")", start)
+                    service = error[start:end]
+                except ValueError:
+                    # Truncated/legacy error string — keep the youtube
+                    # default for this job instead of aborting the pass.
+                    logger.warning(
+                        "circuit_defer_malformed_error",
+                        job_id=str(job_id),
+                    )
             member = f"{service}:{job_id}"
             members.append(member)
             try:

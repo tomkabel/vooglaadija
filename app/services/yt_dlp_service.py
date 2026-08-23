@@ -690,6 +690,11 @@ async def extract_media_url(
 
     title: str | None = info.get("title") or None
     ext = info.get("ext") or "mp4"
+    # `ext` is derived from the remote media URL and reaches the
+    # Content-Disposition filename unsanitized (title goes through
+    # _sanitize_title, ext did not). Constrain it to a safe extension shape.
+    if not re.fullmatch(r"[a-z0-9]{1,8}", ext, re.IGNORECASE):
+        ext = "mp4"
     # Sanitize title for display only — never used in filesystem path
     safe_title = _sanitize_title(str(title or file_id))
     file_name = f"{safe_title}.{ext}"

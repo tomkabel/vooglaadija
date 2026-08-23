@@ -15,6 +15,7 @@ from app.auth import (
     clear_token_cookies,
     create_access_token,
     create_refresh_token,
+    get_auth_cookie_names,
     set_token_cookies,
     verify_token,
 )
@@ -229,7 +230,7 @@ async def refresh(
     """
     refresh_token_str = token_refresh.refresh_token if token_refresh else None
     if not refresh_token_str:
-        refresh_token_str = request.cookies.get("__Host-refresh_token")
+        refresh_token_str = request.cookies.get(get_auth_cookie_names()[1])
 
     if not refresh_token_str:
         raise HTTPException(
@@ -365,12 +366,12 @@ async def logout(request: Request) -> RedirectResponse:
     from app.services.token_blacklist import blacklist_token
 
     await _blacklist_token_cookie(
-        request.cookies.get("__Host-access_token"),
+        request.cookies.get(get_auth_cookie_names()[0]),
         verify_token,
         blacklist_token,
     )
     await _blacklist_token_cookie(
-        request.cookies.get("__Host-refresh_token"),
+        request.cookies.get(get_auth_cookie_names()[1]),
         verify_token,
         blacklist_token,
     )

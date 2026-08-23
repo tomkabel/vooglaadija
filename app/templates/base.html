@@ -47,6 +47,10 @@
       htmx.config.historyRestoreAsHxRequest = false;
       htmx.config.allowEval = false;
       htmx.config.allowScriptTags = false;
+      // htmx injects a <style> block for indicator animations; the CSP
+      // style-src has no 'unsafe-inline', so the injected styles need the
+      // per-request nonce to render at all.
+      htmx.config.inlineStyleNonce = "{{ nonce }}";
     </script>
 
     <script nonce="{{ nonce }}">

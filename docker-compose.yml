@@ -167,6 +167,10 @@ services:
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
       DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
+      # Phase 2: route TikTok/Instagram/Twitter to the browser-downloader
+      # microservice; yt-dlp remains the fallback for everything else.
+      BROWSER_DOWNLOADER_ENABLED: ${BROWSER_DOWNLOADER_ENABLED:-true}
+      BROWSER_DOWNLOADER_ENDPOINT: ${BROWSER_DOWNLOADER_ENDPOINT:-http://browser-downloader:3000}
     volumes:
       - storage:/app/storage:Z
     depends_on:
@@ -176,6 +180,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      browser-downloader:
+        condition: service_started
     <<: *base-service
     logging:
       driver: json-file
@@ -201,6 +207,49 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # ==========================================
+  # Browser downloader — TikTok/Instagram microservice (Phase 2)
+  # ==========================================
+  browser-downloader:
+    container_name: ytprocessor-browser-downloader
+    image: ghcr.io/tomkabel/vooglaadija:browser-downloader-${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: packages/browser-downloader/Dockerfile
+    restart: unless-stopped
+    environment:
+      # The worker passes output_dir = <storage_path>/downloads; the
+      # microservice validates output dirs strictly under BD_OUTPUT_BASE.
+      BD_OUTPUT_BASE: /app/storage
+      BD_REQUEST_TIMEOUT_MS: ${BD_REQUEST_TIMEOUT_MS:-300000}
+    volumes:
+      - storage:/app/storage:Z
+    expose:
+      - '3000'
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+    <<: *base-service
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:3000/health']
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ==========================================
   # PostgreSQL

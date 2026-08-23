@@ -170,17 +170,7 @@ async function fetchHlsKey(keyTag, playlistUrl, opts) {
     bodyCap: maxBodyBytes('key'),
     authHeaders: opts.authHeaders,
   });
-  const keyBuf = Buffer.from(await res.arrayBuffer());
-  // Post-fetch guard: fetchResOne only caps via Content-Length, which a
-  // chunked/no-CL response bypasses — the attacker-influenced key URI could
-  // otherwise exhaust worker memory before the cap is checked.
-  const keyCap = maxBodyBytes('key');
-  if (keyBuf.length > keyCap) {
-    throw new DownloaderError(
-      'network_error',
-      `AES-128 key exceeds size cap (${keyBuf.length} > ${keyCap})`,
-    );
-  }
+  const keyBuf = await readBodyCapped(res, maxBodyBytes('key'));
   return keyBuf;
 }
 
@@ -414,6 +404,40 @@ async function fetchResOne(url, opts = {}) {
   throw new DownloaderError('network_error', 'too many redirects');
 }
 
+// Read a response body enforcing the byte cap DURING transfer. A chunked /
+// no-Content-Length response has no header to pre-check, so buffering the
+// whole body before a post-check would still allow memory exhaustion; the
+// stream is cancelled as soon as the cap is exceeded.
+export async function readBodyCapped(res, cap) {
+  if (res.body) {
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of res.body) {
+      total += chunk.length;
+      if (cap != null && total > cap) {
+        await res.body.cancel().catch(() => {});
+        throw new DownloaderError('network_error', 'response body exceeds size cap');
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
+  // Fallback for consumed responses / test doubles without a ReadableStream:
+  // still enforce the cap after the fact.
+  if (typeof res.arrayBuffer === 'function') {
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (cap != null && buf.length > cap) {
+      throw new DownloaderError('network_error', 'response body exceeds size cap');
+    }
+    return buf;
+  }
+  const buf = Buffer.from(await res.text());
+  if (cap != null && buf.length > cap) {
+    throw new DownloaderError('network_error', 'response body exceeds size cap');
+  }
+  return buf;
+}
+
 // -- Subprocess runner -------------------------------------------------------
 
 // Run a subprocess with drained stdio, a timeout, and an optional AbortSignal.
@@ -543,7 +567,7 @@ async function fetchText(url, opts = {}) {
   const resourceKind = classifyResource(url);
   const cap = opts.bodyCap ?? maxBodyBytes(resourceKind);
   const res = await fetchResWithRetry(url, opts);
-  const text = await res.text();
+  const text = (await readBodyCapped(res, cap)).toString('utf8');
   if (cap != null && Buffer.byteLength(text) > cap) {
     throw new DownloaderError('network_error', `${resourceKind} body exceeds size cap`);
   }
@@ -562,10 +586,7 @@ async function fetchToFile(url, destPath, opts = {}) {
   const resourceKind = classifyResource(url);
   const cap = opts.bodyCap ?? maxBodyBytes(resourceKind);
   const res = await fetchResWithRetry(url, opts);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (cap != null && buf.length > cap) {
-    throw new DownloaderError('network_error', `${resourceKind} body exceeds size cap`);
-  }
+  const buf = await readBodyCapped(res, cap);
   // Defensive assertion of the caller contract above: the destination must be a
   // fully-resolved absolute path. If a future caller ever threads a
   // network-derived name in here, this fails closed instead of writing outside
@@ -635,7 +656,7 @@ async function pickVariantUrl(manifestText, baseUrl, { lookup } = {}) {
 // plain AES-128 with identity keyformat).
 const HLS_DRM_RE =
   /#EXT-X-(?:KEY|SESSION-KEY):.*METHOD=(?:SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)/i;
-const HLS_DRM_KEYFORMAT_RE = /#EXT-X-KEY:.*KEYFORMAT="(?!identity).+"/i;
+const HLS_DRM_KEYFORMAT_RE = /#EXT-X-(?:KEY|SESSION-KEY):.*KEYFORMAT="(?!identity).+"/i;
 
 /**
  * Determines whether an HLS manifest indicates DRM encryption.
@@ -732,23 +753,30 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
     }
 
     // Walk the playlist in order: #EXT-X-KEY declarations apply to the
-    // segments that follow them (key rotation), and #EXT-X-MEDIA-SEQUENCE
-    // seeds the default IV for AES-128 decryption.
+    // segments that follow them (key rotation), #EXT-X-SESSION-KEY is the
+    // default key for segments without their own KEY tag, and
+    // #EXT-X-MEDIA-SEQUENCE seeds the default IV for AES-128 decryption.
     const segments = [];
     let mediaSequence = 0;
     let currentKey = null;
+    let sessionKey = null;
     for (const line of text.split('\n').map((l) => l.trim())) {
       if (!line) continue;
       if (line.startsWith('#')) {
         if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
           const n = Number.parseInt(line.slice('#EXT-X-MEDIA-SEQUENCE:'.length), 10);
           if (Number.isFinite(n)) mediaSequence = n;
+        } else if (line.startsWith('#EXT-X-SESSION-KEY:')) {
+          // Applies to every segment lacking its own #EXT-X-KEY. The DRM
+          // gate above already rejected non-identity SESSION-KEYs, so this
+          // is always plain AES-128 identity here.
+          sessionKey = parseHlsKeyTag(line);
         } else if (line.startsWith('#EXT-X-KEY:')) {
           currentKey = parseHlsKeyTag(line);
         }
         continue;
       }
-      segments.push({ uri: line, key: currentKey });
+      segments.push({ uri: line, key: currentKey ?? sessionKey });
     }
     if (segments.length === 0) {
       throw new DownloaderError('network_error', 'playlist contains no segments');
@@ -815,10 +843,7 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
             bodyCap: segCap,
             authHeaders,
           });
-          const buf = Buffer.from(await res.arrayBuffer());
-          if (buf.length > segCap) {
-            throw new DownloaderError('network_error', 'segment body exceeds size cap');
-          }
+          const buf = await readBodyCapped(res, segCap);
           // IV default = media sequence of THIS segment (playlist start + i).
           await writeFile(segPath, decryptHlsSegment(buf, keyBuf, key.ivHex, mediaSequence + i));
           segBytes = buf.length;

@@ -13,7 +13,6 @@ from app.api.routes.web.web_helpers import (
     get_template_context,
     logger,
     render_csrf_page,
-    rotate_csrf_token,
     templates,
     validate_csrf_token,
 )
@@ -111,7 +110,10 @@ async def create_download_form(
         "partials/_download_item.html",
         get_template_context(request, job=job),
     )
-    rotate_csrf_token(resp)
+    # NOTE: no rotate_csrf_token here — the response is an HTMX partial whose
+    # page <meta> still carries the pre-request token. Rotating the cookie
+    # would desync it and the client's very next HTMX POST would 403 until a
+    # full reload (the same reason delete_download_form does not rotate).
     return resp
 
 

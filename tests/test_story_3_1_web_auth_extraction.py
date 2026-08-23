@@ -114,13 +114,13 @@ async def test_web_auth_smoke_flow_register_login_validate_csrf_and_logout():
 
     assert register_response.status_code == 303
     assert register_response.headers["location"] == "/web/downloads"
-    assert "__Host-access_token" in register_response.cookies
-    assert "__Host-refresh_token" in register_response.cookies
+    assert "access_token" in register_response.cookies
+    assert "refresh_token" in register_response.cookies
 
     assert login_response.status_code == 303
     assert login_response.headers["location"] == "/web/downloads"
-    assert "__Host-access_token" in login_response.cookies
-    assert "__Host-refresh_token" in login_response.cookies
+    assert "access_token" in login_response.cookies
+    assert "refresh_token" in login_response.cookies
     assert active_csrf != login_csrf
 
     assert dashboard_response.status_code == 200

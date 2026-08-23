@@ -33,6 +33,7 @@ function post(port, body, init = {}) {
   return fetch(`http://127.0.0.1:${port}/download`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(init.headers || {}) },
+    ...(init.signal ? { signal: init.signal } : {}),
     body: typeof body === 'string' ? body : JSON.stringify(body),
   });
 }
@@ -295,11 +296,82 @@ describe('server — concurrency overflow (503)', () => {
     const r3 = await post(port, body);
     expect(r3.status).toBe(503);
     expect((await r3.json()).error).toBe('concurrency_limit');
+    // 503 rejections must be visible in metrics (previously unrecorded).
+    const metricsBody = await (await fetch(`http://127.0.0.1:${port}/metrics`)).text();
+    expect(metricsBody).toMatch(/bd_downloads_total\{[^}]*error="concurrency_limit"/);
     for (const resolve of gate) {
       resolve({ status: 'success', file_path: '/output/x.mp4', tier_used: 1 });
     }
     await r1;
     await r2;
+    await stop(server);
+  });
+});
+
+describe('server — client disconnect cancels the download', () => {
+  beforeEach(() => {
+    mocks.validateUrl.mockReset();
+    mocks.validateOutputDir.mockReset();
+    mocks.download.mockReset();
+    mocks.validateUrl.mockResolvedValue(new URL('https://example.com'));
+    mocks.validateOutputDir.mockResolvedValue('/output');
+  });
+
+  it('aborts the download signal and releases the slot when the client disconnects', async () => {
+    const { server, port } = await start();
+    mocks.download.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 150));
+      return { status: 'success', file_path: '/output/abc.mp4', tier_used: 1 };
+    });
+    const ac = new AbortController();
+    const req = post(
+      port,
+      { url: 'https://example.com/v', output_dir: '/output' },
+      {
+        signal: ac.signal,
+      },
+    );
+    // Abort the client side before the download settles.
+    await new Promise((r) => setTimeout(r, 20));
+    ac.abort();
+    req.catch(() => {}); // AbortError is expected — swallow it
+
+    // The server-side socket close is asynchronous; poll briefly for it.
+    let aborted = false;
+    for (let i = 0; i < 40 && !aborted; i += 1) {
+      await new Promise((r) => setTimeout(r, 25));
+      aborted = mocks.download.mock.calls[0]?.[2]?.signal?.aborted === true;
+    }
+    expect(mocks.download).toHaveBeenCalledTimes(1);
+    expect(aborted).toBe(true);
+
+    // Let the mocked download settle so the request handler finishes and the
+    // server can close cleanly (the response write is guarded by canRespond).
+    await new Promise((r) => setTimeout(r, 200));
+    await stop(server);
+  });
+});
+
+describe('server — /metrics failure path', () => {
+  it('returns 500 instead of crashing when the registry read throws', async () => {
+    const { registry } = await import('../src/metrics.js');
+    const spy = vi.spyOn(registry, 'metrics').mockRejectedValueOnce(new Error('registry boom'));
+    const { server, port } = await start();
+    const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ status: 'failed', error: 'metrics_error' });
+    spy.mockRestore();
+    await stop(server);
+  });
+});
+
+describe('server — 400 rejections are recorded in metrics', () => {
+  it('records invalid_request for a missing output_dir', async () => {
+    const { server, port } = await start();
+    const res = await post(port, { url: 'https://example.com/v' });
+    expect(res.status).toBe(400);
+    const body = await (await fetch(`http://127.0.0.1:${port}/metrics`)).text();
+    expect(body).toMatch(/bd_downloads_total\{[^}]*error="invalid_request"/);
     await stop(server);
   });
 });

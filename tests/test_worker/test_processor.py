@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select
 
+from app.services.error_classifier import ErrorCategory
 from core.models.download_job import DownloadJob
 
 
@@ -306,3 +307,56 @@ class TestProcessNextJob:
         )
         still_completed = result.scalar_one()
         assert still_completed.status == "completed"
+
+
+class TestRetrySchedulerTypedCategory:
+    """retry_scheduler.evaluate must honour typed error categories.
+
+    Regression: evaluate() re-derived the category from str(error); the
+    BrowserExecutorError STORAGE marker matched no classifier pattern, so
+    storage failures were demoted to UNKNOWN (2 retries / 30 s jitter
+    instead of 1 retry / 5 m fixed).
+    """
+
+    @staticmethod
+    def _job() -> DownloadJob:
+        return DownloadJob(
+            id=UUID("550e8400-e29b-41d4-a716-446655440099"),
+            user_id=UUID("550e8400-e29b-41d4-a716-446655440098"),
+            url="https://www.tiktok.com/@u/v/1",
+            status="processing",
+            retry_count=0,
+        )
+
+    @pytest.mark.unit
+    def test_storage_typed_error_keeps_storage_category(self) -> None:
+        from worker.browser_executor import BrowserExecutorError
+        from worker.retry_scheduler import evaluate
+
+        decision = evaluate(
+            self._job(),
+            BrowserExecutorError(category=ErrorCategory.STORAGE, signal="storage_error"),
+        )
+        assert decision.category == ErrorCategory.STORAGE
+        assert not decision.is_final  # STORAGE allows 1 retry
+
+    @pytest.mark.unit
+    def test_blocked_typed_error_is_terminal(self) -> None:
+        from worker.browser_executor import BrowserExecutorError
+        from worker.retry_scheduler import evaluate
+
+        decision = evaluate(
+            self._job(),
+            BrowserExecutorError(category=ErrorCategory.BLOCKED, signal="drm_detected"),
+        )
+        assert decision.category == ErrorCategory.BLOCKED
+        assert decision.is_final
+
+    @pytest.mark.unit
+    def test_untyped_error_still_uses_string_classifier(self) -> None:
+        from worker.retry_scheduler import evaluate
+
+        # Unrecognized text → UNKNOWN via the string classifier (the typed
+        # path is not involved for a plain RuntimeError).
+        decision = evaluate(self._job(), RuntimeError("boom"))
+        assert decision.category == ErrorCategory.UNKNOWN

@@ -5,6 +5,7 @@ real-time job status and progress updates, with fallback to polling if pub/sub f
 """
 
 import asyncio
+import contextlib
 import json
 import uuid
 from collections import OrderedDict
@@ -14,6 +15,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sse_starlette import EventSourceResponse, ServerSentEvent
+from starlette.responses import JSONResponse
 
 from app.api.dependencies import CurrentUserFromCookie
 from app.api.rate_limit_config import limiter
@@ -23,6 +25,13 @@ from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
 
 router = APIRouter(prefix="/web", tags=["sse"])
+
+# Per-user concurrent SSE stream cap. Every stream holds 2 Redis pub/sub
+# subscriptions + a 10s DB poll loop; N tabs = N*2 subscriptions, so an
+# unbounded count exhausts Redis connections and DB throughput.
+_MAX_SSE_PER_USER = 5
+_sse_connections: dict[uuid.UUID, int] = {}
+_sse_connections_lock = asyncio.Lock()
 
 logger = get_logger(__name__)
 
@@ -296,16 +305,25 @@ async def _merge_generators(
     task1 = asyncio.create_task(_drain(gen1, "status"))
     task2 = asyncio.create_task(_drain(gen2, "progress"))
 
-    completed = 0
-    while completed < 2:
-        event = await queue.get()
-        if event is None:
-            completed += 1
-        else:
-            yield event
-
-    task1.cancel()
-    task2.cancel()
+    try:
+        completed = 0
+        while completed < 2:
+            event = await queue.get()
+            if event is None:
+                completed += 1
+            else:
+                yield event
+    finally:
+        # GeneratorExit (client disconnect) is raised at the `yield` inside
+        # the loop, skipping any code after it — the drain tasks would leak
+        # (2 asyncio tasks + 2 Redis pub/sub subscriptions per tab). Cancel
+        # and join them here on every exit path.
+        task1.cancel()
+        task2.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task1
+        with contextlib.suppress(asyncio.CancelledError):
+            await task2
 
 
 async def fallback_polling_generator(
@@ -519,7 +537,7 @@ async def event_generator(
                 pass
 
 
-@router.get("/downloads/stream")
+@router.get("/downloads/stream", response_model=None)
 # EventSource reconnects automatically on transient disconnects (deploys, flaky
 # networks). A normal GET budget of 5/minute would exhaust the bucket during a
 # short flap and leave the page without live updates, so the streaming endpoint
@@ -528,15 +546,40 @@ async def event_generator(
 async def download_status_stream(
     request: Request,
     current_user: CurrentUserFromCookie,
-) -> EventSourceResponse:
-    """
-    Provide a Server-Sent Events stream for the authenticated user's download updates.
+) -> EventSourceResponse | JSONResponse:
+    """Provide a Server-Sent Events stream for the authenticated user's download updates.
+
+    Each stream holds two Redis pub/sub subscriptions plus a 10s DB polling
+    loop, so an unbounded number of tabs can exhaust Redis connections and DB
+    throughput — cap concurrent streams per user.
 
     Returns:
         EventSourceResponse: The SSE response carrying download status and progress events.
     """
-    return EventSourceResponse(
-        event_generator(request, get_async_session_factory(), current_user.id),
-        media_type="text/event-stream",
-        ping=POLL_INTERVAL_SECONDS,
-    )
+    async with _sse_connections_lock:
+        active = _sse_connections.get(current_user.id, 0)
+        if active >= _MAX_SSE_PER_USER:
+            logger.warning(
+                "sse_connection_limit_exceeded",
+                user_id=str(current_user.id),
+                active=active,
+                max_connections=_MAX_SSE_PER_USER,
+            )
+            return JSONResponse(
+                status_code=429,
+                content={"detail": f"Too many open streams (max {_MAX_SSE_PER_USER})"},
+            )
+        _sse_connections[current_user.id] = active + 1
+    try:
+        return EventSourceResponse(
+            event_generator(request, get_async_session_factory(), current_user.id),
+            media_type="text/event-stream",
+            ping=POLL_INTERVAL_SECONDS,
+        )
+    finally:
+        async with _sse_connections_lock:
+            remaining = _sse_connections.get(current_user.id, 1) - 1
+            if remaining <= 0:
+                _sse_connections.pop(current_user.id, None)
+            else:
+                _sse_connections[current_user.id] = remaining
