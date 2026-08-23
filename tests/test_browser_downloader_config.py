@@ -13,6 +13,19 @@ class TestBrowserDownloaderSettingsDefaults:
     routes everything to yt-dlp, matching prior behavior).
     """
 
+    _ENV_VARS = (
+        "BROWSER_DOWNLOADER_ENABLED",
+        "BROWSER_DOWNLOADER_ENDPOINT",
+        "BROWSER_DOWNLOADER_TIMEOUT",
+        "BROWSER_DOWNLOADER_CB_USE_REDIS",
+    )
+
+    @pytest.fixture(autouse=True)
+    def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Assert defaults independently of the process environment."""
+        for name in self._ENV_VARS:
+            monkeypatch.delenv(name, raising=False)
+
     @pytest.mark.unit
     def test_browser_downloader_enabled_defaults_to_false(self) -> None:
         from core.config import Settings
