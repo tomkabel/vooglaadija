@@ -1,33 +1,11 @@
 """Application configuration shared by API and worker processes."""
 
-import math
 import os
 from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
 from pydantic import ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-def _estimate_entropy(text: str) -> float:
-    """Estimate Shannon entropy of a string in bits.
-
-    A truly random hex string has 4 bits per character.
-    A truly random alphanumeric string has ~6.5 bits per character.
-    We flag anything below 3 bits/char as suspiciously low-entropy.
-    """
-    if not text:
-        return 0.0
-    freq: dict[str, int] = {}
-    for c in text:
-        freq[c] = freq.get(c, 0) + 1
-    length = len(text)
-    entropy = 0.0
-    for count in freq.values():
-        p = count / length
-        if p > 0:
-            entropy -= p * math.log2(p)
-    return entropy
 
 
 _DB_POOL_ENV_NAMES = {
@@ -50,15 +28,16 @@ def _is_testing_enabled() -> bool:
 
 class Settings(BaseSettings):
     database_url: str = ""
-    secret_key: str = ""
-    secret_key_previous: str = ""
     redis_url: str = ""
     cors_origins: str = "http://localhost:3000"
-    access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 7
     file_expire_hours: int = 24
     storage_path: str = "./storage"
-    bcrypt_rounds: int = 12
+
+    # Clerk authentication
+    clerk_secret_key: str = ""
+    clerk_publishable_key: str = ""
+    clerk_jwt_key: str = ""
+    clerk_authorized_parties: str = "http://localhost:3000,http://localhost:8000"
 
     # Cookie security — True for production (HTTPS), override to False for local HTTP dev
     cookie_secure: bool = True
@@ -120,7 +99,7 @@ class Settings(BaseSettings):
         self._validate_ports()
         self._validate_db_pool_settings()
         self._build_database_url()
-        self._validate_secret_key()
+        self._validate_clerk()
         self._validate_cors()
         self._validate_browser_downloader()
         self._resolve_storage()
@@ -208,28 +187,12 @@ class Settings(BaseSettings):
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
 
-    def _validate_secret_key(self) -> None:
-        """
-        Validate that the configured secret key is present, sufficiently long, and has adequate entropy.
-
-        Raises:
-            ValueError: If the secret key is missing, shorter than 32 characters, or has insufficient entropy.
-        """
-        if not self.secret_key:
+    def _validate_clerk(self) -> None:
+        """Validate that the configured Clerk secret key is present."""
+        if not self.clerk_secret_key:
             raise ValueError(
-                "SECRET_KEY is required. "
-                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"',
-            )
-
-        if len(self.secret_key) < 32:
-            raise ValueError("SECRET_KEY must be at least 32 characters for security")
-
-        entropy_per_char = _estimate_entropy(self.secret_key)
-        if entropy_per_char < 2.9:
-            raise ValueError(
-                "SECRET_KEY has insufficient entropy "
-                f"(~{entropy_per_char:.1f} bits/char, need >= 2.9). "
-                'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"',
+                "CLERK_SECRET_KEY is required. "
+                "Get it from your Clerk dashboard > API Keys > Secret Keys."
             )
 
     def _validate_cors(self) -> None:

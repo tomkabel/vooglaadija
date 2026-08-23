@@ -27,175 +27,66 @@
             </div>
 
             <div class="card-glow p-8">
-                {% set field_errors = field_errors or {} %}
                 {% if error %}
                 <div class="mb-6 error-box" role="alert" aria-live="assertive">
                     <div class="flex items-center gap-3">
                         <svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-warning" /></svg>
-                        <span>{{ error }}</span>
+                        <span>
+                            {% if error == 'email_exists' %}
+                                Email already registered
+                            {% elif error == 'csrf' %}
+                                Invalid CSRF token
+                            {% else %}
+                                Registration failed
+                            {% endif %}
+                        </span>
                     </div>
                 </div>
                 {% endif %}
 
-                <form method="POST"
-                      action="/web/register"
-                      hx-post="/web/register"
-                      hx-target="#register-form"
-                      class="space-y-5"
-                      id="register-form-element">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <div>
-                        <label for="email" class="form-label">Email</label>
-                        <div class="input-icon-wrapper">
-                            <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-mail" /></svg>
-                            <input id="email"
-                                   name="email"
-                                   type="email"
-                                   autocomplete="email"
-                                   required
-                                   aria-invalid="{{ 'true' if field_errors.get('email') else 'false' }}"
-                                   aria-describedby="email-error"
-                                   aria-errormessage="email-error"
-                                   class="form-input"
-                                   placeholder="you@example.com"
-                                   spellcheck="false"
-                                   autocapitalize="off">
-                        </div>
-                        <p id="email-error" class="field-error" role="alert">{{ field_errors.get("email", "") }}</p>
-                    </div>
+                <!-- Clerk SignUp component mounts here -->
+                <div id="clerk-signup" class="clerk-container"></div>
 
-                    <div>
-                        <label for="password" class="form-label">Password</label>
-                        <div class="input-icon-wrapper">
-                            <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-lock" /></svg>
-                            <input id="password"
-                                   name="password"
-                                   type="password"
-                                   autocomplete="new-password"
-                                   required
-                                   minlength="8"
-                                   aria-invalid="{{ 'true' if field_errors.get('password') else 'false' }}"
-                                   aria-describedby="password-error password-help"
-                                   aria-errormessage="password-error"
-                                   class="form-input"
-                                   placeholder="At least 8 characters"
-                                   spellcheck="false"
-                                   autocapitalize="off">
-                        </div>
-                        <p id="password-error" class="field-error" role="alert">{{ field_errors.get("password", "") }}</p>
-                        <div class="mt-3 password-strength" aria-live="polite">
-                            <div class="password-strength-meter" role="presentation" aria-hidden="true">
-                                <div id="password-strength-fill" class="password-strength-fill"></div>
-                            </div>
-                            <p id="password-strength-text" class="password-strength-text">
-                                Start typing to check password strength
-                            </p>
-                        </div>
-                        <p id="password-help" class="mt-2 text-xs text-gray-400 font-body">
-                            Minimum 8 characters. Use a number and symbol for a strong password.
-                        </p>
-                    </div>
-
-                    <div>
-                        <label for="password_confirm" class="form-label">Confirm password</label>
-                        <div class="input-icon-wrapper">
-                            <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-shield" /></svg>
-                            <input id="password_confirm"
-                                   name="password_confirm"
-                                   type="password"
-                                   autocomplete="new-password"
-                                   required
-                                   minlength="8"
-                                   aria-invalid="{{ 'true' if field_errors.get('password_confirm') else 'false' }}"
-                                   aria-describedby="password-confirm-error"
-                                   aria-errormessage="password-confirm-error"
-                                   class="form-input"
-                                   placeholder="Enter password again"
-                                   spellcheck="false"
-                                   autocapitalize="off">
-                        </div>
-                        <p id="password-confirm-error" class="field-error" role="alert">{{ field_errors.get("password_confirm", "") }}</p>
-                    </div>
-
-                    <div class="pt-2">
-                        <button type="submit"
-                                id="register-submit"
-                                class="w-full btn-primary py-3 text-base">
-                            <span class="flex items-center justify-center gap-2">
-                                <span id="register-btn-text">Create account</span>
-                                <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-arrow-right" /></svg>
-                            </span>
-                        </button>
-                    </div>
-
-                    <div class="text-center pt-2">
-                        <span class="text-sm text-gray-400">Already have an account?</span>
-                        <a href="/web/login" class="text-sm font-display font-semibold text-amber-400 hover:text-amber-300 focus-visible:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 rounded-md ml-1.5 transition-colors duration-200">
-                            Sign in
-                        </a>
-                    </div>
-                </form>
-
-                <div id="register-form" class="mt-4"></div>
+                <div class="text-center pt-2">
+                    <span class="text-sm text-gray-400">Already have an account?</span>
+                    <a href="/web/login" class="text-sm font-display font-semibold text-amber-400 hover:text-amber-300 focus-visible:text-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-900 rounded-md ml-1.5 transition-colors duration-200">
+                        Sign in
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Clerk SDK -->
+<script
+    async
+    crossorigin="anonymous"
+    data-clerk-publishable-key="{{ clerk_publishable_key }}"
+    src="https://clerk.com/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+    onload="loadClerk()"
+></script>
 <script nonce="{{ nonce }}">
-    (function () {
-        var passwordInput = document.getElementById("password");
-        var strengthFill = document.getElementById("password-strength-fill");
-        var strengthText = document.getElementById("password-strength-text");
-        var form = document.getElementById('register-form-element');
-        var submitBtn = document.getElementById('register-submit');
-        var btnText = document.getElementById('register-btn-text');
-
-        // Password strength meter
-        if (passwordInput && strengthFill && strengthText) {
-            function evaluatePasswordStrength(password) {
-                var hasMinLen = password.length >= 8;
-                var hasNumber = /\d/.test(password);
-                var hasSpecial = /[^A-Za-z0-9]/.test(password);
-                var checks = [hasMinLen, hasNumber, hasSpecial].filter(Boolean).length;
-
-                if (password.length === 0) {
-                    return { levelClass: "", label: "Start typing to check password strength" };
-                }
-                if (!hasMinLen) {
-                    return { levelClass: "is-weak", label: "Weak password" };
-                }
-                if (checks === 3) {
-                    return { levelClass: "is-strong", label: "Strong password" };
-                }
-                if (checks === 2) {
-                    return { levelClass: "is-medium", label: "Medium strength password" };
-                }
-                return { levelClass: "is-weak", label: "Weak password" };
+function loadClerk() {
+    const script = document.createElement('script');
+    script.nonce = '{{ nonce }}';
+    script.textContent = `
+        document.addEventListener('DOMContentLoaded', async function() {
+            if (typeof Clerk === 'undefined') return;
+            await Clerk.load();
+            const signUpContainer = document.getElementById('clerk-signup');
+            if (signUpContainer && Clerk.mountSignUp) {
+                Clerk.mountSignUp(signUpContainer, {
+                    routing: 'path',
+                    path: '/web/register',
+                    signInUrl: '/web/login',
+                    afterSignUpUrl: '/web/downloads',
+                    afterSignInUrl: '/web/downloads',
+                });
             }
-
-            function updatePasswordStrength() {
-                var s = evaluatePasswordStrength(passwordInput.value);
-                strengthFill.className = "password-strength-fill " + s.levelClass;
-                strengthText.className = "password-strength-text " + s.levelClass;
-                strengthText.textContent = s.label;
-            }
-
-            passwordInput.addEventListener("input", updatePasswordStrength);
-            updatePasswordStrength();
-        }
-
-        // Submit button state (form-scoped listeners)
-        if (form && submitBtn && btnText) {
-            form.addEventListener('htmx:beforeRequest', function() {
-                submitBtn.disabled = true;
-                btnText.textContent = 'Creating account\u2026';
-            });
-            form.addEventListener('htmx:afterRequest', function() {
-                submitBtn.disabled = false;
-                btnText.textContent = 'Create account';
-            });
-        }
-    })();
+        });
+    `;
+    document.body.appendChild(script);
+}
 </script>
 {% endblock %}

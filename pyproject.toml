@@ -16,9 +16,7 @@ dependencies = [
     "sqlalchemy[asyncio]",
     "asyncpg",
     "redis",
-    "python-jose[cryptography]",
-    "passlib[bcrypt]",
-    "bcrypt>=4.0,<4.1",  # passlib 1.7.4 cannot load bcrypt >=4.1 (removed __about__); fresh envs otherwise get 5.x
+    "clerk-backend-api>=6.0.0",
     "pydantic",
     "pydantic-settings>=2.14.2",
     "email-validator>=2.3.0",

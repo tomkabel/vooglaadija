@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 # Env var names that conftest sets and that affect Settings
-_CONFTEST_ENV_VARS = ("TESTING", "SECRET_KEY", "SECRET_KEY_PREVIOUS", "DATABASE_URL")
+_CONFTEST_ENV_VARS = ("TESTING", "CLERK_SECRET_KEY", "DATABASE_URL")
 _DB_POOL_ENV_VARS = ("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_TIMEOUT", "DB_POOL_RECYCLE")
 
 
@@ -56,34 +56,17 @@ class TestSettingsTestingMode:
         assert "sqlite" in settings.database_url
 
     def test_secret_key_is_set_in_test_env(self):
-        """In test env, SECRET_KEY comes from the conftest override."""
+        """In test env, CLERK_SECRET_KEY comes from the conftest override."""
         from core.config import settings
 
-        assert settings.secret_key != ""
-        assert len(settings.secret_key) >= 32
-
-    def test_secret_key_previous_defaults_to_empty_string(self):
-        """SECRET_KEY_PREVIOUS defaults to disabled in test settings."""
-        from core.config import settings
-
-        assert settings.secret_key_previous == ""
-
-    def test_secret_key_previous_reads_env(self, monkeypatch):
-        """SECRET_KEY_PREVIOUS maps to the optional previous-secret setting."""
-        from core.config import Settings
-
-        monkeypatch.setenv("SECRET_KEY_PREVIOUS", "previous-secret-from-env")
-
-        settings = Settings(_env_file=None)
-
-        assert settings.secret_key_previous == "previous-secret-from-env"
+        assert settings.clerk_secret_key != ""
 
     def test_settings_instance_is_populated(self):
         """Settings should have all required fields populated in test mode."""
         from core.config import settings
 
         assert settings.database_url
-        assert settings.secret_key
+        assert settings.clerk_secret_key
         assert settings.redis_url
         assert settings.storage_path
 
@@ -163,22 +146,17 @@ class TestDownloadListResponseSchema:
 
 
 class TestTokenDataRemoved:
-    """TokenData was removed from app.schemas.token in this PR."""
+    """Token schemas were removed in this PR (Clerk handles tokens)."""
 
-    def test_token_data_not_present(self):
+    def test_token_schema_module_simplified(self):
+        """Token schema module no longer contains JWT-related classes."""
         import app.schemas.token as token_module
 
         assert not hasattr(token_module, "TokenData"), (
             "TokenData should have been removed from token schemas"
         )
-
-    def test_token_and_token_refresh_still_present(self):
-        from app.schemas.token import Token, TokenRefresh
-
-        t = Token(access_token="a", refresh_token="r", token_type="bearer")
-        assert t.access_token == "a"
-        tr = TokenRefresh(refresh_token="r")
-        assert tr.refresh_token == "r"
+        # Token and TokenRefresh are no longer used by the application
+        # Clerk handles all token operations
 
 
 class TestStorageErrorInExceptions:
@@ -207,30 +185,11 @@ class TestSettingsProductionValidation:
     mode, then restore everything.
     """
 
-    def test_weak_secret_key_change_me_raises(self):
-        """'change-me' secret key raises ValueError."""
+    def test_empty_clerk_secret_key_raises(self):
+        """Empty CLERK_SECRET_KEY raises ValueError."""
         with pytest.raises((ValidationError, ValueError)):
             _make_production_settings(
-                secret_key="change-me",
-                database_url="postgresql+asyncpg://u:p@localhost/db",
-            )
-
-    def test_short_secret_key_raises(self):
-        """SECRET_KEY shorter than 32 chars raises ValueError."""
-        with pytest.raises(
-            (ValidationError, ValueError),
-            match="SECRET_KEY must be at least 32 characters",
-        ):
-            _make_production_settings(
-                secret_key="tooshort",
-                database_url="postgresql+asyncpg://u:p@localhost/db",
-            )
-
-    def test_empty_secret_key_raises(self):
-        """Empty SECRET_KEY raises ValueError."""
-        with pytest.raises((ValidationError, ValueError)):
-            _make_production_settings(
-                secret_key="",
+                clerk_secret_key="",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
             )
 
@@ -238,7 +197,7 @@ class TestSettingsProductionValidation:
         """Missing both DATABASE_URL and DB_PASSWORD raises ValueError."""
         with pytest.raises((ValidationError, ValueError)):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars",
+                clerk_secret_key="sk_test_example",
                 database_url="",
                 db_password="",
             )
@@ -247,7 +206,7 @@ class TestSettingsProductionValidation:
         """CORS_ORIGINS='*' fails closed in production settings."""
         with pytest.raises((ValidationError, ValueError), match="CORS_ORIGINS cannot be"):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                clerk_secret_key="sk_test_example",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 cors_origins="*",
             )
@@ -255,7 +214,7 @@ class TestSettingsProductionValidation:
     def test_valid_cors_origins_are_accepted(self):
         """HTTP and HTTPS CORS origins, including ports, are accepted and normalized."""
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="postgresql+asyncpg://u:p@localhost/db",
             cors_origins="http://example.com, https://example.com:8443",
         )
@@ -278,7 +237,7 @@ class TestSettingsProductionValidation:
         """Malformed or unsupported CORS_ORIGINS entries raise ValueError."""
         with pytest.raises((ValidationError, ValueError), match="Invalid CORS origin"):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                clerk_secret_key="sk_test_example",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 cors_origins=cors_origin,
             )
@@ -298,7 +257,7 @@ class TestSettingsProductionValidation:
         """DB_PORT and REDIS_PORT outside 1-65535 or non-numeric raise ValueError."""
         with pytest.raises((ValidationError, ValueError), match=port_field.upper()):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                clerk_secret_key="sk_test_example",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 **{port_field: port_value},
             )
@@ -318,7 +277,7 @@ class TestSettingsProductionValidation:
             match=f"Storage path not writable: {resolved_path}",
         ):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                clerk_secret_key="sk_test_example",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 storage_path=str(blocked_path),
             )
@@ -326,7 +285,7 @@ class TestSettingsProductionValidation:
     def test_environment_field_is_absent(self):
         """Settings no longer exposes the removed environment field."""
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
 
@@ -337,7 +296,7 @@ class TestSettingsProductionValidation:
         env = os.environ.copy()
         env.pop("TESTING", None)
         env["DATABASE_URL"] = "postgresql+asyncpg://u:p@localhost/db"
-        env["SECRET_KEY"] = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+        env["CLERK_SECRET_KEY"] = "sk_test_example"
         env["CORS_ORIGINS"] = "not-a-url"
         env["STORAGE_PATH"] = str(tmp_path / "startup-storage")
 
@@ -355,7 +314,7 @@ class TestSettingsProductionValidation:
     def test_database_url_constructed_from_components(self):
         """DATABASE_URL is built from DB_USER/DB_PASSWORD/DB_NAME when not set directly."""
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="",
             db_user="myuser",
             db_password="mypassword",
@@ -369,10 +328,10 @@ class TestSettingsProductionValidation:
     def test_valid_settings_succeeds(self):
         """Settings with valid values should not raise."""
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
-        assert s.secret_key == "a-valid-secret-key-that-is-at-least-32-chars-long"
+        assert s.clerk_secret_key == "sk_test_example"
 
     def test_db_pool_settings_default_to_production_values(self, monkeypatch):
         """DB pool settings default to the documented production values."""
@@ -380,7 +339,7 @@ class TestSettingsProductionValidation:
             monkeypatch.delenv(env_name, raising=False)
 
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
 
@@ -392,7 +351,7 @@ class TestSettingsProductionValidation:
     def test_db_pool_settings_accept_constructor_overrides(self):
         """DB pool settings can be overridden by explicit Settings constructor values."""
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="postgresql+asyncpg://u:p@localhost/db",
             db_pool_size=12,
             db_max_overflow=7,
@@ -413,7 +372,7 @@ class TestSettingsProductionValidation:
         monkeypatch.setenv("DB_POOL_RECYCLE", "2100")
 
         s = _make_production_settings(
-            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            clerk_secret_key="sk_test_example",
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
 
@@ -438,7 +397,7 @@ class TestSettingsProductionValidation:
         """DB pool settings reject values outside the supported ranges."""
         with pytest.raises((ValidationError, ValueError), match=message):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                clerk_secret_key="sk_test_example",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 **{field_name: value},
             )
@@ -458,26 +417,6 @@ class TestSettingsProductionValidation:
 
         with pytest.raises((ValidationError, ValueError), match=message):
             _make_production_settings(
-                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                clerk_secret_key="sk_test_example",
                 database_url="postgresql+asyncpg://u:p@localhost/db",
             )
-
-    def test_known_weak_default_keys_rejected(self):
-        """Keys with genuinely low Shannon entropy should be rejected."""
-        weak_keys = [
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",  # 0.0 bits/char
-        ]
-        for key in weak_keys:
-            with pytest.raises((ValidationError, ValueError)):
-                _make_production_settings(
-                    secret_key=key,
-                    database_url="postgresql+asyncpg://u:p@localhost/db",
-                )
-
-    def test_high_entropy_key_accepted(self):
-        """A high-entropy key (like secrets.token_hex output) should pass."""
-        s = _make_production_settings(
-            secret_key="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
-            database_url="postgresql+asyncpg://u:p@localhost/db",
-        )
-        assert len(s.secret_key) >= 64

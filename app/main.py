@@ -32,7 +32,6 @@ from app.api.routes.metrics import router as metrics_router
 from app.api.routes.sse import router as sse_router
 from app.api.routes.web import router as web_router
 from app.api.startup import create_lifespan, initialize_sentry
-from app.auth import get_auth_cookie_names, verify_token
 from core.config import settings
 from core.logging_config import configure_logging, get_logger
 
@@ -60,8 +59,8 @@ app = FastAPI(
     title="Vooglaadija API",
     summary="Asynchronous API for authenticated video download jobs.",
     description=(
-        "REST API for user authentication, creating download jobs, tracking job status, "
-        "and retrieving processed files. Authentication uses bearer JWT access tokens."
+        "REST API for user authentication via Clerk, creating download jobs, tracking job status, "
+        "and retrieving processed files. Authentication uses Clerk session tokens."
     ),
     version=APP_VERSION,
     docs_url=None,
@@ -71,7 +70,7 @@ app = FastAPI(
     openapi_tags=[
         {
             "name": "auth",
-            "description": "User registration, user authentication, token refresh, and current user profile.",
+            "description": "User authentication via Clerk, session management, and current user profile.",
         },
         {
             "name": "downloads",
@@ -133,13 +132,13 @@ app.include_router(web_router)
 @app.get("/")
 async def root(request: Request) -> RedirectResponse:
     """
-    Redirect the root request based on the validity of the access token.
+    Redirect the root request based on the presence of a Clerk session cookie.
 
     Returns:
-        RedirectResponse: A redirect to `/web/downloads` for valid tokens or
-            `/web/login` otherwise.
+        RedirectResponse: A redirect to `/web/downloads` for users with a
+            Clerk session cookie, or `/web/login` otherwise.
     """
-    token = request.cookies.get(get_auth_cookie_names()[0])
-    if token and verify_token(token) is not None:
+    # Clerk stores the session token in the __session cookie
+    if request.cookies.get("__session"):
         return RedirectResponse(url="/web/downloads", status_code=303)
     return RedirectResponse(url="/web/login", status_code=303)

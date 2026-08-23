@@ -15,7 +15,6 @@ from app.api.routes.web.web_helpers import (
     validate_csrf_token,
 )
 from app.api.routes.web_helpers import _error_html, _success_html
-from app.auth import clear_token_cookies
 from app.services.user_service import (
     AccountFileCleanupError,
     DeleteConfirmationError,
@@ -159,9 +158,9 @@ async def delete_account(
     if is_htmx_request(request):
         resp = HTMLResponse(status_code=200, content="")
         resp.headers["HX-Redirect"] = "/web/login?account_deleted=1"
-        clear_token_cookies(resp)
+        resp.delete_cookie(key="__session", path="/")
         return resp
 
     redirect = RedirectResponse(url="/web/login?account_deleted=1", status_code=303)
-    clear_token_cookies(redirect)
+    redirect.delete_cookie(key="__session", path="/")
     return redirect

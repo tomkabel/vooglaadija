@@ -19,7 +19,6 @@ from app.api.routes.web_helpers import (
     _status_badge_html,
     _status_badge_templates_json,
 )
-from app.auth import set_token_cookies
 from core.config import settings
 from core.logging_config import get_logger
 
@@ -293,8 +292,6 @@ def _error_response(
 
 def _auth_success_response(
     request: Request,
-    access_token: str,
-    refresh_token: str,
     redirect_url: str,
 ) -> HTMLResponse | RedirectResponse:
     response: HTMLResponse | RedirectResponse
@@ -303,28 +300,23 @@ def _auth_success_response(
         response.headers["HX-Redirect"] = redirect_url
     else:
         response = RedirectResponse(url=redirect_url, status_code=303)
-    set_token_cookies(response, access_token, refresh_token)
     rotate_csrf_token(response)
     return response
 
 
 def _login_success_response(
     request: Request,
-    access_token: str,
-    refresh_token: str,
     safe_redirect: str,
     _response: Response,
 ) -> HTMLResponse | RedirectResponse:
-    return _auth_success_response(request, access_token, refresh_token, safe_redirect)
+    return _auth_success_response(request, safe_redirect)
 
 
 def _register_success_response(
     request: Request,
-    access_token: str,
-    refresh_token: str,
 ) -> HTMLResponse | RedirectResponse:
-    """Complete registration by establishing the authenticated session and directing the user to the downloads page."""
-    return _auth_success_response(request, access_token, refresh_token, "/web/downloads")
+    """Complete registration by redirecting to the downloads page."""
+    return _auth_success_response(request, "/web/downloads")
 
 
 from app.api.routes.web.web_auth_helpers import (  # noqa: E402,F401

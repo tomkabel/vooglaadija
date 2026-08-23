@@ -31,6 +31,7 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
+    clerk_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     __table_args__ = (
         Index(
             "ix_users_email_active",
@@ -38,8 +39,14 @@ class User(Base):
             unique=True,
             postgresql_where=column("deleted_at").is_(None),
         ),
+        Index(
+            "ix_users_clerk_user_id_active",
+            "clerk_user_id",
+            unique=True,
+            postgresql_where=and_(column("deleted_at").is_(None), column("clerk_user_id").isnot(None)),
+        ),
     )
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True),

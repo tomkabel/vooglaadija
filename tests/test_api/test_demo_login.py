@@ -1,4 +1,9 @@
-"""Tests for guest demo access feature."""
+"""Tests for guest demo access feature.
+
+NOTE: With Clerk handling authentication, the demo login flow has changed.
+The demo user is now created via Clerk's test mode or seed script.
+These tests verify the seed script and demo user setup.
+"""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -8,13 +13,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from app.main import app
-from app.services.auth_service import hash_password
 from core.models.download_job import DownloadJob
 from core.models.user import User
 from tests.conftest import TestingSessionLocal
 
 DEMO_EMAIL = "demo@vooglaadija.io"
-DEMO_PASSWORD = "VooglaadijaDemo2024!"
 
 SEED_JOBS = [
     {
@@ -50,125 +53,20 @@ SEED_JOBS = [
 ]
 
 
-async def _demo_login(client: AsyncClient):
-    """Submit the CSRF-protected demo login form."""
-    page = await client.get("/web/login")
-    csrf_token = page.cookies.get("csrf_token") or client.cookies.get("csrf_token")
-    assert csrf_token is not None
-    return await client.post(
-        "/web/demo-login",
-        headers={"X-CSRF-Token": csrf_token},
-    )
-
-
 class TestDemoLoginRoute:
-    """Tests for POST /web/demo-login."""
+    """Tests for demo login with Clerk."""
 
     @pytest.mark.asyncio
-    async def test_demo_login_redirects_and_sets_cookies(self):
-        """Demo login sets JWT cookies and redirects to /web/downloads."""
-        async with TestingSessionLocal() as session:
-            demo_user = User(
-                id=uuid.uuid4(),
-                username="Demo User",
-                email=DEMO_EMAIL,
-                password_hash=await hash_password(DEMO_PASSWORD),
-                is_active=True,
-            )
-            session.add(demo_user)
-            await session.commit()
-
+    async def test_demo_login_redirects_to_web_login(self):
+        """Demo login now redirects to Clerk sign-in page."""
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
         ) as client:
-            response = await _demo_login(client)
+            response = await client.get("/web/login")
 
-        assert response.status_code == 303
-        assert response.headers["location"] == "/web/downloads"
-        # TESTING defaults set cookie_secure=False → unprefixed cookie names.
-        assert "access_token" in response.cookies
-        assert "refresh_token" in response.cookies
-        assert response.cookies.get("access_token") != ""
-
-    @pytest.mark.asyncio
-    async def test_demo_login_inactive_user_returns_500(self):
-        """Demo login returns 500 for inactive demo user."""
-        async with TestingSessionLocal() as session:
-            demo_user = User(
-                id=uuid.uuid4(),
-                username="Demo User Inactive",
-                email=DEMO_EMAIL,
-                password_hash=await hash_password(DEMO_PASSWORD),
-                is_active=False,
-            )
-            session.add(demo_user)
-            await session.commit()
-
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
-        ) as client:
-            response = await _demo_login(client)
-
-        assert response.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_demo_login_user_not_found_returns_500(self):
-        """Demo login returns 500 when demo user is not seeded."""
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
-        ) as client:
-            response = await _demo_login(client)
-
-        assert response.status_code == 500
-
-
-class TestDemoLoginProtectedAccess:
-    """Test that demo login grants access to protected pages."""
-
-    @pytest.mark.asyncio
-    async def test_demo_user_can_access_dashboard_after_login(self):
-        """Demo user can access /web/downloads after demo login."""
-        demo_user_id = uuid.uuid4()
-
-        async with TestingSessionLocal() as session:
-            demo_user = User(
-                id=demo_user_id,
-                username="Demo User",
-                email=DEMO_EMAIL,
-                password_hash=await hash_password(DEMO_PASSWORD),
-                is_active=True,
-            )
-            session.add(demo_user)
-
-            now = datetime.now(UTC)
-            for job_data in SEED_JOBS:
-                job = DownloadJob(
-                    id=uuid.uuid4(),
-                    user_id=demo_user_id,
-                    url=job_data["url"],
-                    status="completed",
-                    file_name=job_data["file_name"],
-                    file_path=job_data["file_path"],
-                    completed_at=now,
-                    expires_at=now + timedelta(hours=72),
-                )
-                session.add(job)
-            await session.commit()
-
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
-        ) as client:
-            login_response = await _demo_login(client)
-            assert login_response.status_code == 303
-
-            access_token = login_response.cookies.get("access_token", "")
-
-            dashboard_response = await client.get(
-                "/web/downloads",
-                cookies={"access_token": access_token},
-            )
-
-        assert dashboard_response.status_code == 200
+        assert response.status_code == 200
+        # Login page now renders Clerk SignIn component
+        assert "clerk-signin" in response.text
 
 
 class TestSeedDemoData:

@@ -12,7 +12,6 @@ from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.middleware.security_headers import add_security_headers
-from app.auth import create_access_token
 from app.main import app
 from core.config import settings
 
@@ -304,12 +303,13 @@ async def test_lifespan_cleans_up_worker_poller_when_context_raises(monkeypatch)
 @pytest.mark.asyncio
 async def test_root_redirects_missing_invalid_and_valid_tokens_unchanged() -> None:
     """The root route still redirects unauthenticated, invalid, and authenticated users correctly."""
-    valid_token = create_access_token(uuid4())
+    # Clerk stores session token in __session cookie
+    valid_session = "clerk-session-token"
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         missing_response = await client.get("/")
-        invalid_response = await client.get("/", cookies={"access_token": "invalid-token"})
-        valid_response = await client.get("/", cookies={"access_token": valid_token})
+        invalid_response = await client.get("/", cookies={"__session": "invalid-token"})
+        valid_response = await client.get("/", cookies={"__session": valid_session})
 
     assert missing_response.status_code == 303
     assert missing_response.headers["location"] == "/web/login"

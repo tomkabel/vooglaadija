@@ -87,19 +87,17 @@ def test_env_example_documents_local_secret_setup():
 
 
 @pytest.mark.unit
-def test_rotated_runtime_values_preserve_auth_and_service_url_contracts(monkeypatch):
-    """Synthetic rotated values build service URLs and sign newly issued JWTs."""
-    from app import auth
+def test_rotated_runtime_values_preserve_service_url_contracts(monkeypatch):
+    """Synthetic rotated values build service URLs correctly."""
     from core.config import Settings
 
-    rotated_secret = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
     db_password = "rotated db password/with spaces"
     redis_password = "rotated redis password/with spaces"
 
     monkeypatch.delenv("TESTING", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
-    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("CLERK_SECRET_KEY", raising=False)
 
     rotated_settings = Settings(
         _env_file=None,
@@ -113,21 +111,13 @@ def test_rotated_runtime_values_preserve_auth_and_service_url_contracts(monkeypa
         redis_host="redis",
         redis_port="6379",
         redis_password=redis_password,
-        secret_key=rotated_secret,
+        clerk_secret_key="sk_test_example",
     )
 
     assert rotated_settings.database_url == (
         f"postgresql+asyncpg://vooglaadija:{quote_plus(db_password)}@db:5432/media"
     )
     assert rotated_settings.redis_url == (f"redis://:{quote_plus(redis_password)}@redis:6379")
-
-    monkeypatch.setattr(auth, "settings", rotated_settings)
-
-    token = auth.create_access_token("story-6-1-user")
-    payload = auth.verify_token(token, expected_type=auth.ACCESS_TOKEN_TYPE)
-
-    assert payload is not None
-    assert payload["sub"] == "story-6-1-user"
 
 
 @pytest.mark.unit

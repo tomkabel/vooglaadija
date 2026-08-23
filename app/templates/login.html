@@ -27,93 +27,27 @@
             </div>
 
             <div class="card-glow p-8">
-                {% set field_errors = field_errors or {} %}
                 {% if error %}
                 <div class="mb-6 error-box" role="alert" aria-live="assertive">
                     <div class="flex items-center gap-3">
                         <svg class="h-5 w-5 flex-shrink-0" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-warning" /></svg>
-                        <span>{{ error }}</span>
+                        <span>
+                            {% if error == '1' %}
+                                Invalid email or password
+                            {% elif error == 'csrf' %}
+                                Invalid CSRF token
+                            {% elif error == 'inactive' %}
+                                Account is inactive
+                            {% else %}
+                                Authentication failed
+                            {% endif %}
+                        </span>
                     </div>
                 </div>
                 {% endif %}
 
-                <form method="POST"
-                      action="/web/login"
-                      hx-post="/web/login"
-                      hx-target="#login-form"
-                      class="space-y-5"
-                      id="login-form-element">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="hidden" name="return_url" value="{{ return_url or '/web/downloads' }}">
-
-                    <div>
-                        <label for="email" class="form-label">Email</label>
-                        <div class="input-icon-wrapper">
-                            <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-mail" /></svg>
-                            <input id="email"
-                                   name="email"
-                                   type="email"
-                                   autocomplete="email"
-                                   required
-                                   aria-invalid="{{ 'true' if field_errors.get('email') else 'false' }}"
-                                   aria-describedby="email-error"
-                                   aria-errormessage="email-error"
-                                   class="form-input"
-                                   placeholder="you@example.com"
-                                   spellcheck="false"
-                                   autocapitalize="off">
-                        </div>
-                        <p id="email-error" class="field-error" role="alert">{{ field_errors.get("email", "") }}</p>
-                    </div>
-
-                    <div>
-                        <label for="password" class="form-label">Password</label>
-                        <div class="input-icon-wrapper">
-                            <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-lock" /></svg>
-                            <input id="password"
-                                   name="password"
-                                   type="password"
-                                   autocomplete="current-password"
-                                   required
-                                   aria-invalid="{{ 'true' if field_errors.get('password') else 'false' }}"
-                                   aria-describedby="password-error"
-                                   aria-errormessage="password-error"
-                                   class="form-input"
-                                   placeholder="Your password"
-                                   spellcheck="false"
-                                   autocapitalize="off">
-                        </div>
-                        <p id="password-error" class="field-error" role="alert">{{ field_errors.get("password", "") }}</p>
-                    </div>
-
-                    <div class="pt-2">
-                        <button type="submit" id="login-submit" class="w-full btn-primary py-3 text-base">
-                            <span class="flex items-center justify-center gap-2">
-                                <span id="login-btn-text">Sign in</span>
-                                <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-arrow-right" /></svg>
-                            </span>
-                        </button>
-                    </div>
-
-                    <div class="relative py-2">
-                        <div class="absolute inset-0 flex items-center" aria-hidden="true">
-                            <div class="w-full border-t border-white/[0.06]"></div>
-                        </div>
-                        <div class="relative flex justify-center">
-                            <span class="px-3 text-xs font-medium text-gray-400 bg-surface-800/80">or</span>
-                        </div>
-                    </div>
-
-                </form>
-
-                <form method="POST" action="/web/demo-login" class="mt-5">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button type="submit"
-                            class="w-full btn-secondary py-3 text-base flex items-center justify-center gap-2 border-2 border-amber-500/40 text-amber-400 hover:border-amber-400 hover:text-amber-300 transition-colors duration-200 rounded-lg font-display font-semibold">
-                        <svg class="h-5 w-5" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-user" /></svg>
-                        Guest Demo
-                    </button>
-                </form>
+                <!-- Clerk SignIn component mounts here -->
+                <div id="clerk-signin" class="clerk-container"></div>
 
                 <div class="text-center pt-5">
                     <span class="text-sm text-gray-400">Don't have an account?</span>
@@ -121,28 +55,39 @@
                         Create one
                     </a>
                 </div>
-
-                <div id="login-form" class="mt-4"></div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Clerk SDK -->
+<script
+    async
+    crossorigin="anonymous"
+    data-clerk-publishable-key="{{ clerk_publishable_key }}"
+    src="https://{% if clerk_publishable_key.startswith('pk_test') %}{% endif %}clerk.com/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+    onload="loadClerk()"
+></script>
 <script nonce="{{ nonce }}">
-(function() {
-    var form = document.getElementById('login-form-element');
-    var submitBtn = document.getElementById('login-submit');
-    var btnText = document.getElementById('login-btn-text');
-    if (form && submitBtn && btnText) {
-        form.addEventListener('htmx:beforeRequest', function() {
-            submitBtn.disabled = true;
-            btnText.textContent = 'Signing in\u2026';
+function loadClerk() {
+    const script = document.createElement('script');
+    script.nonce = '{{ nonce }}';
+    script.textContent = `
+        document.addEventListener('DOMContentLoaded', async function() {
+            if (typeof Clerk === 'undefined') return;
+            await Clerk.load();
+            const signInContainer = document.getElementById('clerk-signin');
+            if (signInContainer && Clerk.mountSignIn) {
+                Clerk.mountSignIn(signInContainer, {
+                    routing: 'path',
+                    path: '/web/login',
+                    signUpUrl: '/web/register',
+                    afterSignInUrl: '{{ return_url or "/web/downloads" }}',
+                });
+            }
         });
-        form.addEventListener('htmx:afterRequest', function() {
-            submitBtn.disabled = false;
-            btnText.textContent = 'Sign in';
-        });
-    }
-})();
+    `;
+    document.body.appendChild(script);
+}
 </script>
 {% endblock %}

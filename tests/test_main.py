@@ -294,12 +294,10 @@ class TestRootRedirect:
     @pytest.mark.asyncio
     async def test_root_redirect_authenticated(self):
         """Test that authenticated users are redirected to dashboard."""
-        from app.auth import create_access_token
-
         mock_request = MagicMock(spec=Request)
 
-        token = create_access_token({"sub": "test@example.com", "user_id": str(uuid.uuid4())})
-        mock_request.cookies.get.return_value = token
+        # Clerk stores session token in __session cookie
+        mock_request.cookies.get.return_value = "clerk-session-token"
 
         result = await root(mock_request)
 

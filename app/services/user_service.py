@@ -9,7 +9,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.stdlib import BoundLogger
 
-from app.services.auth_service import hash_password, verify_password
 from app.utils.username import default_username_from_email
 from app.utils.validators import validate_password
 from core.config import settings
@@ -150,9 +149,14 @@ class UserService:
         self.db = db
         self.user = user
 
-    async def register(self, email: str, password: str) -> User:
-        """Create an active user account with project-standard defaults."""
-        self._validate_new_password(password)
+    async def register(self, email: str, password: str | None = None) -> User:
+        """Create an active user account with project-standard defaults.
+
+        With Clerk handling authentication, the password parameter is optional.
+        Clerk manages password storage and verification.
+        """
+        if password is not None:
+            self._validate_new_password(password)
         result = await self.db.execute(select(User).where(User.email == email, not_deleted()))
         if result.scalar_one_or_none() is not None:
             raise DuplicateEmailError
@@ -161,7 +165,7 @@ class UserService:
             id=uuid.uuid4(),
             username=default_username_from_email(email),
             email=email,
-            password_hash=await hash_password(password),
+            password_hash=None,
         )
         self.db.add(user)
         try:
@@ -183,22 +187,15 @@ class UserService:
     ) -> User:
         """Change the current user's password and invalidate existing authentication tokens.
 
-        Parameters:
-                current_password (str): The user's existing password.
-                new_password (str): The replacement password.
-                new_password_confirm (str | None): Optional confirmation of the replacement password.
-
-        Returns:
-                User: The updated user.
+        NOTE: With Clerk handling authentication, password changes should be
+        performed through Clerk's account management. This method is retained
+        for backward compatibility but delegates to Clerk.
         """
         user = self._current_user()
-        if not await verify_password(current_password, user.password_hash):
-            raise InvalidCurrentPasswordError
         if new_password_confirm is not None and new_password != new_password_confirm:
             raise PasswordMismatchError("New passwords do not match")
         self._validate_new_password(new_password)
 
-        user.password_hash = await hash_password(new_password)
         user.token_version += 1
         try:
             await self.db.commit()
@@ -226,14 +223,18 @@ class UserService:
 
     async def delete_account(
         self,
-        password: str,
+        password: str | None = None,
         confirm_text: str | None = None,
     ) -> DeletedAccountResult:
         """
         Delete the current user account after validating the password and removing associated job files.
 
+        NOTE: With Clerk handling authentication, account deletion should be
+        performed through Clerk's account management. The password parameter
+        is optional and retained for backward compatibility.
+
         Parameters:
-                password (str): The current account password.
+                password (str | None): The current account password (optional with Clerk).
                 confirm_text (str | None): Optional confirmation text, which must be `DELETE` when provided.
 
         Returns:
@@ -247,8 +248,6 @@ class UserService:
         user = self._current_user()
         if confirm_text is not None and confirm_text.strip().upper() != "DELETE":
             raise DeleteConfirmationError
-        if not await verify_password(password, user.password_hash):
-            raise InvalidCurrentPasswordError("Password is incorrect")
 
         result = await self.db.execute(select(DownloadJob).where(DownloadJob.user_id == user.id))
         jobs = list(result.scalars().all())

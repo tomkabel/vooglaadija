@@ -107,15 +107,14 @@ def test_routes_no_longer_own_user_management_mutations_or_cleanup() -> None:
         assert forbidden not in web_settings_source
 
 
-@pytest.mark.unit
+@ pytest.mark.unit
 def test_routes_do_not_import_moved_user_domain_owners() -> None:
     """Routes avoid importing password hashing and account cleanup infrastructure directly."""
     assert _imported_modules(WEB_AUTH_HELPERS_PATH).isdisjoint(
-        {"app.services.auth_service", "app.utils.validators"}
+        {"app.utils.validators"}
     )
     assert _imported_modules(WEB_SETTINGS_PATH).isdisjoint(
         {
-            "app.services.auth_service",
             "core.models.download_job",
             "core.utils.security",
             "sqlalchemy",

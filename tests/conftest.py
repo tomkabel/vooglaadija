@@ -3,7 +3,8 @@ import sys
 
 # CRITICAL: Set environment variables BEFORE any other imports
 os.environ["TESTING"] = "1"
-os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-not-for-production-use-32chars"
+os.environ["CLERK_SECRET_KEY"] = "test-clerk-secret-key-for-testing"
+os.environ["CLERK_PUBLISHABLE_KEY"] = "pk_test_testclerkpublishablekey"
 
 # Determine unique database URL per xdist worker to avoid race conditions
 _worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
@@ -105,17 +106,43 @@ def _reset_shutdown_event():
 
 
 @pytest.fixture(autouse=True)
-def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Avoid Redis-backed blacklist checks for ordinary authenticated test requests."""
+def _mock_clerk_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock Clerk token verification for tests.
 
-    async def _not_blacklisted(_token_jti: str) -> bool:
-        return False
+    Avoids real Clerk API calls during testing by mocking the
+    verify_clerk_token function to return a user from the database.
+    """
+    import uuid
 
-    async def _reserve_ok(_token_jti: str, ttl_seconds: int = 0) -> bool:
-        return True
+    from app.clerk_auth import verify_clerk_token
 
-    monkeypatch.setattr("app.api.dependencies.is_token_blacklisted", _not_blacklisted)
-    monkeypatch.setattr("app.services.token_blacklist.reserve_token_jti", _reserve_ok)
+    _mock_users: dict[str, object] = {}
+
+    async def _mock_verify(db, token):
+        if token is None:
+            return None
+        # Mock: token value is "mock-token-<clerk_user_id>"
+        if token.startswith("mock-token-"):
+            clerk_user_id = token[11:]
+            if clerk_user_id in _mock_users:
+                return _mock_users[clerk_user_id]
+            # Auto-create user on first sight
+            from core.models.user import User
+
+            user = User(
+                id=uuid.UUID(int=0),
+                clerk_user_id=clerk_user_id,
+                email=f"{clerk_user_id}@example.com",
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+            _mock_users[clerk_user_id] = user
+            return user
+        return None
+
+    monkeypatch.setattr("app.clerk_auth.verify_clerk_token", _mock_verify)
+    monkeypatch.setattr("app.api.dependencies.verify_clerk_token", _mock_verify)
 
 
 @pytest.fixture
@@ -136,22 +163,15 @@ async def create_test_user_and_login(
     password: str = "securepassword123",
     _lock=None,
 ) -> str:
-    """Register and login a test user using a unique email per call.
+    """Create a test user and return a mock Clerk token.
 
-    Uses a UUID prefix on the email to avoid isolation issues with
-    parallel xdist workers. Returns the access token string.
-
-    The optional _lock parameter is unused (kept for API compatibility).
+    With Clerk auth, we use a mock token that the mocked verify_clerk_token
+    will accept. Returns the mock token string.
     """
     import uuid
 
     unique_email = f"{uuid.uuid4().hex[:8]}@{email.split('@')[1]}"
-    await client.post(
-        "/api/v1/auth/register",
-        json={"email": unique_email, "password": password},
-    )
-    response = await client.post(
-        "/api/v1/auth/login",
-        json={"email": unique_email, "password": password},
-    )
-    return response.json()["access_token"]
+    # Create user directly in the database with a clerk_user_id
+    # The mock auth will auto-create users from the token
+    clerk_user_id = f"user_{uuid.uuid4().hex[:12]}"
+    return f"mock-token-{clerk_user_id}"
