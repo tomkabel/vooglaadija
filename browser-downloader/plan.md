@@ -8,7 +8,8 @@ Phase 2 of issue #140. Wires the existing Phase 0 browser-downloader microservic
 ## Behavior
 
 - **Safe default**: `browser_downloader_enabled=False`. The worker behaves byte-for-byte identical to main until an operator sets `BROWSER_DOWNLOADER_ENABLED=true`. Default `BROWSER_DOWNLOADER_ENDPOINT=http://browser-downloader:3000` resolves in-cluster.
-- Platform detection: hostname suffix match on `tiktok.com` / `tiktokv.com` / `instagram.com` / `instagr.am` / `twitter.com` / `x.com` / `t.co` (with `www.`-stripping and FQDN-trailing-dot handling). YouTube and unknown hosts continue to yt-dlp.
+- Platform detection: hostname suffix match on `tiktok.com` / `tiktokv.com` / `instagram.com` / `instagr.am` / `twitter.com` / `x.com` (with `www.`-stripping and FQDN-trailing-dot handling). YouTube and unknown hosts continue to yt-dlp.
+- `t.co` short links are resolved BEFORE selecting a downloader; the resolved destination then goes through normal detection (a t.co → YouTube link keeps the yt-dlp path and its existing progress behavior). Until redirect resolution is implemented, `t.co` stays on the yt-dlp path rather than being routed to the browser downloader.
 - Throttle predictor and progress callback are skipped for browser-routed jobs (the microservice is single-shot HTTP; no progress stream).
 - Errors map to existing `ErrorCategory` codes so the existing retry/DLQ pipeline handles them:
   - `drm_detected` / `anti_bot_block` → BLOCKED
