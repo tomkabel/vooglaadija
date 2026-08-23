@@ -107,6 +107,11 @@ class TestExecuteRoutesToBrowserExecutor:
         with (
             patch.object(job_executor.settings, "browser_downloader_enabled", True),
             patch.object(job_executor.settings, "feature_throttle_preemptive_enabled", False),
+            patch.object(
+                job_executor,
+                "redis_client",
+                AsyncMock(exists=AsyncMock(return_value=0)),
+            ),
             patch.object(job_executor, "extract_media_browser", mock_browser),
             patch.object(
                 job_executor,
@@ -149,6 +154,11 @@ class TestExecuteRoutesToBrowserExecutor:
         with (
             patch.object(job_executor.settings, "browser_downloader_enabled", True),
             patch.object(job_executor.settings, "feature_throttle_preemptive_enabled", False),
+            patch.object(
+                job_executor,
+                "redis_client",
+                AsyncMock(exists=AsyncMock(return_value=0)),
+            ),
             patch.object(job_executor, "extract_media_browser", AsyncMock()) as mock_browser,
             patch.object(
                 job_executor,
@@ -188,6 +198,11 @@ class TestExecuteRoutesToBrowserExecutor:
         with (
             patch.object(job_executor.settings, "browser_downloader_enabled", False),
             patch.object(job_executor.settings, "feature_throttle_preemptive_enabled", False),
+            patch.object(
+                job_executor,
+                "redis_client",
+                AsyncMock(exists=AsyncMock(return_value=0)),
+            ),
             patch.object(job_executor, "extract_media_browser", AsyncMock()) as mock_browser,
             patch.object(
                 job_executor,
