@@ -211,16 +211,15 @@ export async function validateOutputDir(dir, { base, realpath = defaultRealpath 
   // base. This keeps the request-controlled string away from the filesystem
   // sink (CodeQL js/path-injection) and is a genuine defence-in-depth layer:
   // the post-realpath check below alone would still stat/resolve arbitrary
-  // attacker paths before rejecting them.
+  // attacker paths before rejecting them. The guard is inlined (rather than
+  // hidden in the isUnder helper) so CodeQL sees the containment check as a
+  // barrier guarding the realpath sink below.
   const candidate = resolve(dir);
-  if (!isUnder(candidate, resolvedBase)) {
+  if (!(candidate === resolvedBase || candidate.startsWith(`${resolvedBase}${sep}`))) {
     throw new Error(`output_dir must be under ${resolvedBase}`);
   }
   let resolved;
   try {
-    // `candidate` passed the lexical `isUnder(candidate, resolvedBase)`
-    // containment check above before any filesystem access; this realpath call
-    // is the post-guard resolution.
     // codeql[js/path-injection]
     resolved = await realpath(candidate);
   } catch {
