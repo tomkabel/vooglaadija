@@ -189,12 +189,12 @@ gVisor provides syscall-level isolation without the overhead of full virtualizat
 ### 1.3 Container lifecycle management
 
 Create `worker/container_executor.py`:
-1. Start the browser-downloader container via `docker compose up`
+1. Start the browser-downloader container via `docker compose -p sandbox-<job_id> up -d` — the unique per-job Compose project name keeps concurrent downloads from stopping each other's containers
 2. POST the download job to the container's HTTP API
 3. Poll for completion (container returns JSON when done)
 4. On completion: read output file from bind-mounted host directory
-5. `docker compose down` to destroy the sandbox
-6. Per-download container (fresh state, no session cross-contamination)
+5. `docker compose -p sandbox-<job_id> down` to destroy the sandbox — the SAME project identity as the `up` step, so cleanup only ever targets this job's containers
+6. Per-download container (fresh state, no session cross-contamination); the project name is derived from the job id (sanitized to `[a-z0-9-]`) so parallel downloads run isolated Compose projects
 
 ---
 
