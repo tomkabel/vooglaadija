@@ -76,3 +76,21 @@ class TestBrowserDownloaderSettingsValidation:
         s.browser_downloader_endpoint = ""
         with pytest.raises(ValueError, match="BROWSER_DOWNLOADER_ENDPOINT"):
             s._validate_browser_downloader()
+
+    @pytest.mark.unit
+    def test_endpoint_without_host_is_rejected(self) -> None:
+        from core.config import Settings
+
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        s.browser_downloader_endpoint = "http://:8080"
+        with pytest.raises(ValueError, match="BROWSER_DOWNLOADER_ENDPOINT"):
+            s._validate_browser_downloader()
+
+    @pytest.mark.unit
+    def test_endpoint_with_malformed_port_is_rejected(self) -> None:
+        from core.config import Settings
+
+        s = Settings(_env_file=None)  # type: ignore[call-arg]
+        s.browser_downloader_endpoint = "http://browser-downloader:not-a-port"
+        with pytest.raises(ValueError, match="BROWSER_DOWNLOADER_ENDPOINT"):
+            s._validate_browser_downloader()
