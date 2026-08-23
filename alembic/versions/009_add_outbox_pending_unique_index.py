@@ -34,8 +34,9 @@ def upgrade() -> None:
     # The partial unique index below would fail to create on such a database,
     # so deterministically reconcile: keep the earliest row per job_id and drop
     # the rest. The surviving pending row is still delivered by the relay.
-    # PostgreSQL has no min(uuid) aggregate, so dedupe with a window function
-    # (works on both PostgreSQL and SQLite) instead of MIN(id).
+    # The outbox ``id`` is a random v4 UUID, so MIN(id) does NOT select the
+    # earliest row. Instead order by created_at (with id as a tiebreaker) via a
+    # window function, which works on both PostgreSQL and SQLite.
     op.execute(
         sa.text(
             "DELETE FROM outbox WHERE status = 'pending' AND id IN ("
