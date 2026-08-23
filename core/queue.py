@@ -71,11 +71,17 @@ redis_client = _LazyRedisClient()
 
 
 async def enqueue_job(job_id: UUID | str) -> None:
-    """Enqueue a download job for processing.
+    """Enqueue a download job for processing via Celery.
 
-    Uses the async Redis client to push job IDs to the download queue.
+    Dispatches a Celery task to the downloads queue. The Celery worker
+    will pick up the task and process it with automatic retry support.
     """
-    await redis_client.lpush("download_queue", str(job_id))
+    from worker.celery_tasks import process_download
+
+    process_download.apply_async(
+        args=[str(job_id)],
+        queue="downloads",
+    )
 
     try:
         from core.metrics import QUEUE_DEPTH
