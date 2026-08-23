@@ -93,6 +93,17 @@ def reset_redis_client() -> None:
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
+        # No current event loop (e.g. called from a non-main thread): run the
+        # close on a controlled throwaway loop so the pool is still released
+        # instead of silently leaking it.
+        try:
+            new_loop = asyncio.new_event_loop()
+            try:
+                new_loop.run_until_complete(_close())
+            finally:
+                new_loop.close()
+        except Exception:
+            logger.warning("redis_reset_close_failed", exc_info=True)
         return
     if loop.is_running():
         task = loop.create_task(_close())

@@ -168,6 +168,44 @@ def test_redis_singleton_reads_patched_core_redis_url_before_first_creation():
     assert mock_from_url.call_args.kwargs["retry_on_timeout"] is False
 
 
+def test_reset_redis_client_without_current_event_loop_still_closes() -> None:
+    """reset_redis_client closes the client when no event loop is current.
+
+    Called from a non-main thread there is no current event loop, so
+    asyncio.get_event_loop() raises RuntimeError; the close must still run
+    on a controlled throwaway loop instead of being skipped.
+    """
+
+    import threading
+
+    import core.redis_client as redis_module
+
+    closed = False
+
+    class FakeClient:
+        async def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    redis_module._redis_state["client"] = FakeClient()
+    outcome: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            redis_module.reset_redis_client()
+            outcome["ok"] = True
+        except Exception as exc:  # pragma: no cover - failure path
+            outcome["err"] = exc
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    thread.join()
+
+    assert outcome.get("ok") is True, outcome.get("err")
+    assert closed is True
+    assert redis_module._redis_state["client"] is None
+
+
 def test_worker_queue_module_is_removed():
     """The old worker.queue module is not importable after queue extraction."""
     sys.modules.pop("worker.queue", None)
