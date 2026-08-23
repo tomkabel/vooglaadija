@@ -439,7 +439,8 @@ async function fetchToFile(url, destPath, opts = {}) {
   // the URL was SSRF-validated in downloadStream/fetchResOne. This is the
   // service's purpose, not untrusted-data-to-path — flagged by CodeQL only
   // because the bytes originate from the network.
-  await writeFile(destPath, buf); // codeql[js/http-to-file-access]
+  // codeql[js/http-to-file-access]
+  await writeFile(destPath, buf);
 }
 
 // -- HLS manifest parsing ----------------------------------------------------

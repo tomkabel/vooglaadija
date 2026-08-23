@@ -221,7 +221,8 @@ export async function validateOutputDir(dir, { base, realpath = defaultRealpath 
     // `candidate` passed the lexical `isUnder(candidate, resolvedBase)`
     // containment check above before any filesystem access; this realpath call
     // is the post-guard resolution.
-    resolved = await realpath(candidate); // codeql[js/path-injection]
+    // codeql[js/path-injection]
+    resolved = await realpath(candidate);
   } catch {
     throw new Error('output_dir does not exist or is not accessible');
   }
