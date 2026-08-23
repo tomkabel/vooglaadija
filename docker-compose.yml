@@ -173,6 +173,7 @@ services:
       BROWSER_DOWNLOADER_ENDPOINT: ${BROWSER_DOWNLOADER_ENDPOINT:-http://browser-downloader:3000}
     volumes:
       - storage:/app/storage:Z
+      - ./infra/seccomp/worker-seccomp.json:/etc/seccomp/worker-seccomp.json:ro
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -183,6 +184,9 @@ services:
       browser-downloader:
         condition: service_started
     <<: *base-service
+    security_opt:
+      - no-new-privileges=true
+      - seccomp:/etc/seccomp/worker-seccomp.json
     logging:
       driver: json-file
       options:
