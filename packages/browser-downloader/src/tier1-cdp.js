@@ -43,9 +43,11 @@ const BLOCK_RE =
 
 // -- DRM manifest heuristics (Phase 2.1) -----------------------------------
 
-// HLS: any #EXT-X-KEY with a DRM METHOD or a non-identity KEYFORMAT.
-const HLS_DRM_METHOD_RE = /#EXT-X-KEY:.*METHOD=(SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)/i;
-const HLS_DRM_KEYFORMAT_RE = /#EXT-X-KEY:.*KEYFORMAT="(?!identity).+"/i;
+// HLS: any #EXT-X-KEY or #EXT-X-SESSION-KEY with a DRM METHOD or a
+// non-identity KEYFORMAT.
+const HLS_DRM_METHOD_RE =
+  /#EXT-X-(?:KEY|SESSION-KEY):.*METHOD=(SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)/i;
+const HLS_DRM_KEYFORMAT_RE = /#EXT-X-(?:KEY|SESSION-KEY):.*KEYFORMAT="(?!identity).+"/i;
 // DASH: any <ContentProtection> element with a DRM schemeIdUri.
 const DASH_DRM_RE = /<ContentProtection[\s/>]/i;
 
