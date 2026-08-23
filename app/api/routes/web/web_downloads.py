@@ -17,6 +17,7 @@ from app.api.routes.web.web_helpers import (
     validate_csrf_token,
 )
 from app.api.routes.web_helpers import _error_html
+from app.schemas.download import DownloadResponse
 from app.services.download_service import (
     DownloadFileExpiredError,
     DownloadFileMissingError,
@@ -65,11 +66,17 @@ async def dashboard_page(
 ) -> HTMLResponse:
     """Render main dashboard page with download list."""
     result = await DownloadService(db, current_user.id).list(page=1, per_page=50)
+    # Eagerly convert ORM rows to plain pydantic models. `DownloadService.list`
+    # loads them in an async DB session; if that session is later committed or
+    # expired (e.g. a prior `best_effort_enqueue`) the synchronous Jinja render
+    # would trigger a lazy DB load outside the event loop and raise
+    # `MissingGreenlet`. Copying here reads every attribute in the async context.
+    job_views = [DownloadResponse.model_validate(job) for job in result.jobs]
     return render_csrf_page(
         request,
         "dashboard.html",
         current_user=current_user,
-        jobs=result.jobs,
+        jobs=job_views,
     )
 
 
@@ -105,10 +112,17 @@ async def create_download_form(
 
     await service.best_effort_enqueue(job.id)
 
+    # Detach from the ORM session before rendering: `best_effort_enqueue`
+    # commits, which expires the instance's attributes. Jinja renders
+    # synchronously (outside the event loop), so a lazy DB load here raises
+    # `MissingGreenlet`. Copying into a plain pydantic model eagerly reads the
+    # attributes in the async context and yields a template-safe object.
+    job_view = DownloadResponse.model_validate(job)
+
     resp = templates.TemplateResponse(
         request,
         "partials/_download_item.html",
-        get_template_context(request, job=job),
+        get_template_context(request, job=job_view),
     )
     # NOTE: no rotate_csrf_token here — the response is an HTMX partial whose
     # page <meta> still carries the pre-request token. Rotating the cookie
