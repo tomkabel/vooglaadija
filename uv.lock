@@ -2144,7 +2144,7 @@ requires-dist = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "bandit", marker = "extra == 'security'" },
-    { name = "bcrypt", specifier = ">=4.0" },
+    { name = "bcrypt", specifier = ">=4.0,<4.1" },
     { name = "cryptography", specifier = ">=46.0.7" },
     { name = "deptry", marker = "extra == 'audit'", specifier = "==0.25.1" },
     { name = "detect-secrets", marker = "extra == 'security'", specifier = ">=1.5.0" },
@@ -2206,7 +2206,7 @@ audit = [
 dev = [
     { name = "aiosqlite", specifier = ">=0.19.0" },
     { name = "bandit", specifier = ">=1.7.0" },
-    { name = "bcrypt", specifier = ">=4.0" },
+    { name = "bcrypt", specifier = ">=4.0,<4.1" },
     { name = "deptry", specifier = "==0.25.1" },
     { name = "detect-secrets", specifier = ">=1.5.0" },
     { name = "httpx", specifier = ">=0.24.0" },
@@ -2229,7 +2229,7 @@ security = [
 ]
 test = [
     { name = "aiosqlite", specifier = ">=0.19.0" },
-    { name = "bcrypt", specifier = ">=4.0" },
+    { name = "bcrypt", specifier = ">=4.0,<4.1" },
     { name = "httpx", specifier = ">=0.24.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
