@@ -215,10 +215,14 @@ export async function validateOutputDir(dir, { base, realpath = defaultRealpath 
   // form with positive polarity, which CodeQL's RelativePathStartsWithSanitizer
   // recognises as a barrier before the realpath sink.
   const rel = relative(resolvedBase, resolve(dir));
-  if (rel.startsWith('..')) {
+  const candidate = join(resolvedBase, rel);
+  // Separator-aware containment: `rel.startsWith('..')` would also reject a
+  // legitimate child directory named `..foo`. isUnder requires the candidate
+  // to equal the base or start with `base + sep`, so only true parent
+  // traversal is rejected.
+  if (!isUnder(candidate, resolvedBase)) {
     throw new Error(`output_dir must be under ${resolvedBase}`);
   }
-  const candidate = join(resolvedBase, rel);
   let resolved;
   try {
     // codeql[js/path-injection]

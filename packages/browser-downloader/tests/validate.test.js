@@ -151,6 +151,15 @@ describe('validate — validateOutputDir', () => {
     await expect(validateOutputDir(sibling, { base, realpath })).rejects.toThrow(/under/);
   });
 
+  it('accepts a child directory whose name begins with ".." (not traversal)', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'bd-out-'));
+    // `..foo` is a legitimate child name; only a `..` SEGMENT is traversal.
+    const child = join(base, '..foo');
+    await mkdir(child);
+    const resolved = await validateOutputDir(child, { base, realpath: async (p) => p });
+    expect(resolved).toBe(child);
+  });
+
   it('rejects an out-of-base path BEFORE touching the filesystem (path-injection guard)', async () => {
     const base = await mkdtemp(join(tmpdir(), 'bd-out-'));
     const seen = [];
