@@ -1,0 +1,32 @@
+# ============================================
+# Caddy reverse proxy override (standalone, no Coolify)
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
+#
+# Caddy is the only public entry point. It terminates TLS (origin cert) and
+# forwards to the API at `api:8000` over the default compose network.
+# Ports 80/443 are bound on the host; all other services stay internal.
+# ============================================
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - default
+
+volumes:
+  caddy_data:
+  caddy_config:
