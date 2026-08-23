@@ -185,14 +185,18 @@ class TestExtractMediaSuccess:
     async def test_success_returns_tuple_with_filename_derived_from_path(self) -> None:
         client = _make_mock_client(
             200,
-            {"status": "success", "file_path": "/storage/abc-123.mp4", "tier_used": 1},
+            {
+                "status": "success",
+                "file_path": "/storage/downloads/abc-123.mp4",
+                "tier_used": 1,
+            },
         )
         result = await extract_media(
             "https://tiktok.com/@u/v/1",
             "/storage",
             client=client,
         )
-        assert result == ("/storage/abc-123.mp4", "abc-123.mp4", None)
+        assert result == ("/storage/downloads/abc-123.mp4", "abc-123.mp4", None)
 
 
 class TestExtractMediaErrorCodes:

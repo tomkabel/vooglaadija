@@ -28,6 +28,7 @@ Design notes (KEEP):
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -208,13 +209,22 @@ async def extract_media(
     http_client = client or _get_client()
     breaker = get_browser_downloader_circuit_breaker()
 
-    request_body = {"url": url, "output_dir": storage_path}
+    # The microservice writes into the `downloads` subfolder of the worker's
+    # storage root. This MUST match the serve-side base
+    # (`app.services.download_service._downloads_base_path` →
+    # `storage_path/downloads`); otherwise `DownloadService.get_file_path`
+    # rejects the stored path and every browser download 403s.
+    downloads_dir = os.path.join(storage_path, "downloads")
+
+    request_body = {"url": url, "output_dir": downloads_dir}
     endpoint = settings.browser_downloader_endpoint.rstrip("/") + "/download"
 
     try:
         return cast(
             tuple[str, str, str | None],
-            await breaker.execute(_call_service, http_client, endpoint, request_body, storage_path),
+            await breaker.execute(
+                _call_service, http_client, endpoint, request_body, downloads_dir
+            ),
         )
     except CircuitBreakerOpenError:
         # Let CircuitBreakerOpenError propagate so the processor's dedicated
@@ -233,7 +243,7 @@ async def extract_media(
 
 
 async def _call_service(
-    http_client: httpx.AsyncClient, endpoint: str, body: dict[str, Any], storage_path: str
+    http_client: httpx.AsyncClient, endpoint: str, body: dict[str, Any], downloads_dir: str
 ) -> tuple[str, str, str | None]:
     """
     Send one download request and parse the service response.
@@ -242,6 +252,8 @@ async def _call_service(
         http_client (httpx.AsyncClient): HTTP client used for the request.
         endpoint (str): Download service endpoint.
         body (dict[str, Any]): JSON request payload.
+        downloads_dir (str): The `storage_path/downloads` directory the
+            microservice writes into; used as the path-traversal base.
 
     Returns:
         tuple[str, str, str | None]: The media file path, file name, and optional title.
@@ -266,11 +278,11 @@ async def _call_service(
         raise BrowserExecutorError(category=ErrorCategory.TRANSIENT, signal="http_error") from exc
 
     if response.status_code == 200:
-        return _parse_success(response, storage_path)
+        return _parse_success(response, downloads_dir)
     return _parse_failure_response(response)
 
 
-def _parse_success(response: httpx.Response, storage_path: str) -> tuple[str, str, str | None]:
+def _parse_success(response: httpx.Response, downloads_dir: str) -> tuple[str, str, str | None]:
     """
     Parse a successful downloader response into the worker's media tuple.
 
@@ -316,29 +328,30 @@ def _parse_success(response: httpx.Response, storage_path: str) -> tuple[str, st
     # `cleanup_downloaded_file` would be a silent no-op.
     # TODO(kilo): add a clear runtime error + fetch-via-service path when the
     # file is absent on this pod (cross-pod delivery gap).
-    file_path = _validate_file_path(file_path, storage_path)
+    file_path = _validate_file_path(file_path, downloads_dir)
 
     file_name = file_path.rsplit("/", 1)[-1] or file_path
     return file_path, file_name, None
 
 
-def _validate_file_path(file_path: str, storage_path: str) -> str:
+def _validate_file_path(file_path: str, downloads_dir: str) -> str:
     """
     Validate that the microservice-returned path stays within the download root.
 
-    The external microservice is trusted with the worker's storage root but a
-    compromised or buggy service could return an absolute path outside it, which
-    would then be served via ``FileResponse`` and passed to ``os.remove``. Mirror
-    ``app.services.download_service._validate_download_path``: the resolved path
-    must be the storage root or live beneath it.
+    The external microservice is trusted with the worker's downloads directory
+    but a compromised or buggy service could return an absolute path outside it,
+    which would then be served via ``FileResponse`` and passed to ``os.remove``.
+    Mirror ``app.services.download_service._validate_download_path`` (whose base
+    is ``_downloads_base_path`` → ``storage_path/downloads``): the resolved path
+    must be ``downloads_dir`` or live beneath it.
     """
-    root = Path(storage_path).resolve()
+    root = Path(downloads_dir).resolve()
     resolved = Path(file_path).resolve()
     if resolved != root and root not in resolved.parents:
         logger.warning(
             "browser_downloader_path_traversal",
             file_path=file_path,
-            storage_path=storage_path,
+            downloads_dir=downloads_dir,
         )
         raise BrowserExecutorError(category=ErrorCategory.BLOCKED, signal="invalid_file_path")
     return str(resolved)
