@@ -63,3 +63,8 @@ unoptimized_prompt.md
 # Infrastructure docs (mirrors markdownlint ignore list)
 infra/deploy/README.md
 infra/ssl/README.md
+
+# Research/scratch notes (mirrors markdownlint ignore list)
+browser-downloader
+docs/impl-plan-universal-downloader.md
+non-yt-video-issue.md
