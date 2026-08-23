@@ -218,6 +218,51 @@ describe('downloader — code-review fixes (iteration 2)', () => {
     expect(result.status).toBe('success');
     expect(mocks.downloadStream.mock.calls[0][2].timeout).toBe(60_000);
   });
+
+  it('fails with storage_error before launching the browser when disk is full', async () => {
+    // A free-space floor larger than any real filesystem (1e18 bytes) forces
+    // the preflight to fail — BEFORE Chromium is launched. Pre-launch failures
+    // reject (same contract as input validation and pre-aborted signals).
+    process.env.BD_MIN_FREE_BYTES = '1000000000000000000';
+    mocks.interceptMedia.mockResolvedValue({
+      kind: 'bytes',
+      buffer: Buffer.from('x'),
+      ext: 'mp4',
+    });
+    await expect(download('https://example.com/v.mp4', base, {})).rejects.toMatchObject({
+      code: 'storage_error',
+    });
+    expect(mocks.launch).not.toHaveBeenCalled();
+  });
+
+  it('passes onProgress through to downloadStream for manifest jobs', async () => {
+    const onProgress = vi.fn();
+    mocks.interceptMedia.mockResolvedValue({
+      kind: 'manifest',
+      streamUrl: 'https://x/v.m3u8',
+      ext: 'mp4',
+    });
+    mocks.downloadStream.mockImplementation(async (_u, outPath) => {
+      await writeFile(outPath, 's');
+      return outPath;
+    });
+    await download('https://example.com/v.m3u8', base, {
+      tier1Timeout: 1000,
+      onProgress,
+    });
+    expect(mocks.downloadStream.mock.calls[0][2].onProgress).toBe(onProgress);
+    // Phase markers are emitted for byte-capture jobs.
+    mocks.interceptMedia.mockResolvedValue({
+      kind: 'bytes',
+      buffer: Buffer.from('x'),
+      ext: 'mp4',
+    });
+    const events = [];
+    await download('https://example.com/v.mp4', base, {
+      onProgress: (ev) => events.push(ev),
+    });
+    expect(events).toContainEqual({ phase: 'saving', percent: 100 });
+  });
 });
 
 describe('downloader — cancellation (opts.signal)', () => {

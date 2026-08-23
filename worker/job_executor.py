@@ -350,7 +350,10 @@ async def execute(
                 extract_media_browser(
                     job.url,
                     settings.storage_path,
-                    progress_callback=None,
+                    # Browser jobs now stream progress too: the microservice
+                    # emits NDJSON progress events which browser_executor
+                    # forwards to this callback (same pub/sub shape as yt-dlp).
+                    progress_callback=progress_callback,
                 ),
             )
         else:

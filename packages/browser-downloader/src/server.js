@@ -16,6 +16,7 @@ import express from 'express';
 import { ConcurrencyLimitError, createSemaphore } from './concurrency.js';
 import { download } from './downloader.js';
 import { DownloaderError, classifyError } from './errors.js';
+import { recordDownload, registry } from './metrics.js';
 import { parseTimeout, validateOutputDir, validateUrl } from './validate.js';
 
 const PORT = Number(process.env.BD_PORT) || 3000;
@@ -55,6 +56,11 @@ export function createApp() {
     res.json({ status: 'ok' });
   });
 
+  app.get('/metrics', async (_req, res) => {
+    res.set('content-type', registry.contentType);
+    res.send(await registry.metrics());
+  });
+
   app.post('/download', async (req, res) => {
     const body = req.body;
     if (!body || typeof body !== 'object') {
@@ -87,6 +93,22 @@ export function createApp() {
         .json({ status: 'failed', error: 'invalid_request', message: err.message });
     }
 
+    // Progress streaming mode: when the client sends `Accept:
+    // application/x-ndjson`, the response is a stream of newline-delimited
+    // JSON events — `{phase, percent?, downloaded_bytes?}` progress lines
+    // followed by one final result line (`{status, file_path?, error?}`).
+    // The default (JSON) contract is unchanged.
+    const wantsNdjson = String(req.headers.accept || '').includes('application/x-ndjson');
+    if (wantsNdjson) {
+      res.setHeader('content-type', 'application/x-ndjson');
+    }
+    let streamOpen = wantsNdjson;
+    const writeEvent = (obj) => {
+      if (streamOpen) {
+        res.write(`${JSON.stringify(obj)}\n`);
+      }
+    };
+
     const tier1Timeout = parseTimeout(process.env.BD_TIER1_TIMEOUT_MS, 30_000);
     const tier2Timeout = parseTimeout(process.env.BD_TIER2_TIMEOUT_MS, 30_000);
 
@@ -108,6 +130,7 @@ export function createApp() {
     // new request takes the freed slot, so live browsers grow past
     // MAX_CONCURRENCY without bound.
     const cancel = new AbortController();
+    const startMs = performance.now();
     try {
       // Race the download against an overall request timeout. If the download
       // hangs (e.g. a hung browser/streamlink), the timeout aborts the work and
@@ -121,6 +144,7 @@ export function createApp() {
         tier1Timeout,
         tier2Timeout,
         signal: cancel.signal,
+        onProgress: wantsNdjson ? writeEvent : undefined,
       });
       // If the timeout wins the race, `downloadPromise` may still settle later.
       // Attach a no-op handler so a late rejection is never an unhandled
@@ -136,13 +160,28 @@ export function createApp() {
           }, requestTimeout);
         }),
       ]);
+      recordDownload(result.status, result.tier_used ?? null, result.error ?? null, startMs);
+      if (wantsNdjson) {
+        writeEvent(result);
+        streamOpen = false;
+        res.end();
+        return;
+      }
       if (result.status === 'success') {
         return res.status(200).json(result);
       }
       return res.status(502).json(result);
     } catch (err) {
       console.error('[download] unexpected error:', err);
-      return res.status(502).json({ status: 'failed', error: safeClassify(err), tier_used: null });
+      const code = safeClassify(err);
+      recordDownload('failed', null, code, startMs);
+      if (wantsNdjson) {
+        writeEvent({ status: 'failed', error: code, tier_used: null });
+        streamOpen = false;
+        res.end();
+        return;
+      }
+      return res.status(502).json({ status: 'failed', error: code, tier_used: null });
     } finally {
       if (requestTimer) {
         clearTimeout(requestTimer);

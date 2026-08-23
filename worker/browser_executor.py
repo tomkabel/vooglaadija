@@ -21,8 +21,10 @@ Design notes (KEEP):
   `_map_response_to_category` — every failure path goes through it.
 - The circuit breaker is a named singleton alongside
   `get_youtube_circuit_breaker` in `app.services.circuit_breaker`.
-- No progress streaming (microservice is single-shot HTTP); the worker
-  passes `progress_callback=None` from the caller.
+- Progress: the microservice streams NDJSON progress events
+  (`Accept: application/x-ndjson`); `extract_media` forwards them to the
+  `progress_callback` (same shape as yt-dlp progress) so browser-platform
+  jobs get the same pub/sub progress as YouTube jobs.
 """
 
 from __future__ import annotations
@@ -205,7 +207,6 @@ async def extract_media(
         BrowserExecutorError: If the request or response processing fails.
         CircuitBreakerOpenError: If the browser-downloader circuit is open.
     """
-    _ = progress_callback  # Microservice is single-shot; no progress stream.
     http_client = client or _get_client()
     breaker = get_browser_downloader_circuit_breaker()
 
@@ -221,7 +222,12 @@ async def extract_media(
 
     try:
         result = await breaker.execute(
-            _call_service_terminal_safe, http_client, endpoint, request_body, downloads_dir
+            _call_service_terminal_safe,
+            http_client,
+            endpoint,
+            request_body,
+            downloads_dir,
+            progress_callback,
         )
         if isinstance(result, BrowserExecutorError):
             # Terminal verdict — re-raise after breaker execution (returned as
@@ -269,10 +275,20 @@ async def _call_service_terminal_safe(
 
 
 async def _call_service(
-    http_client: httpx.AsyncClient, endpoint: str, body: dict[str, Any], downloads_dir: str
+    http_client: httpx.AsyncClient,
+    endpoint: str,
+    body: dict[str, Any],
+    downloads_dir: str,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[str, str, str | None]:
     """
     Send one download request and parse the service response.
+
+    The request uses `Accept: application/x-ndjson`: the microservice streams
+    newline-delimited progress events before the final result line. Progress
+    events (any line without a `status` field) are forwarded to
+    ``progress_callback`` in the same shape yt-dlp progress uses
+    (percent/downloaded_bytes/total_bytes); the last line is the result.
 
     Parameters:
         http_client (httpx.AsyncClient): HTTP client used for the request.
@@ -280,6 +296,8 @@ async def _call_service(
         body (dict[str, Any]): JSON request payload.
         downloads_dir (str): The `storage_path/downloads` directory the
             microservice writes into; used as the path-traversal base.
+        progress_callback (ProgressCallback | None): Optional async callback
+            receiving progress dicts.
 
     Returns:
         tuple[str, str, str | None]: The media file path, file name, and optional title.
@@ -288,7 +306,45 @@ async def _call_service(
         BrowserExecutorError: If the request fails or the service returns an unsuccessful or invalid response.
     """
     try:
-        response = await http_client.post(endpoint, json=body)
+        async with http_client.stream(
+            "POST",
+            endpoint,
+            json=body,
+            headers={"accept": "application/x-ndjson"},
+        ) as response:
+            if response.status_code != 200:
+                return _parse_failure_response(response)
+            final_payload: dict[str, Any] | None = None
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    payload = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    raise BrowserExecutorError(
+                        category=ErrorCategory.TRANSIENT, signal="non_json_response"
+                    ) from None
+                if not isinstance(payload, dict):
+                    raise BrowserExecutorError(
+                        category=ErrorCategory.TRANSIENT, signal="invalid_response_shape"
+                    )
+                if payload.get("status") in ("success", "failed"):
+                    final_payload = payload
+                elif progress_callback is not None:
+                    await _emit_progress(progress_callback, payload)
+            if final_payload is None:
+                raise BrowserExecutorError(
+                    category=ErrorCategory.TRANSIENT, signal="non_json_response"
+                )
+            if final_payload.get("status") == "success":
+                return _parse_success_payload(final_payload, downloads_dir)
+            # Streamed failure (HTTP 200 + failed final line): map its
+            # structured error code like any other failure payload.
+            raw_error = final_payload.get("error")
+            fallback_code = (
+                raw_error if isinstance(raw_error, str) and raw_error else "unknown_error"
+            )
+            _parse_failure_payload(final_payload, fallback_code=fallback_code)
     except httpx.TimeoutException as exc:
         logger.warning("browser_downloader_timeout", error=str(exc))
         raise BrowserExecutorError(
@@ -303,26 +359,16 @@ async def _call_service(
         logger.warning("browser_downloader_http_error", error=str(exc))
         raise BrowserExecutorError(category=ErrorCategory.TRANSIENT, signal="http_error") from exc
 
-    if response.status_code == 200:
-        return _parse_success(response, downloads_dir)
-    return _parse_failure_response(response)
 
-
-def _parse_success(response: httpx.Response, downloads_dir: str) -> tuple[str, str, str | None]:
+def _parse_success_payload(
+    payload: dict[str, Any], downloads_dir: str
+) -> tuple[str, str, str | None]:
     """
-    Parse a successful downloader response into the worker's media tuple.
+    Parse a successful downloader payload into the worker's media tuple.
 
     Returns:
         file_data (tuple[str, str, str | None]): The file path, derived file name, and null title.
     """
-    try:
-        payload = response.json()
-    except (json.JSONDecodeError, ValueError) as exc:
-        logger.warning("browser_downloader_non_json_success", status=response.status_code)
-        raise BrowserExecutorError(
-            category=ErrorCategory.TRANSIENT, signal="non_json_response"
-        ) from exc
-
     if not isinstance(payload, dict):
         logger.warning(
             "browser_downloader_invalid_response_shape",
@@ -358,6 +404,28 @@ def _parse_success(response: httpx.Response, downloads_dir: str) -> tuple[str, s
 
     file_name = file_path.rsplit("/", 1)[-1] or file_path
     return file_path, file_name, None
+
+
+async def _emit_progress(progress_callback: ProgressCallback, payload: dict[str, Any]) -> None:
+    """Forward one NDJSON progress event to the caller's callback.
+
+    The microservice emits `{phase, percent?, downloaded_bytes?, total_bytes?}`;
+    the worker maps it to the same dict shape the yt-dlp path uses so
+    ``worker.job_executor`` can publish it to pub/sub unchanged. Best-effort:
+    a failing callback must never fail the download.
+    """
+    try:
+        await progress_callback(
+            {
+                "percent": payload.get("percent"),
+                "speed": None,
+                "eta": None,
+                "downloaded_bytes": payload.get("downloaded_bytes"),
+                "total_bytes": payload.get("total_bytes"),
+            }
+        )
+    except Exception:
+        logger.warning("browser_downloader_progress_publish_failed", exc_info=True)
 
 
 def _validate_file_path(file_path: str, downloads_dir: str) -> str:
@@ -466,6 +534,10 @@ def _map_response_to_category(code: str, payload: dict[str, Any] | None = None) 
         return ErrorCategory.BLOCKED
     if code in {"no_media_found", "not_found", "private_content", "http_404"}:
         return ErrorCategory.NOT_FOUND
+    # Storage failure (disk full) — retried once after a long delay by the
+    # STORAGE policy in app.services.error_classifier.
+    if code == "storage_error":
+        return ErrorCategory.STORAGE
     # 429 rate-limit (microservice body) — TRANSIENT so the existing
     # backoff machinery applies; falling through to BLOCKED here would
     # send rate-limited jobs straight to the DLQ.

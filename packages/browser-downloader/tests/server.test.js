@@ -157,6 +157,115 @@ describe('server — POST /download gateway errors (502) and success (200)', () 
   });
 });
 
+describe('server — NDJSON progress stream', () => {
+  beforeEach(() => {
+    mocks.validateUrl.mockReset();
+    mocks.validateOutputDir.mockReset();
+    mocks.download.mockReset();
+    mocks.validateUrl.mockResolvedValue(new URL('https://example.com'));
+    mocks.validateOutputDir.mockResolvedValue('/output');
+  });
+
+  it('streams progress events followed by the final result line', async () => {
+    mocks.download.mockImplementation(async (_url, _dir, opts) => {
+      opts.onProgress?.({ phase: 'intercepting' });
+      opts.onProgress?.({ phase: 'downloading', percent: 42, downloaded_bytes: 1000 });
+      return { status: 'success', file_path: '/output/abc.mp4', tier_used: 1 };
+    });
+    const { server, port } = await start();
+    const res = await post(
+      port,
+      { url: 'https://example.com/v.m3u8', output_dir: '/output' },
+      { headers: { accept: 'application/x-ndjson' } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/x-ndjson');
+    const lines = (await res.text())
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(lines[0]).toMatchObject({ phase: 'intercepting' });
+    expect(lines[1]).toMatchObject({ phase: 'downloading', percent: 42 });
+    expect(lines[2]).toMatchObject({
+      status: 'success',
+      file_path: '/output/abc.mp4',
+      tier_used: 1,
+    });
+    await stop(server);
+  });
+
+  it('streams a failed final line (HTTP 200) when the downloader fails', async () => {
+    mocks.download.mockResolvedValue({ status: 'failed', error: 'drm_detected', tier_used: null });
+    const { server, port } = await start();
+    const res = await post(
+      port,
+      { url: 'https://example.com/v', output_dir: '/output' },
+      { headers: { accept: 'application/x-ndjson' } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text())
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l));
+    expect(lines[lines.length - 1]).toMatchObject({
+      status: 'failed',
+      error: 'drm_detected',
+    });
+    await stop(server);
+  });
+
+  it('keeps the default JSON contract when no NDJSON accept header is sent', async () => {
+    mocks.download.mockResolvedValue({
+      status: 'success',
+      file_path: '/output/abc.mp4',
+      tier_used: 1,
+    });
+    const { server, port } = await start();
+    const res = await post(port, { url: 'https://example.com/v', output_dir: '/output' });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    await stop(server);
+  });
+});
+
+describe('server — prometheus metrics', () => {
+  beforeEach(() => {
+    mocks.validateUrl.mockReset();
+    mocks.validateOutputDir.mockReset();
+    mocks.download.mockReset();
+    mocks.validateUrl.mockResolvedValue(new URL('https://example.com'));
+    mocks.validateOutputDir.mockResolvedValue('/output');
+  });
+
+  it('exposes /metrics with download counters and duration histogram', async () => {
+    const { server, port } = await start();
+    const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const body = await res.text();
+    expect(body).toContain('bd_downloads_total');
+    expect(body).toContain('bd_download_duration_seconds');
+    await stop(server);
+  });
+
+  it('records a download outcome as a counter increment', async () => {
+    mocks.download.mockResolvedValue({
+      status: 'success',
+      file_path: '/output/abc.mp4',
+      tier_used: 1,
+    });
+    const { server, port } = await start();
+    await post(port, { url: 'https://example.com/v', output_dir: '/output' });
+    const body = await (await fetch(`http://127.0.0.1:${port}/metrics`)).text();
+    // Label order in the exposition format is registry-internal — assert the
+    // counter line carries the outcome values, not their exact ordering.
+    expect(body).toMatch(/bd_downloads_total\{[^}]*status="success"/);
+    expect(body).toMatch(/bd_downloads_total\{[^}]*tier="1"/);
+    expect(body).toMatch(/bd_downloads_total\{[^}]*error="none"/);
+    await stop(server);
+  });
+});
+
 describe('server — concurrency overflow (503)', () => {
   beforeEach(() => {
     mocks.validateUrl.mockReset();

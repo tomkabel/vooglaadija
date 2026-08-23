@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { createCipheriv } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +28,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { downloadManifestFallback, downloadStream, runSpawn } from '../src/streamlink-backend.js';
+import {
+  decryptHlsSegment,
+  parseHlsKeyTag,
+} from '../src/streamlink-backend.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -155,19 +160,30 @@ describe('streamlink backend — HLS fallback correctness', () => {
     expect(calls).toBe(1); // manifest only — no segment fetch
   });
 
-  it('allows AES-128 with identity keyformat (plain encryption, not DRM)', async () => {
-    let calls = 0;
+  it('fetches the AES-128 key and decrypts segments (plain encryption, not DRM)', async () => {
+    // Real key/ciphertext: the fallback must fetch the key and decrypt each
+    // segment before concat — never write ciphertext as a "success" file.
+    const KEY = Buffer.alloc(16, 0x11);
+    const IV = Buffer.alloc(16);
+    IV[15] = 0x01;
+    const plaintext = Buffer.from('hello hls world!!'); // exactly one block
+    const cipher = createCipheriv('aes-128-cbc', KEY, IV);
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+
+    const seen = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_url) => {
-        calls += 1;
-        if (calls === 1) {
-          return okRes({
-            text: '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://k/key",KEYFORMAT="identity",IV=0x1234\nseg0.ts\n',
-          });
+      vi.fn(async (url) => {
+        seen.push(url);
+        if (String(url).includes('key.bin')) {
+          return okRes({ arrayBuffer: KEY });
         }
-        // segment fetch
-        return okRes({ arrayBuffer: new ArrayBuffer(8) });
+        if (String(url).includes('seg0.ts')) {
+          return okRes({ arrayBuffer: ciphertext });
+        }
+        return okRes({
+          text: '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://k.example/key.bin",IV=0x00000000000000000000000000000001\n#EXT-X-ENDLIST\nseg0.ts\n',
+        });
       }),
     );
     const child = fakeChild();
@@ -180,7 +196,11 @@ describe('streamlink backend — HLS fallback correctness', () => {
       lookup: publicLookup,
     });
     expect(out).toBe('/tmp/out.mp4');
-    expect(calls).toBeGreaterThan(1); // manifest + segment fetches
+    // manifest + key + segment — no extra fetches
+    expect(seen.length).toBe(3);
+    expect(seen.some((u) => String(u).includes('key.bin'))).toBe(true);
+    // ffmpeg concat ran on the DECRYPTED segments
+    expect(hoisted.spawn.mock.calls.some((c) => c[0] === 'ffmpeg')).toBe(true);
   });
 
   it('recurses into variant playlists preserving query strings', async () => {
@@ -195,7 +215,7 @@ describe('streamlink backend — HLS fallback correctness', () => {
           });
         }
         if (url.includes('variant.m3u8')) {
-          return okRes({ text: '#EXTM3U\nseg0.ts?sig=z\n' });
+          return okRes({ text: '#EXTM3U\n#EXT-X-ENDLIST\nseg0.ts?sig=z\n' });
         }
         return okRes({ arrayBuffer: new ArrayBuffer(8) });
       }),
@@ -266,7 +286,7 @@ describe('streamlink backend — code-review fixes (iteration 2)', () => {
           });
         }
         if (url.includes('ok.m3u8')) {
-          return okRes({ text: '#EXTM3U\nseg0.ts\n' });
+          return okRes({ text: '#EXTM3U\n#EXT-X-ENDLIST\nseg0.ts\n' });
         }
         return okRes({ arrayBuffer: new ArrayBuffer(8) });
       }),
@@ -294,7 +314,7 @@ describe('streamlink backend — code-review fixes (iteration 2)', () => {
             text: '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttp://169.254.169.254/x.m3u8\n',
           });
         }
-        return okRes({ text: '#EXTM3U\nseg0.ts\n' });
+        return okRes({ text: '#EXTM3U\n#EXT-X-ENDLIST\nseg0.ts\n' });
       }),
     );
     // Only a private-IP variant → none valid → network_error (never fetched).
@@ -367,5 +387,169 @@ describe('streamlink backend — code-review fixes (iteration 2)', () => {
       await downloadStream(u, '/tmp/out.mp4', { timeout: 5000, lookup: publicLookup });
     }
     expect(hoisted.spawn).toHaveBeenCalled();
+  });
+});
+
+describe('streamlink backend — manifest preflight (phase 3)', () => {
+  it('rejects a 200 HTML error page (no #EXTM3U) with no_media_found, single fetch', async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        calls += 1;
+        return okRes({ text: '<html><body>checking your browser...</body></html>' });
+      }),
+    );
+    await expect(
+      downloadManifestFallback('https://x/m.m3u8', '/tmp/out.mp4', { timeout: 1000 }),
+    ).rejects.toMatchObject({ code: 'no_media_found' });
+    expect(calls).toBe(1); // no junk segment retries
+  });
+
+  it('rejects a live playlist (no #EXT-X-ENDLIST) with no_media_found', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        okRes({ text: '#EXTM3U\n#EXT-X-TARGETDURATION:6\nseg0.ts\nseg1.ts\n' }),
+      ),
+    );
+    await expect(
+      downloadManifestFallback('https://x/live.m3u8', '/tmp/out.mp4', {
+        timeout: 1000,
+        lookup: publicLookup,
+      }),
+    ).rejects.toMatchObject({ code: 'no_media_found' });
+  });
+
+  it('picks the highest-bandwidth variant, not the first', async () => {
+    const seen = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        seen.push(url);
+        if (url.includes('master')) {
+          return okRes({
+            text: '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nlow.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000\nhigh.m3u8\n',
+          });
+        }
+        if (String(url).endsWith('.m3u8')) {
+          return okRes({ text: '#EXTM3U\n#EXT-X-ENDLIST\nseg0.ts\n' });
+        }
+        return okRes({ arrayBuffer: new ArrayBuffer(8) });
+      }),
+    );
+    const child = fakeChild();
+    hoisted.spawn.mockImplementation(() => {
+      process.nextTick(() => child.emit('close', 0));
+      return child;
+    });
+    await downloadManifestFallback('https://x/master.m3u8', '/tmp/out.mp4', {
+      timeout: 5000,
+      lookup: publicLookup,
+    });
+    expect(seen.some((u) => String(u).includes('high.m3u8'))).toBe(true);
+    expect(seen.some((u) => String(u).includes('low.m3u8'))).toBe(false);
+  });
+
+  it('emits throttled segment progress events', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).endsWith('.m3u8')) {
+          return okRes({ text: '#EXTM3U\n#EXT-X-ENDLIST\nseg0.ts\n' });
+        }
+        return okRes({ arrayBuffer: new ArrayBuffer(8) });
+      }),
+    );
+    const child = fakeChild();
+    hoisted.spawn.mockImplementation(() => {
+      process.nextTick(() => child.emit('close', 0));
+      return child;
+    });
+    const events = [];
+    await downloadManifestFallback('https://x/m.m3u8', '/tmp/out.mp4', {
+      timeout: 5000,
+      lookup: publicLookup,
+      onProgress: (ev) => events.push(ev),
+    });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0]).toMatchObject({ phase: 'downloading', percent: 100, downloaded_bytes: 8 });
+  });
+});
+
+describe('streamlink backend — AES-128 key handling (phase 3)', () => {
+  it('parseHlsKeyTag parses METHOD/URI/IV and ignores non-AES-128 tags', () => {
+    expect(
+      parseHlsKeyTag(
+        '#EXT-X-KEY:METHOD=AES-128,URI="https://k/key",KEYFORMAT="identity",IV=0x00000000000000000000000000000001',
+      ),
+    ).toEqual({ uri: 'https://k/key', ivHex: '00000000000000000000000000000001' });
+    expect(parseHlsKeyTag('#EXT-X-KEY:METHOD=AES-128,URI="https://k/key"')).toEqual({
+      uri: 'https://k/key',
+      ivHex: null,
+    });
+    expect(parseHlsKeyTag('#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://key"')).toBeNull();
+    expect(parseHlsKeyTag('#EXT-X-KEY:URI="https://k/key"')).toBeNull();
+  });
+
+  it('decryptHlsSegment round-trips with an explicit IV and the media-sequence default', () => {
+    const key = Buffer.alloc(16, 0x22);
+    const plain = Buffer.from('round trip works!'); // 16 bytes
+    const ivHex = '00000000000000000000000000000007';
+    const iv = Buffer.from(ivHex, 'hex');
+    const cipher = createCipheriv('aes-128-cbc', key, iv);
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    expect(decryptHlsSegment(ct, key, ivHex, 0)).toEqual(plain);
+    // Default IV = 16-byte BE media sequence (here: 5).
+    const seqIv = Buffer.from('00000000000000000000000000000005', 'hex');
+    const cipher2 = createCipheriv('aes-128-cbc', key, seqIv);
+    const ct2 = Buffer.concat([cipher2.update(plain), cipher2.final()]);
+    expect(decryptHlsSegment(ct2, key, null, 5)).toEqual(plain);
+  });
+
+  it('decryptHlsSegment rejects a non-16-byte key', () => {
+    expect(() => decryptHlsSegment(Buffer.alloc(16), Buffer.alloc(8), null, 0)).toThrow(
+      /invalid length 8/,
+    );
+  });
+
+  it('rejects an AES-128 key URI that resolves to a private IP (SSRF)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        okRes({
+          text: '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="http://169.254.169.254/key"\n#EXT-X-ENDLIST\nseg0.ts\n',
+        }),
+      ),
+    );
+    await expect(
+      downloadManifestFallback('https://x/m.m3u8', '/tmp/out.mp4', {
+        timeout: 5000,
+        lookup: publicLookup,
+      }),
+    ).rejects.toThrow(/private|link-local/);
+  });
+
+  it('fails with network_error on an invalid AES-128 key length', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).includes('key.bin')) {
+          return okRes({ arrayBuffer: new ArrayBuffer(8) }); // not 16 bytes
+        }
+        if (String(url).endsWith('.m3u8')) {
+          return okRes({
+            text: '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://k.example/key.bin"\n#EXT-X-ENDLIST\nseg0.ts\n',
+          });
+        }
+        return okRes({ arrayBuffer: new ArrayBuffer(16) });
+      }),
+    );
+    await expect(
+      downloadManifestFallback('https://x/m.m3u8', '/tmp/out.mp4', {
+        timeout: 5000,
+        lookup: publicLookup,
+      }),
+    ).rejects.toThrow(/invalid length 8/);
   });
 });
