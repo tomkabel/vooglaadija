@@ -352,6 +352,13 @@ services:
       # local/dev only; production should set a real OTLP/gRPC backend target.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-localhost:4317}
       OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-false}
+      # Pipeline exporter selector. Defaults to "debug" so the collector prints
+      # received telemetry and does NOT forward back to its own plain gRPC
+      # receiver (which previously caused a continuous TLS handshake error loop).
+      # Set to "otlp" ONLY when a real downstream OTLP backend is configured via
+      # OTEL_EXPORTER_OTLP_ENDPOINT (TLS-capable, not this collector's own
+      # receiver).
+      OTEL_SELF_EXPORT_ENABLED: debug
     expose:
       - '4317' # OTLP gRPC
       - '4318' # OTLP HTTP

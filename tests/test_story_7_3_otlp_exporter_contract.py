@@ -58,8 +58,18 @@ def test_collector_defines_active_otlp_and_debug_exporters():
 
 
 @pytest.mark.unit
-def test_collector_traces_and_metrics_flow_to_otlp_before_debug():
-    """Traces and metrics should flow from OTLP receiver through batch to OTLP export."""
+def test_collector_traces_and_metrics_default_to_debug_and_opt_into_otlp():
+    """Traces/metrics export to debug by default; otlp self-forward is opt-in.
+
+    The ``otlp`` exporter is still *defined* (see
+    ``test_collector_defines_active_otlp_and_debug_exporters``) for operators who
+    wire a real downstream backend, but the pipelines must NOT unconditionally
+    forward to the collector's own plain gRPC receiver — doing so caused a
+    continuous ``TLS handshake error`` loop (the collector tried TLS against a
+    non-TLS receiver on ``localhost:4317``). By default the pipelines resolve to
+    the ``debug`` exporter only; ``otlp`` is enabled by setting
+    ``OTEL_SELF_EXPORT_ENABLED=true`` (with a TLS-capable, non-self endpoint).
+    """
     pipelines = _collector_config()["service"]["pipelines"]
 
     for pipeline_name in ("traces", "metrics"):
@@ -67,7 +77,10 @@ def test_collector_traces_and_metrics_flow_to_otlp_before_debug():
 
         assert pipeline["receivers"] == ["otlp"]
         assert pipeline["processors"] == ["batch"]
-        assert pipeline["exporters"] == ["otlp", "debug"]
+        # The gated form resolves via the compose-provided env default
+        # (OTEL_SELF_EXPORT_ENABLED=debug) to "debug" unless an operator opts
+        # into otlp.
+        assert pipeline["exporters"] == ["${env:OTEL_SELF_EXPORT_ENABLED}"]
 
 
 @pytest.mark.unit
