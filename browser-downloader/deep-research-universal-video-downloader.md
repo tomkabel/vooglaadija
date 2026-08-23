@@ -111,14 +111,14 @@ This allows programmatic capture of any network response body, including streami
 ```bash
 ffmpeg -i captured-at-100x.webm \
   -filter:v "setpts=100*PTS,fps=30" \
-  -af "atempo=0.01" \
+  -af "atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.64" \
   output.mp4
 ```
 
 Key parameters:
 - `setpts=100*PTS` — multiplies each frame's presentation timestamp by 100 (slows 100x)
 - `fps=30` — resamples to target frame rate, preventing stutter from uneven capture
-- `atempo=0.01` — slows audio to match (note: `atempo` range is 0.5-100 in ffmpeg 6.0+; for extreme slowdowns, chain multiple `atempo` filters)
+- `atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.5,atempo=0.64` — slows audio to match. A single `atempo=0.01` is invalid: the filter range is 0.5–100 in ffmpeg, so extreme slowdowns require chaining filters whose product equals the target factor (0.5^6 × 0.64 = 0.01 = 100x slowdown). Each chained filter resamples internally, so the chain preserves quality far better than a single out-of-range value would.
 
 **Xvfb requirement:** In a headless VM, the browser needs a virtual display. Xvfb provides this:
 ```bash
@@ -130,11 +130,11 @@ ffmpeg -f x11grab -video_size 1920x1080 -framerate 60 -i :99 output.webm
 **Critical insight from research:** The `HeadlessExperimental.beginFrame` CDP API (from puppeteer-capture and headless-screen-recorder projects) provides deterministic frame capture without relying on real-time rendering. By manually advancing virtual time per-frame, you capture exactly one frame at a time at any simulated speed — no frames are dropped because the browser only renders when you tell it to. This is the key enabler for the 100x recording fallback.
 
 **Practical speed calculation:**
-- A 60-second video at normal speed = 60 seconds of playback
+- A 60-second video at 30fps contains **1,800 temporally distinct frames** — that is what a watchable 60s output needs
 - At 100x speed: 0.6 seconds of real-time capture
-- With deterministic frame capture at 30fps: 18 frames captured (sufficient for a low-fidelity fallback)
-- If you need higher quality: capture at higher frame rate with longer virtual time advancement intervals
-- At 100x with 60fps capture: 36 frames — the resulting video would be watchable but not high quality
+- At 30fps capture that yields only **18 frames** — stretched across 60 seconds that is **0.3fps** (a slideshow, not watchable motion)
+- To keep even 10fps output you would need 600 frames → 20 seconds of real-time capture (a 3x speedup, not 100x)
+- Captured frames and output frame rate are different quantities: the 100x approach only produces low-fidelity placeholder output; for watchable results, prefer direct media interception (Tier 1/2) or a modest speedup with adequate capture duration
 
 **Optimization:** For longer videos, split into segments and capture each at 100x in parallel across multiple browser instances. Each instance handles a different time segment.
 
