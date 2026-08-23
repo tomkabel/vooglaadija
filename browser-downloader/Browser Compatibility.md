@@ -314,23 +314,11 @@ Firefox extension version is under development. Firefox's Manifest V3 support is
 ## Related Documentation
 
 - [Installation Guide](https://flowpick.net/docs/getting-started/installation) — Chrome/Edge extension installation steps
-- [Online Tools](https://flowpick.net/docs/advanced/online-tools) — Web-based downloader requiring no installation
-- [Download Engine Architecture](https://flowpick.net/docs/advanced/download-engine) — Write strategies and fallback logic details
+- [Online Tools](https://flowpick.net/docs/advanced/online-tools) — M3U8/HLS and MPD/DASH streaming downloaders that work without installing extensions — get stream URL, paste it, select quality, download with one click.
+- [Download Engine Architecture](https://flowpick.net/docs/advanced/download-engine) — Technical architecture details of FlowPick's download engine — segment concurrent download, AES-128 decryption, three-tier write strategy, memory safety management, and progress tracking.
 - [Format Conversion](https://flowpick.net/docs/features/format-conversion) — FFmpeg WASM engine and dual engine architecture
 - [Video Sniffing](https://flowpick.net/docs/features/video-sniffing) — Extension auto-detection principles
 - [Batch Download](https://flowpick.net/docs/features/batch-download) — Queue management and concurrency control
 - [Configuration Reference](https://flowpick.net/docs/getting-started/configuration) — Download behavior configuration items
 - [Common Issues Troubleshooting](https://flowpick.net/docs/troubleshooting/common-issues) — Diagnosis of browser-related issues
-- [Known Issues](https://flowpick.net/docs/troubleshooting/known-issues) — Known limitations per browser[Online Tools](https://flowpick.net/docs/advanced/online-tools)
-
-[
-
-M3U8/HLS and MPD/DASH streaming downloaders that work without installing extensions — get stream URL, paste it, select quality, download with one click.
-
-](https://flowpick.net/docs/advanced/online-tools)[
-
-Download Engine Architecture
-
-Technical architecture details of FlowPick's download engine — segment concurrent download, AES-128 decryption, three-tier write strategy, memory safety management, and progress tracking.
-
-](https://flowpick.net/docs/advanced/download-engine)
+- [Known Issues](https://flowpick.net/docs/troubleshooting/known-issues) — Known limitations per browser
