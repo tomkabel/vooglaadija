@@ -232,6 +232,36 @@ async def test_refresh_valid_token_returns_new_access():
 
 
 @pytest.mark.asyncio
+async def test_refresh_rejects_jti_already_reserved(monkeypatch):
+    """A refresh token whose jti is already reserved (replay/concurrent use) is rejected."""
+
+    from app.services import token_blacklist
+
+    async def _already_reserved(_token_jti: str, ttl_seconds: int = 0) -> bool:
+        return False
+
+    monkeypatch.setattr(token_blacklist, "reserve_token_jti", _already_reserved)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/api/v1/auth/register",
+            json={"email": "reuse@example.com", "password": "testpassword123"},
+        )
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "reuse@example.com", "password": "testpassword123"},
+        )
+        refresh_token = login_response.json()["refresh_token"]
+
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+    assert response.status_code == 401
+    assert "already been used" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_refresh_accepts_previous_key_token_during_rotation(monkeypatch):
     """Test that a recent previous-key refresh token yields current-key replacements."""
     monkeypatch.setattr(auth, "settings", RotationSettings())

@@ -47,6 +47,25 @@ async def blacklist_token(token_jti: str, ttl_seconds: int = _blacklist_ttl) -> 
         logger.warning("token_blacklist_write_failed", jti=token_jti, exc_info=True)
 
 
+async def reserve_token_jti(token_jti: str, ttl_seconds: int = _blacklist_ttl) -> bool:
+    """Atomically reserve a jti for blacklisting (SET NX EX).
+
+    Only the first caller can reserve a given jti; a concurrent request
+    attempting to reuse the same token gets ``False``. Returns ``False`` on
+    Redis failure (fail-closed) so callers reject the request rather than
+    allowing a potentially replayed token through.
+    """
+    try:
+        from core.redis_client import get_redis_client
+
+        r = get_redis_client()
+        reserved = await r.set(f"{_blacklist_prefix}{token_jti}", "1", ex=ttl_seconds, nx=True)
+        return bool(reserved)
+    except Exception:
+        logger.warning("token_blacklist_reserve_failed", jti=token_jti, exc_info=True)
+        return False
+
+
 async def is_token_blacklisted(token_jti: str) -> bool:
     """Check if a token jti has been blacklisted.
 
