@@ -939,4 +939,3 @@ The `realpath` fake replaces `` `${base}/../` `` with `/etc/`. The input is `/et
 ```
 
 </details>
-
