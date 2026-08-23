@@ -54,7 +54,7 @@ repos:
   # Python: Ruff (lint + format + isort)
   # ==========================================
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.3  # pinned: matches CI (ruff==0.16.3 in pyproject.toml); v0.15.x misreports PLR0917 noqa as unused (RUF100)
+    rev: v0.16.3 # pinned: matches CI (ruff==0.16.3 in pyproject.toml); v0.15.x misreports PLR0917 noqa as unused (RUF100)
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --unsafe-fixes]
