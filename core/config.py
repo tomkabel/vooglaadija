@@ -312,15 +312,17 @@ class Settings(BaseSettings):
             raise ValueError("BROWSER_DOWNLOADER_ENDPOINT must be a non-empty URL")
         try:
             parsed = urlparse(self.browser_downloader_endpoint)
+            # parsed.netloc is a shallow check: "http://:8080" has a truthy
+            # netloc but no host. Require an actual hostname instead.
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise ValueError("must be an http(s) URL with a host")
+            # Force evaluation of the port: urlparse defers port parsing, so a
+            # malformed port (e.g. "http://host:not-a-port") only raises here.
+            _ = parsed.port
         except ValueError as exc:
             raise ValueError(
                 f"Invalid BROWSER_DOWNLOADER_ENDPOINT: {self.browser_downloader_endpoint!r}",
             ) from exc
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError(
-                f"Invalid BROWSER_DOWNLOADER_ENDPOINT: {self.browser_downloader_endpoint!r} "
-                "must be an http(s) URL with a host",
-            )
 
 
 settings = Settings()
