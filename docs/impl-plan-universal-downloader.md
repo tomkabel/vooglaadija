@@ -155,19 +155,32 @@ services:
     memory: 512M
     volumes:
       - ${OUTPUT_DIR}:/output:rw  # host bind-mount, no double I/O
-    network: isolated
+    networks:
+      - sandbox-net
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:size=256M
+
+networks:
+  sandbox-net:
+    driver: bridge
 ```
+
+> **Egress restriction:** Docker networks cannot filter by domain — `internal: true`
+> would block ALL egress, which breaks downloading. Domain-restricted egress is
+> enforced instead by (a) the microservice's SSRF validation, which limits every
+> request to the permitted target media domain (plus the validated redirect
+> targets), and (b) optionally a host-level egress firewall or egress proxy that
+> allows only the configured media domains. The Compose network itself only
+> isolates the sandbox from other containers.
 
 ### 1.2 gVisor (runsc) configuration
 
 gVisor provides syscall-level isolation without the overhead of full virtualization:
 - **Filesystem isolation:** The browser can only write to `/output` (host bind-mount) and `/tmp` (tmpfs)
-- **Network isolation:** Egress restricted to the target media domain only (via Docker network policy)
+- **Network isolation:** The sandbox is isolated from other containers; egress to the target media domain only is enforced in-app (SSRF validation against the permitted domain) plus optionally a host firewall/egress proxy — Docker network config alone cannot restrict by domain
 - **Seccomp filter:** Built into gVisor — only ~200 syscalls allowed vs ~400 in standard Linux
 - **No KVM required:** gVisor runs entirely in user space (works in Docker-in-Docker, GitHub Actions, any cloud VM)
 - **Boot time:** <50ms (vs 125ms for Firecracker)
