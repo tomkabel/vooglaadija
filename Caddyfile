@@ -1,0 +1,30 @@
+# Caddy reverse proxy for youtube.tomabel.ee (behind Cloudflare proxy)
+#
+# youtube.tomabel.ee is on Cloudflare. Caddy serves a TLS cert Cloudflare accepts
+# so the connection from Cloudflare -> this origin is encrypted. Set Cloudflare
+# SSL/TLS mode to "Full" (or "Full (strict)" with a Cloudflare Origin CA cert —
+# this self-signed cert is enough for "Full"). Plain HTTP :80 is also served so
+# "Flexible" mode works too.
+#
+# (If you later drop the Cloudflare proxy / grey-cloud the DNS, change the tls
+#  block to `tls internal` and Caddy will auto-issue a real Let's Encrypt cert.)
+
+youtube.tomabel.ee {
+	encode gzip zstd
+
+	# Present the origin cert to Cloudflare (and direct visitors).
+	tls /etc/caddy/certs/youtube.tomabel.ee.crt /etc/caddy/certs/youtube.tomabel.ee.key
+
+	reverse_proxy api:8000
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# Plain HTTP listener: redirect everything to HTTPS (covers Cloudflare Flexible mode
+# and direct IP visitors). Health checks that hit http://:80/health still reach the app.
+:80 {
+	reverse_proxy api:8000
+}
