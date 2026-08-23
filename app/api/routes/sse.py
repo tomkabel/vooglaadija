@@ -570,16 +570,23 @@ async def download_status_stream(
                 content={"detail": f"Too many open streams (max {_MAX_SSE_PER_USER})"},
             )
         _sse_connections[current_user.id] = active + 1
-    try:
-        return EventSourceResponse(
-            event_generator(request, get_async_session_factory(), current_user.id),
-            media_type="text/event-stream",
-            ping=POLL_INTERVAL_SECONDS,
-        )
-    finally:
-        async with _sse_connections_lock:
-            remaining = _sse_connections.get(current_user.id, 1) - 1
-            if remaining <= 0:
-                _sse_connections.pop(current_user.id, None)
-            else:
-                _sse_connections[current_user.id] = remaining
+
+    async def _counted_generator() -> AsyncGenerator[ServerSentEvent, None]:
+        try:
+            async for event in event_generator(
+                request, get_async_session_factory(), current_user.id
+            ):
+                yield event
+        finally:
+            async with _sse_connections_lock:
+                remaining = _sse_connections.get(current_user.id, 1) - 1
+                if remaining <= 0:
+                    _sse_connections.pop(current_user.id, None)
+                else:
+                    _sse_connections[current_user.id] = remaining
+
+    return EventSourceResponse(
+        _counted_generator(),
+        media_type="text/event-stream",
+        ping=POLL_INTERVAL_SECONDS,
+    )
