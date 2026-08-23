@@ -83,6 +83,8 @@ COPY core ./core
 COPY scripts ./scripts
 COPY alembic.ini .
 COPY alembic ./alembic
+# yt-dlp plugin extractors (yt_dlp_plugins package on PYTHONPATH=/app)
+COPY yt_dlp_plugins ./yt_dlp_plugins
 
 # Install the local package (wheel build only, no dependency resolution)
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -137,6 +139,7 @@ COPY --from=app-builder /app/core ./core
 COPY --from=app-builder /app/scripts ./scripts
 COPY --from=app-builder /app/alembic.ini /app/alembic.ini
 COPY --from=app-builder /app/alembic /app/alembic
+COPY --from=app-builder /app/yt_dlp_plugins /app/yt_dlp_plugins
 
 # Create non-root user
 RUN groupadd -r appuser -g 1000 && \

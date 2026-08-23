@@ -599,6 +599,10 @@ ignore = [
     "ASYNC240", # os.path.getsize for file info after subprocess
     "TID251",   # yt-dlp ACL exemption (see CODEBOUNDARIES.md)
 ]
+# yt-dlp plugin extractors live OUTSIDE app/ and are yt-dlp extensions by
+# definition: they must import yt_dlp.* APIs, so the anti-corruption ACL
+# (yt-dlp importable only from the facade) does not apply to them.
+"yt_dlp_plugins/**/*.py" = ["TID251"]
 "app/services/job_factory.py" = [
     "S110",   # try-except-pass for cleanup
 ]
