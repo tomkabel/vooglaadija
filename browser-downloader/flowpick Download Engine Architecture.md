@@ -271,7 +271,8 @@ For encrypted HLS streams, FlowPick uses Web Crypto API to decrypt in browser:
 const decryptAES128 = async (
   encryptedData: ArrayBuffer,
   key: ArrayBuffer,
-  iv?: Uint8Array
+  iv?: Uint8Array,
+  mediaSequenceNumber?: number
 ): Promise<ArrayBuffer> => {
   const keyBytes = await crypto.subtle.importKey(
     'raw', key,
@@ -280,7 +281,18 @@ const decryptAES128 = async (
     ['decrypt']
   )
 
-  const ivBuffer = iv ? new Uint8Array(iv) : new Uint8Array(16)
+  let ivBuffer: Uint8Array
+  if (iv) {
+    // Explicit IV from the #EXT-X-KEY tag (IV=0x...) is used unchanged.
+    ivBuffer = new Uint8Array(iv)
+  } else if (typeof mediaSequenceNumber === 'number') {
+    // HLS spec default: the segment's media sequence number as a 16-byte
+    // big-endian value, left-padded with zeros.
+    ivBuffer = new Uint8Array(16)
+    new DataView(ivBuffer.buffer).setUint32(12, mediaSequenceNumber >>> 0)
+  } else {
+    ivBuffer = new Uint8Array(16) // all-zero IV (spec: only when EXT-X-KEY has no IV and sequence is unknown)
+  }
 
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-CBC', iv: ivBuffer },
@@ -296,8 +308,8 @@ const decryptAES128 = async (
 
 1. Extract key URI and IV from M3U8's `#EXT-X-KEY` tag
 2. Download key file (usually 16-byte binary file)
-3. Decrypt each segment using AES-128-CBC mode
-4. If IV not specified, use segment sequence number as IV (HLS spec default behavior)
+3. Decrypt each segment using AES-128-CBC mode, passing the segment's media sequence number: `decryptAES128(segment.data, key, ivFromTag, segment.sequence)` — callers MUST supply the sequence number so the default IV is derived per the HLS spec
+4. If IV not specified, use the segment's media sequence number as IV: a 16-byte big-endian value left-padded with zeros (e.g. sequence 42 → `00..002a`); an explicitly supplied `IV=0x...` from the tag is used unchanged
 
 **Performance Considerations**:
 
@@ -826,20 +838,8 @@ For detailed troubleshooting steps for various errors, see [Common Issues Troubl
 - [Project Architecture](https://flowpick.net/docs/developer/architecture) — Engine's position in overall system and module interaction
 - [Contributing Guide](https://flowpick.net/docs/developer/contributing) — Contributing code to download engine
 - [Live Replay Saving](https://flowpick.net/docs/usecases/live-replays) — Actual scenarios for very large file downloads
-- [Online Courses Download](https://flowpick.net/docs/usecases/online-courses) — Course video download scenarios
 - [Video Platform Downloads](https://flowpick.net/docs/usecases/video-platforms) — Mainstream platform download practices
 - [Common Issues Troubleshooting](https://flowpick.net/docs/troubleshooting/common-issues) — Diagnosis of download failures
 - [Known Issues](https://flowpick.net/docs/troubleshooting/known-issues) — Known limitations of download engine
-- [FAQ](https://flowpick.net/docs/troubleshooting/faq) — High-frequency download-related questions[Browser Compatibility](https://flowpick.net/docs/advanced/browser-compatibility)
-
-[
-
-FlowPick feature support across different browsers, including API compatibility matrix, fallback strategies, and browser selection recommendations.
-
-](https://flowpick.net/docs/advanced/browser-compatibility)[
-
-Online Courses & Educational Platforms
-
-Use FlowPick to save online course videos for offline learning and content backup.
-
-](https://flowpick.net/docs/usecases/online-courses)
+- [FAQ](https://flowpick.net/docs/troubleshooting/faq) — High-frequency download-related questions
+- [Online Courses & Educational Platforms](https://flowpick.net/docs/usecases/online-courses) — Use FlowPick to save online course videos for offline learning and content backup.
