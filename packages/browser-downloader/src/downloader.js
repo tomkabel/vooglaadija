@@ -10,7 +10,7 @@
 // inside `download()` so the HTTP layer is unit-testable without a browser.
 
 import { randomUUID } from 'node:crypto';
-import { rm, writeFile } from 'node:fs/promises';
+import { rm, statfs, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { DownloaderError, classifyError } from './errors.js';
@@ -24,8 +24,36 @@ const DEFAULT_TIER2_TIMEOUT_MS = 30_000;
 // The streamlink/ffmpeg download may take much longer than Tier 1 interception.
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 120_000;
 const DEFAULT_BODY_CAP = 500 * 1024 * 1024;
+// Refuse to launch a browser/streamlink when the output filesystem has less
+// than this many free bytes (env BD_MIN_FREE_BYTES). A storage failure is
+// cheap to detect up front and expensive to hit mid-download.
+const DEFAULT_MIN_FREE_BYTES = 1024 * 1024 * 1024; // 1 GiB
 
 let stealthReady = null;
+
+/**
+ * Verifies the output filesystem has enough free space before any browser or
+ * subprocess is launched (each job costs a full stealth Chromium).
+ * @param {string} dir - Validated output directory.
+ * @return {Promise<void>}
+ * @throws {DownloaderError} With code `storage_error` when free space is low.
+ */
+async function verifyDiskSpace(dir) {
+  const minFree = parseTimeout(process.env.BD_MIN_FREE_BYTES, DEFAULT_MIN_FREE_BYTES);
+  let stats;
+  try {
+    stats = await statfs(dir);
+  } catch {
+    throw new DownloaderError('storage_error', `cannot stat output filesystem: ${dir}`);
+  }
+  const free = BigInt(stats.bavail) * BigInt(stats.bsize);
+  if (free < BigInt(minFree)) {
+    throw new DownloaderError(
+      'storage_error',
+      `insufficient disk space (${free} free bytes < ${minFree} required)`,
+    );
+  }
+}
 
 /**
  * Launches a headless Chromium browser with stealth enhancements enabled.
@@ -63,10 +91,17 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
   const bodyCap = opts.bodyCap ?? DEFAULT_BODY_CAP;
   const signal = opts.signal;
 
-  // Validate inputs first (SSRF + path traversal).
+  // Validate inputs first (SSRF + path traversal), then fail fast on a full
+  // disk BEFORE launching the browser.
   await validateUrl(rawUrl);
   const outputDir = await validateOutputDir(rawOutputDir);
+  await verifyDiskSpace(outputDir);
   const url = rawUrl;
+
+  // Best-effort progress events: `{ phase, percent?, downloaded_bytes? }`.
+  // The streamlink backend and the HLS fallback emit `downloading` updates;
+  // byte-capture and manifest paths emit coarse phase markers.
+  const emitProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
 
   if (signal?.aborted) {
     throw new DownloaderError('timeout', 'aborted before browser launch');
@@ -100,6 +135,8 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
     context = await browser.newContext();
     page = await context.newPage();
 
+    emitProgress?.({ phase: 'intercepting' });
+
     // Tier 1: internal timer resolves null → fallthrough (never terminal).
     let result = await interceptMedia(page, url, { timeout: tier1Timeout, bodyCap, signal });
 
@@ -116,6 +153,7 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
     outPath = join(outputDir, `${uuid}.${ext}`);
 
     if (result.kind === 'bytes') {
+      emitProgress?.({ phase: 'saving', percent: 100 });
       await writeFile(outPath, result.buffer);
     } else if (result.kind === 'manifest') {
       await downloadStream(result.streamUrl, outPath, {
@@ -123,6 +161,7 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
         bodyCap,
         authHeaders: result.authHeaders,
         signal,
+        onProgress: emitProgress ?? undefined,
       });
     } else {
       throw new DownloaderError('network_error', `unknown result kind: ${result.kind}`);

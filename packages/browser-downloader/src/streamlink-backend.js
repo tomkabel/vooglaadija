@@ -13,18 +13,33 @@
 //   - manifest/segment fetches use an AbortController with a timeout.
 //
 // HLS correctness (mandatory):
-//   - `#EXT-X-KEY` (encrypted HLS) is detected and fails with `network_error`
-//     — ciphertext is never fetched and concatenated into a "success" file;
+//   - `#EXT-X-KEY` with DRM methods (SAMPLE-AES*) or non-identity KEYFORMAT
+//     fails with `drm_detected` — ciphertext is never fetched and concatenated
+//     into a "success" file;
+//   - plain AES-128 (`METHOD=AES-128`, identity keyformat) IS supported in the
+//     fallback: the key is fetched (64 KiB cap, SSRF-validated) and each
+//     segment is decrypted (AES-128-CBC, IV attribute or media-sequence
+//     default) before concat — encrypted segments are never written raw;
 //   - variant (master) playlist URLs with query strings are resolved with
-//     `new URL(variant, baseUrl)` so the query string survives recursion.
+//     `new URL(variant, baseUrl)` so the query string survives recursion;
+//   - the best variant (highest BANDWIDTH) is chosen in the fallback, not the
+//     first one encountered;
+//   - manifests without `#EXTM3U` (HTML error pages served with HTTP 200) and
+//     live playlists (no `#EXT-X-ENDLIST`) fail fast with `no_media_found`
+//     instead of fetching junk URLs or writing a silently partial snapshot.
 //
 // Segment fetch improvements (Phase 2.3):
 //   - per-resource-kind size caps: manifest=8MiB, key=64KiB, segment=256MiB
 //   - exponential backoff retry with jitter (max 3 retries per segment)
 //   - context fallback: try same-origin CORS → include CORS credentials
 //   - auth header forwarding: captured CDP/page headers replayed on sub-fetches
+//
+// Progress (optional): `onProgress` receives `{ phase, percent?,
+// downloaded_bytes? }` events — throttled to one per 500 ms — sourced from
+// streamlink's forced progress output and the fallback's per-segment counter.
 
 import { spawn } from 'node:child_process';
+import { createDecipheriv } from 'node:crypto';
 import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
@@ -66,6 +81,105 @@ function classifyResource(url) {
   if (/\.(m3u8|mpd)(\?|$)/i.test(url)) return 'manifest';
   if (/\.key(\?|$)/i.test(url)) return 'key';
   return 'segment';
+}
+
+// -- HLS AES-128 key parsing + segment decryption --------------------------
+
+/**
+ * Parses an `#EXT-X-KEY` tag line.
+ * @param {string} line - The tag line (e.g. `#EXT-X-KEY:METHOD=AES-128,URI="https://k/key",IV=0x...`).
+ * @return {{uri: string, ivHex: string|null}|null} The key URI and optional
+ *   explicit IV (32 hex chars, no `0x`), or `null` when the tag does not
+ *   describe plain AES-128 (DRM methods are rejected upstream; METHOD-less
+ *   tags mean "no encryption").
+ */
+export function parseHlsKeyTag(line) {
+  const method = /METHOD=([^,\s]+)/.exec(line)?.[1]?.trim().toUpperCase();
+  if (method !== 'AES-128') return null;
+  const uri = /URI="([^"]+)"/.exec(line)?.[1];
+  if (!uri) return null;
+  const ivMatch = /IV=0x([0-9a-fA-F]{32})/.exec(line);
+  return { uri, ivHex: ivMatch ? ivMatch[1] : null };
+}
+
+/**
+ * Decrypts one HLS AES-128 segment (AES-128-CBC, PKCS#7).
+ *
+ * The IV is the tag's `IV=` attribute when present, otherwise the 16-byte
+ * big-endian media sequence number (HLS spec §5.2 — the default is the media
+ * sequence of the segment, not the playlist start).
+ * @param {Buffer} segmentBuf - Raw (encrypted) segment bytes.
+ * @param {Buffer} keyBuf - 16-byte AES-128 key.
+ * @param {string|null} ivHex - Explicit IV from the key tag, or null for the
+ *   media-sequence default.
+ * @param {number} mediaSequence - Media sequence number of this segment.
+ * @return {Buffer} Decrypted segment bytes.
+ * @throws {DownloaderError} If the key is not 16 bytes or decryption fails.
+ */
+export function decryptHlsSegment(segmentBuf, keyBuf, ivHex, mediaSequence) {
+  if (keyBuf.length !== 16) {
+    throw new DownloaderError(
+      'network_error',
+      `AES-128 key has invalid length ${keyBuf.length} (expected 16)`,
+    );
+  }
+  const iv = ivHex
+    ? Buffer.from(ivHex, 'hex')
+    : Buffer.from(mediaSequence.toString(16).padStart(32, '0'), 'hex');
+  const decipher = createDecipheriv('aes-128-cbc', keyBuf, iv);
+  try {
+    return Buffer.concat([decipher.update(segmentBuf), decipher.final()]);
+  } catch {
+    throw new DownloaderError('network_error', 'failed to decrypt HLS segment (corrupt or wrong key)');
+  }
+}
+
+/**
+ * Fetches an HLS AES-128 key, resolving its URI against the playlist URL and
+ * SSRF-validating it like any other derived URL.
+ * @param {{uri: string}} keyTag - Parsed key tag from the playlist.
+ * @param {string} playlistUrl - The media playlist URL (relative-URI base).
+ * @param {Object} opts - fetch options (signal, timeout, lookup, authHeaders).
+ * @return {Promise<Buffer>} The 16-byte key.
+ */
+async function fetchHlsKey(keyTag, playlistUrl, opts) {
+  let keyUrl;
+  try {
+    keyUrl = new URL(keyTag.uri, playlistUrl).href;
+  } catch {
+    throw new DownloaderError('network_error', 'invalid #EXT-X-KEY URI');
+  }
+  // SSRF defence — fail fast, never retried, before any fetch.
+  await validateUrl(keyUrl, { lookup: opts.lookup });
+  const res = await fetchResWithRetry(keyUrl, {
+    signal: opts.signal,
+    timeout: opts.timeout,
+    lookup: opts.lookup,
+    bodyCap: maxBodyBytes('key'),
+    authHeaders: opts.authHeaders,
+  });
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// -- Progress helper --------------------------------------------------------
+
+/**
+ * Wraps an onProgress callback so at most one event is delivered per
+ * minIntervalMs. Progress is best-effort: callback exceptions are swallowed.
+ */
+function throttledProgress(onProgress, minIntervalMs = 500) {
+  if (typeof onProgress !== 'function') return () => {};
+  let last = 0;
+  return (event) => {
+    const now = Date.now();
+    if (now - last < minIntervalMs) return;
+    last = now;
+    try {
+      onProgress(event);
+    } catch {
+      /* progress is best-effort */
+    }
+  };
 }
 
 // -- Retry delay with exponential backoff + jitter (Phase 2.3) --------------
@@ -305,9 +419,12 @@ export function runSpawn(cmd, args, opts = {}) {
       return;
     }
 
-    // Drain stderr + stdout to prevent pipe-buffer deadlock.
+    // Drain stderr + stdout to prevent pipe-buffer deadlock. The optional
+    // onOutput callback receives raw stderr chunks (used for progress parsing).
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+      const s = chunk.toString();
+      stderr += s;
+      opts.onOutput?.(s);
     });
     child.stdout.on('data', () => {});
 
@@ -441,6 +558,7 @@ async function fetchToFile(url, destPath, opts = {}) {
   // because the bytes originate from the network.
   // codeql[js/http-to-file-access]
   await writeFile(destPath, buf);
+  return buf.length;
 }
 
 // -- HLS manifest parsing ----------------------------------------------------
@@ -456,29 +574,35 @@ async function fetchToFile(url, destPath, opts = {}) {
  */
 async function pickVariantUrl(manifestText, baseUrl, { lookup } = {}) {
   const lines = manifestText.split('\n').map((l) => l.trim());
+  // Pick the variant with the highest BANDWIDTH (best quality) instead of the
+  // first valid one; the streamlink primary path uses `--default-stream best`,
+  // so the fallback should not silently degrade to the lowest variant.
+  let best = null; // { url, bandwidth }
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
-      for (let j = i + 1; j < lines.length; j += 1) {
-        const line = lines[j];
-        if (!line || line.startsWith('#')) {
-          continue;
-        }
-        let href;
-        try {
-          href = new URL(line, baseUrl).href;
-        } catch {
-          continue;
-        }
-        try {
-          await validateUrl(href, { lookup });
-        } catch {
-          continue;
-        }
-        return href;
+    if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
+    const bwMatch = /BANDWIDTH=(\d+)/.exec(lines[i]);
+    const bandwidth = bwMatch ? Number.parseInt(bwMatch[1], 10) : 0;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const line = lines[j];
+      if (!line || line.startsWith('#')) continue;
+      let href;
+      try {
+        href = new URL(line, baseUrl).href;
+      } catch {
+        continue;
       }
+      try {
+        await validateUrl(href, { lookup });
+      } catch {
+        continue;
+      }
+      if (!best || bandwidth > best.bandwidth) {
+        best = { url: href, bandwidth };
+      }
+      break;
     }
   }
-  return null;
+  return best ? best.url : null;
 }
 
 // -- HLS encrypted-stream detection (kept for streamlink fallback path) ------
@@ -543,6 +667,15 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
       authHeaders,
     });
 
+    // Preflight: not an HLS playlist (an HTML error page can be served with
+    // HTTP 200) → fast terminal error instead of retrying junk segment URLs.
+    if (!text.trimStart().startsWith('#EXTM3U')) {
+      throw new DownloaderError(
+        'no_media_found',
+        'not an HLS playlist (missing #EXTM3U header)',
+      );
+    }
+
     // Encrypted HLS: DRM methods or non-identity KEYFORMAT.
     if (/#EXT-X-(?:KEY|SESSION-KEY)/.test(text)) {
       if (isDrmEncrypted(text)) {
@@ -551,10 +684,10 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
           'HLS manifest contains DRM encryption (#EXT-X-KEY with SAMPLE-AES / non-identity KEYFORMAT)',
         );
       }
-      // Plain AES-128 with identity keyformat is allowed.
+      // Plain AES-128 with identity keyformat is supported (see below).
     }
 
-    // Master/variant playlist → recurse into the chosen variant.
+    // Master/variant playlist → recurse into the best variant.
     if (/#EXT-X-STREAM-INF/.test(text)) {
       const variantUrl = await pickVariantUrl(text, url, { lookup });
       if (!variantUrl) {
@@ -567,11 +700,36 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
       });
     }
 
-    const segLines = text
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0 && !l.startsWith('#'));
-    if (segLines.length === 0) {
+    // Live/unbounded playlist: without #EXT-X-ENDLIST the segment list is a
+    // moving snapshot — a concat would silently produce a partial file. The
+    // streamlink primary path handles live streams; the fallback fails fast.
+    if (!/#EXT-X-ENDLIST/.test(text)) {
+      throw new DownloaderError(
+        'no_media_found',
+        'live HLS stream (no #EXT-X-ENDLIST) is not supported by the fallback',
+      );
+    }
+
+    // Walk the playlist in order: #EXT-X-KEY declarations apply to the
+    // segments that follow them (key rotation), and #EXT-X-MEDIA-SEQUENCE
+    // seeds the default IV for AES-128 decryption.
+    const segments = [];
+    let mediaSequence = 0;
+    let currentKey = null;
+    for (const line of text.split('\n').map((l) => l.trim())) {
+      if (!line) continue;
+      if (line.startsWith('#')) {
+        if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+          const n = Number.parseInt(line.slice('#EXT-X-MEDIA-SEQUENCE:'.length), 10);
+          if (Number.isFinite(n)) mediaSequence = n;
+        } else if (line.startsWith('#EXT-X-KEY:')) {
+          currentKey = parseHlsKeyTag(line);
+        }
+        continue;
+      }
+      segments.push({ uri: line, key: currentKey });
+    }
+    if (segments.length === 0) {
       throw new DownloaderError('network_error', 'playlist contains no segments');
     }
 
@@ -579,13 +737,14 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
     // is cached per hostname for the duration of this call so repeated segments
     // from the same CDN host are not re-resolved on every iteration.
     const segUrls = [];
+    const segKeys = [];
     const validatedHosts = new Map();
-    for (const s of segLines) {
+    for (const s of segments) {
       let href;
       try {
-        href = new URL(s, url).href;
+        href = new URL(s.uri, url).href;
       } catch {
-        href = s;
+        href = s.uri;
       }
       const host = (() => {
         try {
@@ -599,23 +758,65 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
         validatedHosts.set(host, true);
       }
       segUrls.push(href);
+      segKeys.push(s.key);
     }
 
     const dir = await mkdtemp(join(tmpdir(), 'bd-hls-'));
     const listFile = join(dir, 'concat.txt');
     const segFiles = [];
     const segCap = maxBodyBytes('segment');
+    // AES-128 keys are fetched once per distinct key URI.
+    const keyCache = new Map();
+    const emitProgress = throttledProgress(opts.onProgress);
+    let downloadedBytes = 0;
     try {
       for (let i = 0; i < segUrls.length; i += 1) {
         const segPath = join(dir, `seg-${String(i).padStart(5, '0')}.ts`);
-        await fetchToFile(segUrls[i], segPath, {
-          signal: aggregate,
-          timeout: dlTimeout,
-          lookup,
-          bodyCap: segCap,
-          authHeaders,
-        });
+        const key = segKeys[i];
+        let segBytes;
+        if (key) {
+          if (!keyCache.has(key.uri)) {
+            keyCache.set(
+              key.uri,
+              fetchHlsKey(key, url, {
+                signal: aggregate,
+                timeout: dlTimeout,
+                lookup,
+                authHeaders,
+              }),
+            );
+          }
+          const keyBuf = await keyCache.get(key.uri);
+          const res = await fetchResWithRetry(segUrls[i], {
+            signal: aggregate,
+            timeout: dlTimeout,
+            lookup,
+            bodyCap: segCap,
+            authHeaders,
+          });
+          const buf = Buffer.from(await res.arrayBuffer());
+          if (buf.length > segCap) {
+            throw new DownloaderError('network_error', 'segment body exceeds size cap');
+          }
+          // IV default = media sequence of THIS segment (playlist start + i).
+          await writeFile(segPath, decryptHlsSegment(buf, keyBuf, key.ivHex, mediaSequence + i));
+          segBytes = buf.length;
+        } else {
+          segBytes = await fetchToFile(segUrls[i], segPath, {
+            signal: aggregate,
+            timeout: dlTimeout,
+            lookup,
+            bodyCap: segCap,
+            authHeaders,
+          });
+        }
         segFiles.push(segPath);
+        downloadedBytes += segBytes;
+        emitProgress({
+          phase: 'downloading',
+          percent: Math.round(((i + 1) / segUrls.length) * 100),
+          downloaded_bytes: downloadedBytes,
+        });
       }
       const listBody = segFiles.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
       await writeFile(listFile, listBody, 'utf8');
@@ -662,7 +863,8 @@ export async function downloadStream(url, outPath, opts = {}) {
   const isHls = HLS_RE.test(url);
   const isDash = DASH_RE.test(url);
 
-  const args = ['--no-progress', '--url', url, '--default-stream', 'best', '-o', outPath];
+  const args = ['--progress=force', '--url', url, '--default-stream', 'best', '-o', outPath];
+  const emitProgress = throttledProgress(opts.onProgress);
 
   // Forward captured auth headers to streamlink. Credential values
   // (cookie/authorization) MUST NOT be placed on the command line: argv is
@@ -676,7 +878,18 @@ export async function downloadStream(url, outPath, opts = {}) {
       args.push('--config', authConfigPath);
     }
 
-    const result = await runSpawn('streamlink', args, { timeout, signal: opts.signal });
+    const result = await runSpawn('streamlink', args, {
+      timeout,
+      signal: opts.signal,
+      // Parse streamlink's forced progress output (`--progress=force` writes
+      // `[download] 42.5% of ...` lines to stderr even without a TTY).
+      onOutput: (chunk) => {
+        const m = /(\d+(?:\.\d+)?)%/.exec(chunk);
+        if (m) {
+          emitProgress({ phase: 'downloading', percent: Number.parseFloat(m[1]) });
+        }
+      },
+    });
 
     if (result.code === 0) {
       return outPath;

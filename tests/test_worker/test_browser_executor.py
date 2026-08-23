@@ -149,6 +149,12 @@ class TestMapResponseToCategory:
         assert _map_response_to_category("http_429") == ErrorCategory.TRANSIENT
 
     @pytest.mark.unit
+    def test_storage_error_maps_to_storage(self) -> None:
+        # Disk-full preflight failures map to the STORAGE retry policy
+        # (1 retry, 5m fixed delay) — not the transient/default path.
+        assert _map_response_to_category("storage_error") == ErrorCategory.STORAGE
+
+    @pytest.mark.unit
     def test_unknown_code_defaults_to_transient(self) -> None:
         assert _map_response_to_category("something_new") == ErrorCategory.TRANSIENT
 
@@ -299,6 +305,105 @@ class TestExtractMediaErrorCodes:
             await extract_media("https://tiktok.com/@u/v/1", "/storage", client=client)
         assert exc.value.category == ErrorCategory.TRANSIENT
         assert exc.value.signal == "invalid_response_shape"
+
+
+class TestExtractMediaNdjsonProgress:
+    """NDJSON progress streaming: events forwarded, final line parsed."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_progress_events_forwarded_to_callback(self) -> None:
+        body = (
+            '{"phase":"intercepting"}\n'
+            '{"phase":"downloading","percent":42,"downloaded_bytes":1000,"total_bytes":2500}\n'
+            '{"status":"success","file_path":"/storage/downloads/abc-123.mp4","tier_used":1}\n'
+        )
+        client = _make_mock_client(200, body)
+        events: list[dict] = []
+
+        async def progress_callback(data: dict) -> None:
+            events.append(data)
+
+        result = await extract_media(
+            "https://tiktok.com/@u/v/1",
+            "/storage",
+            client=client,
+            progress_callback=progress_callback,
+        )
+        assert result == ("/storage/downloads/abc-123.mp4", "abc-123.mp4", None)
+        # Progress events are forwarded in the yt-dlp-shaped dict; phase-only
+        # lines (no percent) still produce an event with None fields.
+        assert events == [
+            {
+                "percent": None,
+                "speed": None,
+                "eta": None,
+                "downloaded_bytes": None,
+                "total_bytes": None,
+            },
+            {
+                "percent": 42,
+                "speed": None,
+                "eta": None,
+                "downloaded_bytes": 1000,
+                "total_bytes": 2500,
+            },
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_streamed_failure_final_line_maps_to_blocked(self) -> None:
+        # HTTP 200 stream whose final line is a failed status: the structured
+        # error code must win over the (200) HTTP status.
+        body = (
+            '{"phase":"downloading","percent":10}\n'
+            '{"status":"failed","error":"drm_detected","tier_used":null}\n'
+        )
+        client = _make_mock_client(200, body)
+        with pytest.raises(BrowserExecutorError) as exc:
+            await extract_media("https://tiktok.com/@u/v/1", "/storage", client=client)
+        assert exc.value.category == ErrorCategory.BLOCKED
+        assert exc.value.signal == "drm_detected"
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_streamed_storage_failure_maps_to_storage(self) -> None:
+        body = '{"status":"failed","error":"storage_error"}\n'
+        client = _make_mock_client(200, body)
+        with pytest.raises(BrowserExecutorError) as exc:
+            await extract_media("https://tiktok.com/@u/v/1", "/storage", client=client)
+        assert exc.value.category == ErrorCategory.STORAGE
+        assert exc.value.signal == "storage_error"
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_missing_final_line_maps_to_transient(self) -> None:
+        # Stream ended without a result line (microservice crash mid-stream).
+        client = _make_mock_client(200, '{"phase":"downloading","percent":5}\n')
+        with pytest.raises(BrowserExecutorError) as exc:
+            await extract_media("https://tiktok.com/@u/v/1", "/storage", client=client)
+        assert exc.value.category == ErrorCategory.TRANSIENT
+        assert exc.value.signal == "non_json_response"
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_callback_failure_does_not_fail_the_download(self) -> None:
+        body = (
+            '{"phase":"downloading","percent":10}\n'
+            '{"status":"success","file_path":"/storage/downloads/abc.mp4","tier_used":1}\n'
+        )
+        client = _make_mock_client(200, body)
+
+        async def broken_callback(data: dict) -> None:
+            raise RuntimeError("pubsub down")
+
+        result = await extract_media(
+            "https://tiktok.com/@u/v/1",
+            "/storage",
+            client=client,
+            progress_callback=broken_callback,
+        )
+        assert result == ("/storage/downloads/abc.mp4", "abc.mp4", None)
 
 
 class TestExtractMediaCircuitBreaker:

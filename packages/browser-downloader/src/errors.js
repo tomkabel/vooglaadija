@@ -14,6 +14,7 @@ export const ERROR_CODES = {
   NETWORK_ERROR: 'network_error',
   TIMEOUT: 'timeout',
   NO_MEDIA_FOUND: 'no_media_found',
+  STORAGE_ERROR: 'storage_error',
 };
 
 // Node errno codes that represent a transport-level failure (not a bug).
