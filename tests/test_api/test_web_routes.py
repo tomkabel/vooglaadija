@@ -1210,7 +1210,7 @@ class TestCreateDownloadForm:
         assert create_response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_create_download_htmx_returns_canonical_row_and_rotates_csrf(self, sample_url):
+    async def test_create_download_htmx_returns_canonical_row_and_keeps_csrf(self, sample_url):
         """Test HTMX create returns the canonical row partial and keeps the CSRF token stable."""
         email = f"downloadrow_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
