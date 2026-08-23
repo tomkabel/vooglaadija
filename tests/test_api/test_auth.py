@@ -378,7 +378,7 @@ async def test_cookie_auth_rejects_refresh_token(db_session):
 
     result = await db_session.execute(select(User).where(User.email == email))
     user = result.scalar_one()
-    request = SimpleNamespace(cookies={"access_token": auth.create_refresh_token(user.id)})
+    request = SimpleNamespace(cookies={"__Host-access_token": auth.create_refresh_token(user.id)})
 
     with pytest.raises(HTTPException) as exc_info:
         await get_current_user_from_cookie(db_session, request, None)

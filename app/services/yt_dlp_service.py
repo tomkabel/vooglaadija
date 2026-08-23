@@ -70,15 +70,14 @@ async def _check_ssrf(url: str) -> None:
 
 
 async def resolve_video_title(url: str) -> str | None:
-    """Resolve a video title from a URL without downloading.
+    """
+    Resolve a video title from a URL without downloading the media.
 
-    Runs yt-dlp with download=False for fast metadata extraction (~0.5-3s).
-    Called at job creation time so the title is available immediately in the UI.
+    Parameters:
+        url (str): Video URL to inspect.
 
-    Includes SSRF protection: validates the URL does not resolve to a private IP.
-
-    Returns the raw video title string, or None if extraction fails for any reason
-    (timeout, network error, unsupported URL, SSRF, etc.). Never raises.
+    Returns:
+        str | None: The extracted title, or `None` if the URL is blocked or metadata extraction fails.
     """
     try:
         await _check_ssrf(url)
@@ -87,11 +86,26 @@ async def resolve_video_title(url: str) -> str | None:
         return None
 
     url_json = json.dumps(url)
+    platform = _get_platform(url)
+    cookies_opts = _build_cookies_opts()
+    cookies_opts_json = json.dumps(cookies_opts)
+
+    if platform in _COOKIE_REQUIRED_PLATFORMS and not cookies_opts:
+        logger.info(
+            "metadata_without_cookies",
+            platform=platform,
+            url=url[:80],
+            hint="Set YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER to enable cookies for this platform",
+        )
+
     script = f"""
 import sys
 import json
 import yt_dlp
 url = {url_json}
+cookies_opts = {cookies_opts_json}
+if "cookiesfrombrowser" in cookies_opts and isinstance(cookies_opts["cookiesfrombrowser"], list):
+    cookies_opts["cookiesfrombrowser"] = tuple(cookies_opts["cookiesfrombrowser"])
 try:
     ydl_opts = {{
         "quiet": True,
@@ -100,6 +114,7 @@ try:
         "socket_timeout": 10,
         "retries": 1,
     }}
+    ydl_opts.update(cookies_opts)
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         sanitized = ydl.sanitize_info(info)
@@ -126,7 +141,8 @@ except Exception as e:
             )
 
             stdout_bytes, _ = await asyncio.wait_for(
-                process.communicate(), timeout=YT_DLP_METADATA_TIMEOUT
+                process.communicate(),
+                timeout=YT_DLP_METADATA_TIMEOUT,
             )
 
         if process.returncode != 0:
@@ -160,6 +176,7 @@ async def _kill_process_group(process: asyncio.subprocess.Process, graceful: boo
         graceful: If True, sends SIGTERM first and waits 5s for clean shutdown.
                   If False, skips straight to SIGKILL (for use when SIGTERM
                   was already sent by the caller, e.g. the timeout handler).
+
     """
     if process.returncode is not None:
         return
@@ -196,7 +213,8 @@ async def _walk_and_kill_orphaned_children(process: asyncio.subprocess.Process) 
         children_text: str | None = None
         try:
             children_text = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: open(children_path).read()
+                None,
+                lambda: open(children_path).read(),
             )
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             return
@@ -220,7 +238,7 @@ def _extract_error_message(error_msg: str, fallback: str) -> str:
         stripped = error_line.strip()
         if "ERROR" in stripped or "error" in stripped.lower():
             return stripped
-    return fallback if fallback else error_msg
+    return fallback or error_msg
 
 
 def _sanitize_title(title: str) -> str:
@@ -234,34 +252,147 @@ def _sanitize_title(title: str) -> str:
     return sanitized or "download"
 
 
-def _service_from_url(url: str) -> str:
-    """Derive throttle-tracking service name from a URL.
+_YOUTUBE_DOMAINS = frozenset(
+    {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"},
+)
+_YOUTUBE_SHORT_DOMAINS = frozenset({"youtu.be"})
+_YOUTUBE_NOCOOKIE = frozenset({"youtube-nocookie.com", "www.youtube-nocookie.com"})
+_VIMEO_HOSTS = frozenset({"vimeo.com", "www.vimeo.com"})
+_DAILYMOTION_HOSTS = frozenset({"dailymotion.com", "www.dailymotion.com"})
+_TWITCH_HOSTS = frozenset({"twitch.tv", "www.twitch.tv", "m.twitch.tv", "clips.twitch.tv"})
+_TIKTOK_HOSTS = frozenset(
+    {"tiktok.com", "www.tiktok.com", "m.tiktok.com", "vm.tiktok.com", "tiktokv.com"},
+)
+_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "instagr.am"})
 
-    This is a best-effort extraction for metric labels only (not security-critical).
-    Defaults to 'youtube' for backward compatibility.
+
+def _get_platform(url: str) -> str:
     """
-    hostname = urlparse(url).hostname or ""
-    hostname = hostname.lower()
-    if "youtube" in hostname or "youtu.be" in hostname:
+    Identify the media platform associated with a URL hostname.
+
+    Returns:
+        str: The platform identifier, `"youtube"` for recognized YouTube or
+            unrecognized hosts, `"unknown"` for suspicious platform-like hostnames,
+            or the matching supported platform identifier.
+    """
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
         return "youtube"
-    if "vimeo" in hostname:
+
+    youtube_all = _YOUTUBE_DOMAINS | _YOUTUBE_SHORT_DOMAINS | _YOUTUBE_NOCOOKIE
+
+    def _host_matches(domains: frozenset[str]) -> bool:
+        """
+        Determine whether the hostname matches a supported domain or its subdomain.
+
+        Parameters:
+            domains (frozenset[str]): Domains to match against the hostname.
+
+        Returns:
+            bool: `true` if the hostname matches a domain or valid subdomain, `false` otherwise.
+        """
+        return hostname in domains or any(hostname.endswith("." + d) for d in domains)
+
+    if _host_matches(youtube_all):
+        return "youtube"
+    if _host_matches(_VIMEO_HOSTS):
         return "vimeo"
-    if "dailymotion" in hostname:
+    if _host_matches(_DAILYMOTION_HOSTS):
         return "dailymotion"
-    if "twitch" in hostname:
+    if _host_matches(_TWITCH_HOSTS):
         return "twitch"
-    if "tiktok" in hostname:
+    if _host_matches(_TIKTOK_HOSTS):
         return "tiktok"
-    if "instagram" in hostname:
+    if _host_matches(_INSTAGRAM_HOSTS):
         return "instagram"
+    # Subdomain-bypass detection: a hostname like youtube.com.evil.com
+    # contains a platform domain but doesn't end with a valid suffix.
+    # Truly unknown domains (e.g. example.com) default to "youtube"
+    # since yt-dlp handles most URLs.
+    all_platform_domains = (
+        youtube_all
+        | _VIMEO_HOSTS
+        | _DAILYMOTION_HOSTS
+        | _TWITCH_HOSTS
+        | _TIKTOK_HOSTS
+        | _INSTAGRAM_HOSTS
+    )
+    for domain in all_platform_domains:
+        if hostname.startswith(domain + ".") or hostname.endswith("." + domain):
+            return "unknown"
     return "youtube"
 
 
-async def _check_throttle(stderr_text: str, service: str = "youtube") -> None:
-    """Parse stderr for HTTP 429 pattern and record response if found.
+# Alias for backward compatibility — throttle-tracking uses the same platform key.
+_service_from_url = _get_platform
 
-    yt-dlp runs as a subprocess, so HTTP status codes aren't exposed directly.
-    Detection is via stderr pattern matching against 'HTTP Error 429'.
+
+def _build_cookies_opts() -> dict:
+    """Build cookies-related yt-dlp options from environment configuration.
+
+    Supports two modes (checked in order):
+    1. YT_DLP_COOKIES_FILE — path to a Netscape-format cookies file
+    2. YT_DLP_COOKIES_BROWSER — browser name for cookiesfrombrowser (e.g. chrome, firefox)
+
+    Returns an empty dict if neither is configured or the cookie file doesn't exist.
+    Logs a warning when the configured cookie file path is absent from disk.
+    """
+    opts: dict = {}
+    cookies_file = os.environ.get("YT_DLP_COOKIES_FILE", "").strip()
+    cookies_browser = os.environ.get("YT_DLP_COOKIES_BROWSER", "").strip()
+
+    if cookies_file:
+        resolved = os.path.abspath(cookies_file)
+        if os.path.isfile(resolved):
+            opts["cookiefile"] = resolved
+        else:
+            logger.warning(
+                "cookies_file_not_found",
+                configured=cookies_file,
+                resolved=resolved,
+                hint="Set YT_DLP_COOKIES_FILE to an existing Netscape-format cookies file",
+            )
+    elif cookies_browser:
+        opts["cookiesfrombrowser"] = (cookies_browser,)
+
+    return opts
+
+
+# Non-YouTube platforms use single-stream formats with no merging semantics.
+_GENERIC_FORMAT_CHAIN: list[dict] = [
+    {"format": "best", "format_sort": ["quality"]},
+]
+
+_PLATFORM_FORMAT_CHAINS: dict[str, list[dict]] = {
+    "youtube": FORMAT_FALLBACK_CHAIN,
+    "tiktok": _GENERIC_FORMAT_CHAIN,
+    "instagram": _GENERIC_FORMAT_CHAIN,
+    "vimeo": _GENERIC_FORMAT_CHAIN,
+    "dailymotion": _GENERIC_FORMAT_CHAIN,
+    "twitch": _GENERIC_FORMAT_CHAIN,
+}
+
+# Extractor args per platform. Only YouTube benefits from player-client hints.
+_PLATFORM_EXTRACTOR_ARGS: dict[str, dict] = {
+    "youtube": {
+        "youtube": {
+            "player_client": ["tv", "web", "default", "mobile"],
+        },
+    },
+}
+
+# Platforms that require cookies for reliable extraction. Cookies are included
+# automatically when configured via YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER.
+_COOKIE_REQUIRED_PLATFORMS = frozenset({"tiktok", "instagram"})
+
+
+async def _check_throttle(stderr_text: str, service: str = "youtube") -> None:
+    """
+    Record a throttling response when subprocess output indicates HTTP status 429.
+
+    Parameters:
+        stderr_text (str): Subprocess error output to inspect.
+        service (str): Service associated with the response.
     """
     if not stderr_text:
         return
@@ -277,24 +408,57 @@ async def _extract_via_subprocess(
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> dict:
     """
-    Extract media info via subprocess that can be forcibly killed on timeout.
+    Extract media information and download media using yt-dlp.
 
-    This runs yt-dlp as a separate OS process so that on TimeoutError,
-    process.kill() can terminate it immediately rather than leaving a thread running.
+    Supports platform-specific format fallbacks and optionally reports download progress
+    through the callback.
 
-    Uses a format fallback chain to handle "Requested format is not available" errors
-    that occur when YouTube doesn't have the exact formats needed for merging.
+    Parameters:
+        url (str): Media URL to validate and extract.
+        output_template (str): Template for the downloaded media file path.
+        progress_callback (Callable[[dict], Awaitable[None]] | None): Callback that receives
+                progress updates when provided.
 
-    When progress_callback is provided, the subprocess emits download progress JSON
-    lines via stdout, which are parsed and forwarded to the callback in real time.
+    Returns:
+        dict: Extracted media information.
+
+    Raises:
+        SSRFError: If the URL resolves to a private or internal address.
+        TimeoutError: If extraction exceeds the configured timeout.
+        RuntimeError: If extraction fails or produces no usable output.
     """
     await _check_ssrf(url)
 
     url_json = json.dumps(url)
     output_template_json = json.dumps(output_template)
-    fallback_chain_json = json.dumps(FORMAT_FALLBACK_CHAIN)
+    platform = _get_platform(url)
+    platform_json = json.dumps(platform)
+    cookies_opts = _build_cookies_opts()
+    cookies_opts_json = json.dumps(cookies_opts)
+    fallback_chain = _PLATFORM_FORMAT_CHAINS.get(platform, FORMAT_FALLBACK_CHAIN)
+    fallback_chain_json = json.dumps(fallback_chain)
+    extractor_args = _PLATFORM_EXTRACTOR_ARGS.get(platform, {})
+    extractor_args_json = json.dumps(extractor_args)
+
+    if platform in _COOKIE_REQUIRED_PLATFORMS and not cookies_opts:
+        logger.info(
+            "extraction_without_cookies",
+            platform=platform,
+            url=url[:80],
+            hint="Set YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER to enable cookies for this platform",
+        )
 
     output_fields_json = json.dumps(list(_OUTPUT_FIELDS))
+
+    # Only inject youtube-specific options when building the script for YouTube.
+    # Tests assert that non-YouTube platform scripts do not contain YouTube-only keys.
+    # Embedding them as dict entries keeps the options inside the ydl_opts dict definition.
+    if platform == "youtube":
+        youtube_opts = (
+            '            "prefer_free_formats": True,\n            "check_formats": "missable",\n'
+        )
+    else:
+        youtube_opts = ""
 
     extract_script = f"""
 import sys
@@ -303,8 +467,14 @@ import yt_dlp
 
 url = {url_json}
 output_template = {output_template_json}
+platform = {platform_json}
 fallback_chain = {fallback_chain_json}
+extractor_args = {extractor_args_json}
+cookies_opts = {cookies_opts_json}
 output_fields = {output_fields_json}
+
+if "cookiesfrombrowser" in cookies_opts and isinstance(cookies_opts["cookiesfrombrowser"], list):
+    cookies_opts["cookiesfrombrowser"] = tuple(cookies_opts["cookiesfrombrowser"])
 
 last_error = None
 _last_progress_pct = -1.0
@@ -328,7 +498,7 @@ def _progress_hook(d):
         }}), flush=True)
 
 for i, format_spec in enumerate(fallback_chain):
-    _last_progress_pct = -1.0  # reset so each fallback attempt reports fresh progress
+    _last_progress_pct = -1.0
     ydl_opts = {{
         "format": format_spec["format"],
         "format_sort": format_spec.get("format_sort", []),
@@ -338,15 +508,11 @@ for i, format_spec in enumerate(fallback_chain):
         "noprogress": True,
         "socket_timeout": 60,
         "retries": 3,
-        "prefer_free_formats": True,
-        "check_formats": "missable",
         "progress_hooks": [_progress_hook],
-        "extractor_args": {{
-            "youtube": {{
-                "player_client": ["tv", "web", "default", "mobile"],
-            }},
-        }},
-    }}
+{youtube_opts}    }}
+    ydl_opts.update(cookies_opts)
+    if extractor_args:
+        ydl_opts["extractor_args"] = extractor_args
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -368,7 +534,7 @@ for i, format_spec in enumerate(fallback_chain):
 
 attempted_formats = [spec["format"] for spec in fallback_chain]
 print(json.dumps({{
-    "error": f"All formats failed. Last error: {{last_error}}. Attempted formats: {{attempted_formats}}"
+    "error": f"[{{platform}}] All formats failed. Last error: {{last_error}}. Attempted formats: {{attempted_formats}}"
 }}))
 sys.exit(1)
 """
@@ -388,8 +554,10 @@ sys.exit(1)
             limit=_STREAM_READER_LIMIT,
         )
 
-        async def _read_stdout():
+        async def _read_stdout() -> None:
             nonlocal result, error_result
+            if process.stdout is None:
+                return
             async for line_bytes in process.stdout:
                 line = line_bytes.decode().strip()
                 if not line:
@@ -405,7 +573,12 @@ sys.exit(1)
                 except json.JSONDecodeError:
                     logger.warning("stdout_non_json_line", line=line[:200])
 
-        async def _read_stderr():
+        async def _read_stderr() -> None:
+            """
+            Collects the subprocess's standard error output as decoded lines.
+            """
+            if process.stderr is None:
+                return
             async for line_bytes in process.stderr:
                 stderr_lines.append(line_bytes.decode().strip())
 
@@ -456,7 +629,7 @@ sys.exit(1)
             return result
 
         if process.returncode != 0:
-            error_msg = stderr_text if stderr_text else "Unknown error"
+            error_msg = stderr_text or "Unknown error"
             error_msg = _extract_error_message(error_msg, "")
             if not error_msg:
                 error_msg = "Unknown error"
@@ -475,21 +648,25 @@ async def extract_media_url(
     progress_callback: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, str, str | None]:
     """
-    Extract media URL from a YouTube URL using yt-dlp.
+    Extract media from a supported video URL and store the resulting file.
 
-    Args:
-        url: The video URL to extract.
-        storage_path: Base path for storing downloaded files.
-        progress_callback: Optional async callback invoked with progress dicts during download.
+    Supports YouTube, Vimeo, Dailymotion, Twitch, TikTok, and Instagram. TikTok and
+    Instagram may require cookies configured through YT_DLP_COOKIES_FILE or
+    YT_DLP_COOKIES_BROWSER.
+
+    Parameters:
+        url (str): Video URL to extract.
+        storage_path (str): Base directory for downloaded files.
+        progress_callback (Callable[[dict], Awaitable[None]] | None): Optional
+            asynchronous callback receiving download progress updates.
 
     Returns:
-        tuple of (file_path, file_name, title) where file_path is always within storage_path
-        and title is the human-readable video title (or None if unavailable).
+        tuple[str, str, str | None]: The stored file path, display filename, and
+        extracted title, or None when no title is available.
 
     Raises:
-        StorageError: If the download directory cannot be created or path is invalid.
-        SSRFError: If the URL resolves to a private/internal IP address.
-        asyncio.TimeoutError: If the extraction takes longer than YT_DLP_TIMEOUT.
+        StorageError: If the download directory cannot be created, the output path
+            is invalid, or the extracted file is missing.
     """
     download_dir = os.path.join(storage_path, "downloads")
     try:
@@ -506,13 +683,15 @@ async def extract_media_url(
     # Extraction semaphore prevents OOM from N concurrent ~50-100MB processes.
     async with _EXTRACTION_SEMAPHORE:
         info = await _extract_via_subprocess(
-            url, output_template, progress_callback=progress_callback
+            url,
+            output_template,
+            progress_callback=progress_callback,
         )
 
     title: str | None = info.get("title") or None
     ext = info.get("ext") or "mp4"
     # Sanitize title for display only — never used in filesystem path
-    safe_title = _sanitize_title(str(title if title else file_id))
+    safe_title = _sanitize_title(str(title or file_id))
     file_name = f"{safe_title}.{ext}"
     file_path = os.path.join(download_dir, f"{file_id}.{ext}")
 

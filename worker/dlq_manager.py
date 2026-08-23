@@ -70,7 +70,16 @@ async def mark_failed_and_move_to_dlq(
     job: DownloadJob,
     decision: RetryDecision,
 ) -> bool:
-    """Mark a processing job failed, move it to DLQ, and publish final status."""
+    """
+    Mark a processing job as failed, move it to the dead-letter queue, and publish its final status.
+
+    Parameters:
+        job (DownloadJob): The processing job to mark as failed.
+        decision (RetryDecision): The failure and retry decision containing error details and category.
+
+    Returns:
+        bool: `False` after processing completes.
+    """
     active_job_id = job.id
     final_error = decision.final_error or str(job.error or "Unknown worker failure")
     accumulated = decision.accumulated_error or final_error
@@ -87,7 +96,7 @@ async def mark_failed_and_move_to_dlq(
             last_error=accumulated,
             error_category=decision.category.value,
             completed_at=datetime.now(UTC),
-        )
+        ),
     )
     if int(getattr(failed_result, "rowcount", 0) or 0) == 0:
         logger.warning(
@@ -119,7 +128,16 @@ async def mark_failed_and_move_to_dlq(
 
 
 async def reset_stuck_jobs(timeout_minutes: int = 10) -> int:
-    """Reset jobs stuck in 'processing' status to 'failed'."""
+    """
+    Reset jobs that have remained in ``processing`` status beyond the timeout.
+
+    Parameters:
+        timeout_minutes (int): Maximum number of minutes a job may remain unchanged
+            before it is marked as failed.
+
+    Returns:
+        int: Number of jobs reset.
+    """
     cutoff = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
     session_factory = get_async_session_factory()
 
@@ -139,7 +157,7 @@ async def reset_stuck_jobs(timeout_minutes: int = 10) -> int:
                 updated_at=datetime.now(UTC),
             )
             .returning(DownloadJob.id, DownloadJob.user_id)
-            .execution_options(synchronize_session=False)
+            .execution_options(synchronize_session=False),
         )
         affected = result.fetchall()
         if not affected:

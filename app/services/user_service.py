@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.stdlib import BoundLogger
 
 from app.services.auth_service import hash_password, verify_password
 from app.utils.username import default_username_from_email
@@ -90,11 +91,24 @@ class UserNotAvailableError(UserServiceError):
 
 
 def _downloads_base_path() -> str:
+    """Return the base path for stored downloads."""
     return os.path.join(settings.storage_path, "downloads")
 
 
-def _cleanup_job_files(jobs: list[DownloadJob], service_logger=logger) -> tuple[bool, list[str]]:
-    """Clean download files for account deletion before database rows are removed."""
+def _cleanup_job_files(
+    jobs: list[DownloadJob],
+    service_logger: BoundLogger = logger,
+) -> tuple[bool, list[str]]:
+    """
+    Clean the files associated with download jobs before their database records are removed.
+
+    Parameters:
+        jobs (list[DownloadJob]): Download jobs whose associated files should be removed.
+        service_logger (BoundLogger): Logger used to record file-cleanup failures.
+
+    Returns:
+        tuple[bool, list[str]]: A success flag and the paths of files that could not be cleaned up.
+    """
     file_cleanup_failures: list[str] = []
     for job in jobs:
         if not job.file_path:
@@ -140,7 +154,7 @@ class UserService:
         self._validate_new_password(password)
         result = await self.db.execute(select(User).where(User.email == email, not_deleted()))
         if result.scalar_one_or_none() is not None:
-            raise DuplicateEmailError()
+            raise DuplicateEmailError
 
         user = User(
             id=uuid.uuid4(),
@@ -153,7 +167,7 @@ class UserService:
             await self.db.commit()
         except IntegrityError as exc:
             await self.db.rollback()
-            raise DuplicateEmailError() from exc
+            raise DuplicateEmailError from exc
         except Exception:
             await self.db.rollback()
             raise
@@ -166,10 +180,19 @@ class UserService:
         new_password: str,
         new_password_confirm: str | None = None,
     ) -> User:
-        """Change the current user's password and invalidate existing tokens."""
+        """Change the current user's password and invalidate existing authentication tokens.
+
+        Parameters:
+                current_password (str): The user's existing password.
+                new_password (str): The replacement password.
+                new_password_confirm (str | None): Optional confirmation of the replacement password.
+
+        Returns:
+                User: The updated user.
+        """
         user = self._current_user()
         if not await verify_password(current_password, user.password_hash):
-            raise InvalidCurrentPasswordError()
+            raise InvalidCurrentPasswordError
         if new_password_confirm is not None and new_password != new_password_confirm:
             raise PasswordMismatchError("New passwords do not match")
         self._validate_new_password(new_password)
@@ -189,7 +212,7 @@ class UserService:
         user = self._current_user()
         clean_username = username.strip()
         if len(clean_username) < 3:
-            raise InvalidUsernameError()
+            raise InvalidUsernameError
 
         user.username = clean_username
         try:
@@ -205,10 +228,24 @@ class UserService:
         password: str,
         confirm_text: str | None = None,
     ) -> DeletedAccountResult:
-        """Delete the current user account after password and file-cleanup checks."""
+        """
+        Delete the current user account after validating the password and removing associated job files.
+
+        Parameters:
+                password (str): The current account password.
+                confirm_text (str | None): Optional confirmation text, which must be `DELETE` when provided.
+
+        Returns:
+                DeletedAccountResult: The number of download jobs deleted.
+
+        Raises:
+                DeleteConfirmationError: If the confirmation text is provided and is not `DELETE`.
+                InvalidCurrentPasswordError: If the password is incorrect.
+                AccountFileCleanupError: If any associated job file cannot be removed.
+        """
         user = self._current_user()
         if confirm_text is not None and confirm_text.strip().upper() != "DELETE":
-            raise DeleteConfirmationError()
+            raise DeleteConfirmationError
         if not await verify_password(password, user.password_hash):
             raise InvalidCurrentPasswordError("Password is incorrect")
 
@@ -229,8 +266,17 @@ class UserService:
         return DeletedAccountResult(deleted_jobs=len(jobs))
 
     def _current_user(self) -> User:
+        """
+        Retrieve the current user when the account is available.
+
+        Returns:
+                User: The active, non-deleted current user.
+
+        Raises:
+                UserNotAvailableError: If no current user exists, or the user is inactive or deleted.
+        """
         if self.user is None or not self.user.is_active or self.user.deleted_at is not None:
-            raise UserNotAvailableError()
+            raise UserNotAvailableError
         return self.user
 
     @staticmethod

@@ -64,7 +64,7 @@ async def dashboard_page(
     request: Request,
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
+) -> HTMLResponse:
     """Render main dashboard page with download list."""
     result = await DownloadService(db, current_user.id).list(page=1, per_page=50)
     token = get_csrf_token(request)
@@ -82,15 +82,23 @@ async def dashboard_page(
     return response
 
 
-@router.post("/downloads")
+@router.post("/downloads", response_model=None)
 @limiter.limit("10/minute")
 async def create_download_form(
     request: Request,
     url: Annotated[str, Form(max_length=2000)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """HTMX endpoint for form submissions. Returns HTML fragment."""
+) -> HTMLResponse:
+    """
+    Create a download job from an HTMX form submission.
+
+    Parameters:
+        url (str): The URL to download.
+
+    Returns:
+        HTMLResponse: An error response for invalid input or failed creation, or the rendered download item for a successfully created job.
+    """
     if not await validate_csrf_token(request):
         return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
 
@@ -107,29 +115,45 @@ async def create_download_form(
     await service.best_effort_enqueue(job.id)
 
     resp = templates.TemplateResponse(
-        request, "partials/_download_item.html", get_template_context(request, job=job)
+        request,
+        "partials/_download_item.html",
+        get_template_context(request, job=job),
     )
     rotate_csrf_token(resp)
     return resp
 
 
-@router.post("/downloads/full")
+@router.post("/downloads/full", response_model=None)
 @limiter.limit("10/minute")
 async def create_download_full_page(
     request: Request,
     url: Annotated[str, Form(max_length=2000)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """Full-page handler for form submissions (non-HTMX fallback)."""
+) -> HTMLResponse | RedirectResponse:
+    """
+    Create a download job from a full-page form submission.
+
+    Parameters:
+        url (str): The URL to download.
+
+    Returns:
+        HTMLResponse | RedirectResponse: An error response for invalid requests or failed job creation, or a redirect to the downloads dashboard after successful creation.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/downloads?error=csrf"
+            request,
+            403,
+            _error_html("Invalid CSRF token"),
+            "/web/downloads?error=csrf",
         )
 
     if not is_supported_url(url):
         return _htmx_or_redirect(
-            request, 422, _error_html("Invalid supported URL"), "/web/downloads?error=invalid_url"
+            request,
+            422,
+            _error_html("Invalid supported URL"),
+            "/web/downloads?error=invalid_url",
         )
 
     service = DownloadService(db, current_user.id)
@@ -156,8 +180,16 @@ async def delete_download_form(
     job_id: str,
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """HTMX endpoint for deleting a download."""
+) -> HTMLResponse:
+    """
+    Delete a user's completed, failed, or cancelled download job.
+
+    Parameters:
+        job_id (str): Identifier of the download job to delete.
+
+    Returns:
+        HTMLResponse: An empty response on success or an HTML error response when deletion fails.
+    """
     if not await validate_csrf_token(request):
         return HTMLResponse(status_code=403, content=_error_html("Invalid CSRF token"))
 
@@ -183,7 +215,6 @@ async def delete_download_form(
         )
 
     resp = HTMLResponse(content="")
-    rotate_csrf_token(resp)
     return resp
 
 
@@ -193,8 +224,19 @@ async def download_file(
     job_id: str,
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """Download the file for a completed job using cookie authentication."""
+) -> FileResponse:
+    """
+    Download the file associated with a completed download job.
+
+    Parameters:
+        job_id (str): Identifier of the download job.
+
+    Returns:
+        FileResponse: The job's file as an octet-stream with its filename.
+
+    Raises:
+        HTTPException: If the job ID is invalid, the job is unavailable or incomplete, the file has expired or is missing, or the file path is unsafe.
+    """
     try:
         file_result = await DownloadService(db, current_user.id).get_file_path(job_id)
     except InvalidDownloadIdError as exc:

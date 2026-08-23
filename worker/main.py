@@ -80,11 +80,16 @@ async def _update_circuit_deferred_depth() -> None:
         depth = await redis_client.zcard("circuit_deferred_queue")
         CIRCUIT_DEFERRED_DEPTH.set(depth)
     except Exception:
-        pass
+        logger.debug("circuit_deferred_depth update skipped (non-critical)", exc_info=True)
 
 
 async def cleanup_expired_jobs() -> int:
-    """Delete expired jobs and their files."""
+    """
+    Delete expired completed jobs and their associated files.
+
+    Returns:
+        int: The number of jobs removed from the database.
+    """
     session_factory = get_async_session_factory()
     downloads_dir = os.path.join(settings.storage_path, "downloads")
 
@@ -93,8 +98,9 @@ async def cleanup_expired_jobs() -> int:
 
         result = await db.execute(
             select(DownloadJob).where(
-                DownloadJob.expires_at < now, DownloadJob.status == "completed"
-            )
+                DownloadJob.expires_at < now,
+                DownloadJob.status == "completed",
+            ),
         )
         expired_jobs = result.scalars().all()
 
@@ -111,17 +117,21 @@ async def cleanup_expired_jobs() -> int:
                     )
                     continue
 
-                if os.path.exists(safe_path):
+                if os.path.exists(safe_path):  # noqa: ASYNC240 — local filesystem, negligible latency
                     try:
                         os.remove(safe_path)
                         logger.info(
-                            "cleaned_up_expired_file", file_path=safe_path, job_id=str(job.id)
+                            "cleaned_up_expired_file",
+                            file_path=safe_path,
+                            job_id=str(job.id),
                         )
                         await db.delete(job)
                         cleanup_count += 1
                     except OSError as e:
                         logger.warning(
-                            "failed_to_delete_expired_file", file_path=job.file_path, error=str(e)
+                            "failed_to_delete_expired_file",
+                            file_path=job.file_path,
+                            error=str(e),
                         )
                 else:
                     logger.info("file_already_deleted", job_id=str(job.id), file_path=job.file_path)
@@ -133,7 +143,10 @@ async def cleanup_expired_jobs() -> int:
                     cleanup_count += 1
                 except Exception as db_err:
                     logger.warning(
-                        "failed_to_delete_db_row", job_id=job.id, error=str(db_err), exc_info=True
+                        "failed_to_delete_db_row",
+                        job_id=job.id,
+                        error=str(db_err),
+                        exc_info=True,
                     )
 
         try:
@@ -148,6 +161,7 @@ async def cleanup_expired_jobs() -> int:
 
 
 async def _update_queue_depth() -> None:
+    """Updates the queue-depth metric with the combined number of queued, retry, and circuit-deferred jobs."""
     try:
         lua_script = """
         local dl = redis.call('LLEN', KEYS[1])
@@ -156,7 +170,11 @@ async def _update_queue_depth() -> None:
         return dl + rt + cd
         """
         total = await redis_client.eval(
-            lua_script, 3, "download_queue", "retry_queue", "circuit_deferred_queue"
+            lua_script,
+            3,
+            "download_queue",
+            "retry_queue",
+            "circuit_deferred_queue",
         )
         QUEUE_DEPTH.set(int(total))
     except Exception as e:
@@ -223,6 +241,13 @@ async def _health_heartbeat_loop() -> None:
 
 
 async def main() -> None:
+    """
+    Start the worker, process queued jobs, and shut down gracefully when requested.
+
+    The function verifies Redis and database connectivity before starting the health
+    server, periodically performs queue maintenance and cleanup, and enforces the
+    configured shutdown grace period for in-flight jobs.
+    """
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _signal_handler)
@@ -255,10 +280,17 @@ async def main() -> None:
     cleanup_interval = timedelta(minutes=cleanup_interval_minutes)
     last_cleanup = datetime.now(UTC) - cleanup_interval
 
+    # Outbox poll cadence. 2s keeps enqueue latency low without meaningful DB
+    # cost: sync_outbox_to_queue() issues a single
+    # `WHERE status='pending' ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED`
+    # query, which is served by the ix_outbox_status_created_at index, is bounded
+    # by batch_size, and uses SKIP LOCKED so N workers never contend on the same
+    # rows. Deployments with very high worker counts or a constrained DB can
+    # raise OUTBOX_SYNC_INTERVAL_SECONDS (clamped to 1..3600).
     try:
-        outbox_sync_interval_seconds = int(os.environ.get("OUTBOX_SYNC_INTERVAL_SECONDS", "30"))
+        outbox_sync_interval_seconds = int(os.environ.get("OUTBOX_SYNC_INTERVAL_SECONDS", "2"))
     except (ValueError, TypeError):
-        outbox_sync_interval_seconds = 30
+        outbox_sync_interval_seconds = 2
     outbox_sync_interval_seconds = max(1, min(outbox_sync_interval_seconds, 3600))
     outbox_sync_interval = timedelta(seconds=outbox_sync_interval_seconds)
     last_outbox_sync = datetime.now(UTC) - outbox_sync_interval
@@ -300,7 +332,12 @@ async def main() -> None:
             return #due_jobs
             """
             moved_count = await redis_client.eval(
-                lua_script, 2, "retry_queue", "download_queue", now_ts, MAX_RETRY_BATCH
+                lua_script,
+                2,
+                "retry_queue",
+                "download_queue",
+                now_ts,
+                MAX_RETRY_BATCH,
             )
             if moved_count and moved_count > 0:
                 logger.info("retry_jobs_moved", moved_count=moved_count)

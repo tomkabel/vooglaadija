@@ -146,6 +146,6 @@ async def test_htmx_rate_limit_response_uses_centralized_html_fragment():
     response = await rate_limit_exceeded_handler(mock_request, mock_exc)
 
     assert response.status_code == 429
-    assert response.headers["Retry-After"] == "300"
+    assert response.headers["Retry-After"] == "60"
     assert b'class="error-box"' in response.body
     assert b"Rate limit exceeded" in response.body

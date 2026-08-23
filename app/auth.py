@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 
-from core.config import settings
+from core.config import _is_testing_enabled, settings
 
 if TYPE_CHECKING:
     from starlette.responses import Response
@@ -37,12 +37,18 @@ def _make_token(
 
 def create_access_token(
     subject: UUID | str,
-    email: str | None = None,
     token_version: int = 1,
 ) -> str:
+    """Create an access token for the specified subject.
+
+    Parameters:
+        subject (UUID | str): Identifier of the token subject.
+        token_version (int): Token version to include when greater than 1.
+
+    Returns:
+        str: The signed access token.
+    """
     extra: dict[str, Any] = {"user_id": str(subject)}
-    if email:
-        extra["email"] = email
     if token_version > 1:
         extra["ver"] = token_version
     return _make_token(
@@ -124,23 +130,53 @@ def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any]
     return payload
 
 
+def _host_cookie_secure() -> bool:
+    """Return the `Secure` flag to use for the `__Host-`-prefixed auth cookies.
+
+    `__Host-` cookies are rejected by every browser unless `Secure` is set, so
+    real deployments always get `secure=True` — `COOKIE_SECURE=false` (intended
+    for plain-HTTP local dev) must not silently break authentication.
+
+    The single exception is the test suite, which drives the app over
+    `http://` via ASGITransport where httpx's cookie jar drops `Secure`
+    cookies. `Settings._apply_testing_defaults` sets `cookie_secure=False`
+    under `TESTING`, and that is the only case where it is honoured here.
+    """
+    if _is_testing_enabled():
+        # `getattr` so a partial settings stub (used by some rotation tests)
+        # fails secure rather than raising.
+        return bool(getattr(settings, "cookie_secure", True))
+    return True
+
+
 def set_token_cookies(
-    response: "Response", access_token: str, refresh_token: str, secure: bool = True
+    response: "Response",
+    access_token: str,
+    refresh_token: str,
 ) -> None:
+    """
+    Set access and refresh token cookies on the response.
+
+    Parameters:
+        response (Response): Response receiving the cookies.
+        access_token (str): Access token value.
+        refresh_token (str): Refresh token value.
+    """
+    _host_secure = _host_cookie_secure()
     response.set_cookie(
-        key="access_token",
+        key="__Host-access_token",
         value=access_token,
         httponly=True,
-        secure=secure,
+        secure=_host_secure,
         samesite="lax",
         path="/",
         max_age=settings.access_token_expire_minutes * 60,
     )
     response.set_cookie(
-        key="refresh_token",
+        key="__Host-refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=secure,
+        secure=_host_secure,
         samesite="lax",
         path="/",
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
@@ -148,5 +184,7 @@ def set_token_cookies(
 
 
 def clear_token_cookies(response: "Response") -> None:
-    response.delete_cookie(key="access_token", path="/")
-    response.delete_cookie(key="refresh_token", path="/")
+    """Delete the access and refresh token cookies from the root path."""
+    _host_secure = _host_cookie_secure()
+    response.delete_cookie(key="__Host-access_token", path="/", secure=_host_secure)
+    response.delete_cookie(key="__Host-refresh_token", path="/", secure=_host_secure)

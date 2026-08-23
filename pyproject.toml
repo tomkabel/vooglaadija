@@ -18,7 +18,7 @@ dependencies = [
     "redis",
     "python-jose[cryptography]",
     "passlib[bcrypt]",
-    "bcrypt<4.1",
+    "bcrypt>=4.0",
     "pydantic",
     "pydantic-settings>=2.14.2",
     "email-validator>=2.3.0",
@@ -28,6 +28,7 @@ dependencies = [
     "prometheus-client>=0.19.0",
     "slowapi>=0.1.9",
     "yt-dlp>=2025.3.0",
+    "httpx>=0.27.0",
 
     # HIGH PRIORITY - Observability & Performance Enhancements
     # Structured logging with structlog
@@ -73,7 +74,7 @@ worker = [
 ]
 test = [
     "pytest",
-    "pytest-cov",
+    "pytest-cov>=4.1.0",
     "pytest-asyncio",
     "pytest-xdist",
     "httpx",
@@ -109,7 +110,7 @@ test = [
     "pytest-xdist>=3.0.0",
     "httpx>=0.24.0",
     "aiosqlite>=0.19.0",
-    "bcrypt==4.0.1",
+    "bcrypt>=4.0",
 ]
 lint = [
     "ruff==0.16.3",  # pinned: matches uv.lock; lint gates must be deterministic
@@ -525,6 +526,8 @@ select = [
     "RUF",  # Ruff-specific rules
     "C90",  # mccabe complexity
     "PGH",  # pygrep-hooks
+    "S",    # flake8-bandit (security)
+    "ASYNC", # flake8-async (async-safety)
     "TID",  # flake8-tidy-imports (banned imports: layering + yt-dlp ACL)
 ]
 ignore = [
@@ -542,6 +545,72 @@ ignore = [
     "PLW0406",  # module imports itself (required for test mocking)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "PLR0917", # SQLAlchemy event listener callbacks have a fixed positional signature
+    "S101",   # assert is standard in pytest
+    "S104",   # binding to all interfaces in test servers
+    "S105",   # test secrets are expected
+    "S106",   # test credentials are expected
+    "S107",   # test defaults are expected
+    "S108",   # /tmp usage in tests is acceptable
+    "S110",   # try-except-pass in tests is intentional
+    "S506",   # yaml.load with compose loader in test files
+    "S603",   # subprocess in test_env_contract is for env detection
+    "S607",   # partial executable paths in tests
+    "ASYNC109", # timeout parameter in test helpers
+    "ASYNC240", # os.path in test async functions
+]
+"app/services/error_classifier.py" = [
+    "S311",   # random used for jitter, not cryptographic purposes
+    "S110",   # try-except-pass for retry budget is intentional
+]
+"app/utils/validators.py" = [
+    "S310",   # URL open is intentional for redirect validation
+]
+"core/queue.py" = [
+    "S101",   # assert for lazy redis client initialization
+    "S110",   # try-except-pass for lazy client is intentional
+]
+"app/schemas/error.py" = [
+    "S105",   # error code enum string values are not passwords
+]
+"app/schemas/token.py" = [
+    "S105",   # token_type string default is not a password
+]
+"app/auth.py" = [
+    "S105",   # token type constants are not passwords
+]
+"app/services/circuit_breaker.py" = [
+    "S110",   # try-except-pass for Redis transient failures
+]
+"app/services/download_service.py" = [
+    "S110",   # try-except-pass for file cleanup
+    "ASYNC240", # os.path.exists is used for synchronous file checks
+]
+"app/services/yt_dlp_service.py" = [
+    "ASYNC240", # os.path.getsize for file info after subprocess
+    "TID251",   # yt-dlp ACL exemption (see CODEBOUNDARIES.md)
+]
+"app/services/job_factory.py" = [
+    "S110",   # try-except-pass for cleanup
+]
+"app/api/startup.py" = [
+    "S110",   # try-except-pass for seed data / trigger registration
+]
+"app/api/routes/sse.py" = [
+    "S110",   # try-except-pass in SSE buffer drain / reconnect
+    "ASYNC109", # timeout parameter is a float for task management, not asyncio.timeout
+]
+# Zone exemptions: the worker itself, tests, tooling, and migrations may import
+# worker/ freely. NOTE: the TID251 exemption for worker/** also lifts the
+# yt_dlp ban there, so the yt-dlp ACL is enforced independently by
+# scripts/import_analysis.py (see CODEBOUNDARIES.md).
+"worker/**/*.py" = ["TID251", "S110", "S104"]
+"tests/**/*.py" = ["TID251"]
+"scripts/**/*.py" = ["TID251", "S105", "S110", "S314", "S603", "S607"]
+"alembic/**/*.py" = ["TID251"]
+
 # ============================================
 # ARCHITECTURE FITNESS FUNCTIONS (see docs/ARCHITECTURE-STANDARD.md)
 # ============================================
@@ -553,24 +622,13 @@ ignore = [
 # Anti-corruption layer: yt-dlp types/exceptions must never leak past its facade.
 "yt_dlp" = { msg = "yt-dlp is importable only from app/services/yt_dlp_service.py (ACL)" }
 
-[tool.ruff.lint.per-file-ignores]
-# Zone exemptions: the worker itself, tests, tooling, and migrations may import
-# worker/ freely. NOTE: the TID251 exemption for worker/** also lifts the
-# yt_dlp ban there, so the yt-dlp ACL is enforced independently by
-# scripts/import_analysis.py (see CODEBOUNDARIES.md).
-"worker/**/*.py" = ["TID251"]
-"tests/**/*.py" = ["TID251"]
-"scripts/**/*.py" = ["TID251"]
-"alembic/**/*.py" = ["TID251"]
-"app/services/yt_dlp_service.py" = ["TID251"]
-
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
-line-ending = "auto"
+line-ending = "lf"
 skip-magic-trailing-comma = false
 
 [tool.ruff.lint.isort]
@@ -581,19 +639,44 @@ known-first-party = ["app", "core", "worker", "tests"]
 # ============================================
 [tool.mypy]
 python_version = "3.12"
-warn_return_any = true
-warn_unused_ignores = true
-warn_redundant_casts = true
+# NOTE: mypy 1.19.1 re-applies `strict = true` AFTER per-module overrides, so
+# overrides cannot relax it. Keep strictness as explicit flags (same set as
+# strict) so the worker.* override below can opt worker/ out of untyped-defs —
+# the worker rewrite predates strict typing and is checked in CI under lenient
+# rules on main.
 warn_unused_configs = true
-disallow_untyped_defs = false
-ignore_missing_imports = true
+disallow_any_generics = false
+disallow_subclassing_any = false
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
 no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+strict_equality = true
 pretty = true
 show_error_codes = true
 show_error_context = true
 plugins = ["pydantic.mypy"]
+# Strict checks not yet passing — explicitly disabled (as under the original
+# `strict = true` + these overrides on the branch)
+implicit_reexport = true
 
-# Module-specific overrides
+# Third-party packages without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "passlib.*",
+    "httptools.*",
+    "uvloop.*",
+    "watchfiles.*",
+    "redis.asyncio",
+]
+ignore_missing_imports = true
+
+# Enable checking for all project modules
 [[tool.mypy.overrides]]
 module = "app.*"
 ignore_errors = false
@@ -603,12 +686,15 @@ module = "core.*"
 ignore_errors = false
 
 [[tool.mypy.overrides]]
-module = "tests.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 module = "worker.*"
 ignore_errors = false
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+# Tests are excluded from strict type checking
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
 
 # ============================================
 # BANDIT CONFIGURATION

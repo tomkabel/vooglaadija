@@ -88,7 +88,7 @@ class TestSetTokenCookies:
 
         access_token_call = None
         for call in response.set_cookie.call_args_list:
-            if call.kwargs.get("key") == "access_token":
+            if call.kwargs.get("key") == "__Host-access_token":
                 access_token_call = call
                 break
 
@@ -108,7 +108,7 @@ class TestSetTokenCookies:
 
         refresh_token_call = None
         for call in response.set_cookie.call_args_list:
-            if call.kwargs.get("key") == "refresh_token":
+            if call.kwargs.get("key") == "__Host-refresh_token":
                 refresh_token_call = call
                 break
 
@@ -129,7 +129,7 @@ class TestClearTokenCookies:
 
         delete_call = None
         for call in response.delete_cookie.call_args_list:
-            if call.kwargs.get("key") == "access_token":
+            if call.kwargs.get("key") == "__Host-access_token":
                 delete_call = call
                 break
 
@@ -143,7 +143,7 @@ class TestClearTokenCookies:
 
         delete_call = None
         for call in response.delete_cookie.call_args_list:
-            if call.kwargs.get("key") == "refresh_token":
+            if call.kwargs.get("key") == "__Host-refresh_token":
                 delete_call = call
                 break
 

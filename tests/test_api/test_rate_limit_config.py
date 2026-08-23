@@ -9,44 +9,44 @@ class TestParseRetryAfter:
     """Tests for _parse_retry_after helper."""
 
     def test_parse_seconds(self):
-        """Test parsing seconds unit."""
+        """Retry-After is the window length, not the request count."""
         result = _parse_retry_after("5 per 1 second")
-        assert result == 5
+        assert result == 1
 
     def test_parse_second_variant(self):
-        """Test parsing singular second unit."""
+        """The "secs" spelling normalizes to the second multiplier."""
         result = _parse_retry_after("10 per 1 secs")
-        assert result == 10
+        assert result == 1
 
     def test_parse_minutes(self):
-        """Test parsing minutes unit."""
+        """ "5 per 1 minute" means the client may retry after the 60s window."""
         result = _parse_retry_after("5 per 1 minute")
-        assert result == 300
+        assert result == 60
 
     def test_parse_minute_variant(self):
-        """Test parsing plural minutes unit."""
+        """A multi-minute window scales by the window, not the limit."""
         result = _parse_retry_after("2 per 3 minutes")
-        assert result == 120
+        assert result == 180
 
     def test_parse_hours(self):
         """Test parsing hours unit."""
         result = _parse_retry_after("5 per 1 hour")
-        assert result == 18000
+        assert result == 3600
 
     def test_parse_hour_variant(self):
         """Test parsing plural hours unit."""
         result = _parse_retry_after("1 per 2 hours")
-        assert result == 3600
+        assert result == 7200
 
     def test_parse_days(self):
         """Test parsing days unit."""
         result = _parse_retry_after("5 per 1 day")
-        assert result == 432000
+        assert result == 86400
 
     def test_parse_day_variant(self):
         """Test parsing plural days unit."""
         result = _parse_retry_after("2 per 1 days")
-        assert result == 172800
+        assert result == 86400
 
     def test_parse_invalid_format_returns_default(self):
         """Test that invalid format returns default 60 seconds."""
@@ -61,7 +61,7 @@ class TestParseRetryAfter:
     def test_parse_unknown_unit_defaults_to_60(self):
         """Test that unknown unit defaults to 60 multiplier (minute)."""
         result = _parse_retry_after("5 per 1 unknown")
-        assert result == 300  # 5 * 60
+        assert result == 60  # window (1) * minute multiplier (60)
 
 
 class TestRateLimitExceededHandler:
@@ -83,7 +83,7 @@ class TestRateLimitExceededHandler:
 
         assert response.status_code == 429
         assert "Retry-After" in response.headers
-        assert response.headers["Retry-After"] == "300"
+        assert response.headers["Retry-After"] == "60"
 
     @pytest.mark.asyncio
     async def test_handler_raises_non_rate_limit_exception(self):

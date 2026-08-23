@@ -123,12 +123,11 @@ def test_rotated_runtime_values_preserve_auth_and_service_url_contracts(monkeypa
 
     monkeypatch.setattr(auth, "settings", rotated_settings)
 
-    token = auth.create_access_token("story-6-1-user", email="operator@example.com")
+    token = auth.create_access_token("story-6-1-user")
     payload = auth.verify_token(token, expected_type=auth.ACCESS_TOKEN_TYPE)
 
     assert payload is not None
     assert payload["sub"] == "story-6-1-user"
-    assert payload["email"] == "operator@example.com"
 
 
 @pytest.mark.unit

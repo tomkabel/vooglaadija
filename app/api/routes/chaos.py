@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -17,7 +19,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chaos", tags=["chaos"])
 
 
-def _require_feature_flag():
+def _require_feature_flag() -> None:
     """Raise 404 if chaos API is disabled."""
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -41,16 +43,34 @@ class ChaosStatus(BaseModel):
 
 
 def _scenario_key(scenario: str) -> str:
+    """Map a chaos scenario to its configured Redis key.
+
+    Parameters:
+        scenario (str): The chaos scenario name.
+
+    Returns:
+        str: The configured Redis key, or a `chaos:`-prefixed key for unknown scenarios.
+    """
     return SCENARIO_KEY_MAP.get(scenario, f"chaos:{scenario}")
 
 
-@router.post("/inject")
+@router.post("/inject", response_model=None)
 async def inject_chaos(
     request: Request,
     _user: CurrentUserFromCookie,
     scenario: str = Form(...),
     duration_seconds: int = Form(30),
-):
+) -> dict[str, Any] | JSONResponse:
+    """
+    Activate a chaos scenario for a specified duration.
+
+    Parameters:
+        scenario (str): Chaos scenario to activate.
+        duration_seconds (int): Duration of the activation in seconds.
+
+    Returns:
+        dict[str, Any] | JSONResponse: Activation details on success, or a 403 response when CSRF validation fails.
+    """
     _require_feature_flag()
     if not await validate_csrf_token(request):
         return JSONResponse(
@@ -72,7 +92,7 @@ async def inject_chaos(
         spike_data: dict[str, float] = {}
         for i in range(15):
             spike_data[str(now - i * 2)] = now - i * 2
-        await r.zadd("throttle:window:youtube", spike_data)
+        await r.zadd("throttle:window:youtube", spike_data)  # type: ignore[arg-type]
         await r.expire("throttle:window:youtube", settings.throttle_window_seconds * 2)
         THROTTLE_RISK_SCORE.labels(service="youtube", provider="yt-dlp").set(1.0)
 
@@ -93,11 +113,16 @@ async def inject_chaos(
     }
 
 
-@router.post("/reset")
+@router.post("/reset", response_model=None)
 async def reset_chaos(
     request: Request,
     _user: CurrentUserFromCookie,
-):
+) -> dict[str, Any] | JSONResponse:
+    """Reset all active chaos scenarios.
+
+    Returns:
+        dict[str, Any] | JSONResponse: A success response containing the number of deleted scenario keys, or a 403 response when CSRF validation fails.
+    """
     _require_feature_flag()
     if not await validate_csrf_token(request):
         return JSONResponse(
@@ -119,7 +144,12 @@ async def reset_chaos(
 async def chaos_status(
     request: Request,
     _user: CurrentUserFromCookie,
-):
+) -> dict[str, Any]:
+    """Report the active status of each chaos scenario.
+
+    Returns:
+        dict[str, Any]: A response containing the active status for each scenario.
+    """
     _require_feature_flag()
 
     from core.redis_client import KEY_TO_SCENARIO_FIELD
@@ -133,17 +163,26 @@ async def chaos_status(
     return {"data": status.model_dump()}
 
 
-@router.post("/submit-videos")
+@router.post("/submit-videos", response_model=None)
 async def chaos_submit_videos(
     request: Request,
     _user: CurrentUserFromCookie,
     db: DbSession,
     count: int = Form(default=10),
-):
-    """Bulk submit demo video URLs for chaos lab.
+) -> dict[str, Any] | JSONResponse:
+    """
+    Submit randomly selected demo video URLs for processing.
 
-    Creates N random download jobs from the demo URL pool.
-    Only available when FEATURE_CHAOS_API_ENABLED=true.
+    The requested count is limited to the range 1-50. An invalid CSRF token produces
+    a 403 response.
+
+    Parameters:
+        count (int): Number of demo videos to submit.
+
+    Returns:
+        dict[str, Any] | JSONResponse: Submission details containing the number
+        of jobs created, the effective requested count, and their URLs, or a 403
+        response when CSRF validation fails.
     """
     _require_feature_flag()
     if not await validate_csrf_token(request):

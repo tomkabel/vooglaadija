@@ -42,7 +42,8 @@ config:
 
 # Globs for files to ignore
 ignores:
-  - 'node_modules/**'
+  - '**/node_modules/**'
+  - '.prtmp/**'
   - '.venv/**'
   - '.virtual_documents/**'
   - '**/pnpm-lock.yaml'
@@ -71,6 +72,8 @@ ignores:
   - 'course-resources/**'
   - 'research/**'
   - 'research-analysis/**'
+  - 'browser-downloader/**'
+  - 'docs/impl-plan-universal-downloader.md'
   - 'openspec/**'
   - 'presentation/**'
   - 'docs/images/**'
@@ -81,6 +84,7 @@ ignores:
   - 'Senior_Final_Demos_*.md'
   - 'session-ses_*.md'
   - 'unoptimized_prompt.md'
+  - 'non-yt-video-issue.md'
 
 # Disable inline config directives
 noInlineConfig: false

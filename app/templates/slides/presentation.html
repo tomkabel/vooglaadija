@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
-<style>
+<style nonce="{{ nonce }}">
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root {
@@ -250,6 +250,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--surface-900);f
 svg text.f-title{font-family:var(--font-display);font-weight:700;font-size:clamp(10px,1.2vw,15px)}
 svg text.f-label{font-family:var(--font-mono);font-size:clamp(9px,1vw,13px);fill:var(--text-tertiary);letter-spacing:.05em}
 svg text.f-detail{font-family:var(--font-mono);font-size:clamp(8px,.9vw,12px);fill:var(--text-tertiary)}
+
+/* Inline styles extracted for CSP strict-dynamic — was inline style= attributes */
+.slide-1 .orb-a{opacity:.03}
+.slide-2 .orb-a{opacity:.02;top:-10%;right:-25%}
+#spotlight{left:1%;top:3%;width:84%;height:25%}
 </style>
 </head>
 <body>
@@ -281,7 +286,7 @@ svg text.f-detail{font-family:var(--font-mono);font-size:clamp(8px,.9vw,12px);fi
 <!-- ═══════════════════════════════════════ -->
 <div class="slide slide-1 active" data-index="0">
   <div class="orb orb-r"></div>
-  <div class="orb orb-a" style="opacity:.03"></div>
+  <div class="orb orb-a"></div>
 
   <h1 class="hero-title">
     <span class="dim">Every downloader</span><br>
@@ -323,7 +328,7 @@ svg text.f-detail{font-family:var(--font-mono);font-size:clamp(8px,.9vw,12px);fi
 <!-- ═══════════════════════════════════════ -->
 <div class="slide slide-2" data-index="1">
   <div class="orb orb-t"></div>
-  <div class="orb orb-a" style="opacity:.02;top:-10%;right:-25%"></div>
+  <div class="orb orb-a"></div>
 
   <div class="arch-header">Resilience Architecture — Recovery Flow</div>
 
@@ -331,7 +336,7 @@ svg text.f-detail{font-family:var(--font-mono);font-size:clamp(8px,.9vw,12px);fi
     <!-- Focus label positioned above spotlight -->
     <div class="focus-label visible" id="focus-label">Happy Path — Normal Operation</div>
     <!-- Spotlight window -->
-    <div class="spotlight" id="spotlight" style="left:1%;top:3%;width:84%;height:25%"></div>
+    <div class="spotlight" id="spotlight"></div>
 
     <svg viewBox="0 0 980 540" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -524,7 +529,7 @@ svg text.f-detail{font-family:var(--font-mono);font-size:clamp(8px,.9vw,12px);fi
 <!-- ========================================== -->
 <!-- CONTROLLER SCRIPT                          -->
 <!-- ========================================== -->
-<script>
+<script nonce="{{ nonce }}">
 (function(){
   /* ── STATE ── */
   const slides = document.querySelectorAll('.slide');

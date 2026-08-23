@@ -1,16 +1,16 @@
 {
-  "generated": "2026-08-13T10:18:50.413166+00:00",
   "boundary_violations": 0,
-  "unused_imports": 0,
-  "tid251_violations": 0,
-  "dead_code": 0,
-  "unused_deps": 0,
-  "secrets": 0,
-  "complexity_violations": 21,
-  "temporal_coupling_pairs": 0,
-  "jscpd_clones": 21,
   "commented_out_files": 0,
-  "window_globals": 3,
+  "complexity_violations": 21,
+  "dead_code": 0,
+  "generated": "2026-08-13T10:18:50.413166+00:00",
+  "jscpd_clones": 21,
+  "lock_failures": 0,
+  "secrets": 0,
+  "temporal_coupling_pairs": 0,
+  "tid251_violations": 0,
   "todos": 10,
-  "lock_failures": 0
+  "unused_deps": 0,
+  "unused_imports": 0,
+  "window_globals": 3
 }

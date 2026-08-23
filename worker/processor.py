@@ -14,11 +14,15 @@ Circuit breaker open → defer (not fail) → auto-retry when circuit closes.
 import asyncio
 import time
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.circuit_breaker import (
+    CircuitBreaker,
     CircuitBreakerOpenError,
     get_youtube_circuit_breaker,
 )
@@ -32,6 +36,7 @@ from core.metrics import (
 from core.models.download_job import DownloadJob
 from core.queue import push_to_download_queue, redis_client
 from worker import dlq_manager, job_claimer, job_executor, retry_scheduler
+from worker.browser_executor import get_browser_downloader_circuit_breaker
 from worker.health import update_worker_state
 
 logger = get_logger(__name__)
@@ -41,46 +46,130 @@ logger = get_logger(__name__)
 _CIRCUIT_DEFERRED_KEY = "circuit_deferred_queue"
 
 
+def _get_breaker_for_service(service: str) -> CircuitBreaker:
+    """Return the circuit breaker that governs a deferred service's recovery."""
+    if service == "browser_downloader":
+        return get_browser_downloader_circuit_breaker()
+    return get_youtube_circuit_breaker()
+
+
 async def _defer_job_to_circuit(job_id: UUID, service: str) -> None:
-    try:
-        ts = time.time()
-        await redis_client.zadd(_CIRCUIT_DEFERRED_KEY, {str(job_id): ts})
+    """Record a deferred job in the Redis sorted set, keyed by its service.
+
+    The member encodes ``"<service>:<job_id>"`` so the drain loop can check the
+    correct breaker per entry (youtube vs browser_downloader) before re-enqueue.
+
+    The Redis write is retried a few times: a Redis outage here would otherwise
+    orphan a job whose DB status is already ``deferred``. ``_drain_circuit_deferred``
+    also scans the DB for deferred jobs as a fallback so no entry is lost.
+    """
+    member = f"{service}:{job_id}"
+    last_err: Exception | None = None
+    for attempt in range(3):
         try:
-            depth = await redis_client.zcard(_CIRCUIT_DEFERRED_KEY)
-            CIRCUIT_DEFERRED_DEPTH.set(depth)
-        except Exception:
-            pass
+            ts = time.time()
+            await redis_client.zadd(_CIRCUIT_DEFERRED_KEY, {member: ts})
+            try:
+                depth = await redis_client.zcard(_CIRCUIT_DEFERRED_KEY)
+                CIRCUIT_DEFERRED_DEPTH.set(depth)
+            except Exception:
+                pass
+            return
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "defer_job_redis_write_retry",
+                job_id=str(job_id),
+                service=service,
+                attempt=attempt,
+                error=str(e),
+            )
+    logger.error(
+        "failed_to_defer_job",
+        job_id=str(job_id),
+        service=service,
+        error=str(last_err),
+    )
+
+
+async def _reconcile_deferred_from_db(max_batch: int) -> list[str]:
+    """Discover DB ``deferred`` jobs missing from the Redis set.
+
+    Fallback used when the sorted set is empty, so a job whose Redis write
+    failed (or was lost) is still recovered by the drain loop. The originating
+    service is recovered from the deferred job's error message.
+    """
+    try:
+        session_factory = get_async_session_factory()
+        async with session_factory() as db:
+            result = await db.execute(
+                select(DownloadJob.id, DownloadJob.error).where(DownloadJob.status == "deferred")
+            )
+            rows = result.all()
+        members: list[str] = []
+        for job_id, error in rows[:max_batch]:
+            service = "youtube"
+            marker = "Circuit breaker open ("
+            if error and marker in error:
+                start = error.index(marker) + len(marker)
+                end = error.index(")", start)
+                service = error[start:end]
+            member = f"{service}:{job_id}"
+            members.append(member)
+            try:
+                await redis_client.zadd(_CIRCUIT_DEFERRED_KEY, {member: time.time()})
+            except Exception:
+                pass
+        return members
     except Exception as e:
-        logger.error("failed_to_defer_job", job_id=str(job_id), error=str(e))
+        logger.warning("circuit_defer_reconcile_failed", error=str(e))
+        return []
 
 
 async def _drain_circuit_deferred(max_batch: int = 10) -> int:
-    """Move deferred jobs back to download queue when circuit has recovered.
-
-    Updates DB status 'deferred' → 'pending' atomically so the worker's
-    claim (WHERE status='pending') succeeds on re-pickup.
-    Returns number of jobs drained.
     """
-    if not await _circuit_is_accepting():
-        return 0
+    Move deferred jobs back to the download queue after their circuit recovers.
+
+    Service-aware: each deferred entry carries its originating service, and only
+    the matching breaker is checked before re-enqueue. Entries whose breaker is
+    still open are left in the set for a future drain. When the Redis set is
+    empty, DB ``deferred`` rows are reconciled in as a fallback.
+
+    Parameters:
+        max_batch (int): Maximum number of deferred jobs to process.
+
+    Returns:
+        int: Number of jobs successfully returned to the download queue.
+    """
     try:
         members = await redis_client.zrange(_CIRCUIT_DEFERRED_KEY, 0, max_batch - 1)
+        if not members:
+            members = await _reconcile_deferred_from_db(max_batch)
         if not members:
             return 0
 
         session_factory = get_async_session_factory()
         drained = 0
         async with session_factory() as db:
-            for job_id_str in members:
+            for raw in members:
+                member = raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
+                service, _, job_id_str = member.partition(":")
+                breaker = _get_breaker_for_service(service or "youtube")
+                if not await breaker.is_accepting():
+                    # Breaker still open — leave the entry for a future drain.
+                    continue
                 try:
-                    result = await db.execute(
-                        update(DownloadJob)
-                        .where(DownloadJob.id == job_id_str, DownloadJob.status == "deferred")
-                        .values(status="pending", updated_at=datetime.now(UTC))
+                    result = cast(
+                        CursorResult[Any],
+                        await db.execute(
+                            update(DownloadJob)
+                            .where(DownloadJob.id == job_id_str, DownloadJob.status == "deferred")
+                            .values(status="pending", updated_at=datetime.now(UTC)),
+                        ),
                     )
                     if result.rowcount != 1:
                         await db.rollback()
-                        await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, job_id_str)
+                        await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, member)
                         logger.warning(
                             "circuit_drain_db_mismatch",
                             job_id=job_id_str,
@@ -88,14 +177,14 @@ async def _drain_circuit_deferred(max_batch: int = 10) -> int:
                         )
                         continue
 
-                    enqueued = await push_to_download_queue(job_id_str)
+                    enqueued = await push_to_download_queue(UUID(job_id_str))
                     if not enqueued:
                         await db.rollback()
                         logger.error("circuit_drain_enqueue_failed", job_id=job_id_str)
                         continue
 
                     await db.commit()
-                    await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, job_id_str)
+                    await redis_client.zrem(_CIRCUIT_DEFERRED_KEY, member)
                     drained += 1
                 except Exception as job_error:
                     await db.rollback()
@@ -114,11 +203,6 @@ async def _drain_circuit_deferred(max_batch: int = 10) -> int:
     except Exception as e:
         logger.error("circuit_drain_failed", error=str(e))
         return 0
-
-
-async def _circuit_is_accepting() -> bool:
-    cb = get_youtube_circuit_breaker()
-    return await cb.is_accepting()
 
 
 async def process_next_job(job_id: UUID | str | None = None) -> bool:
@@ -157,7 +241,7 @@ async def process_next_job(job_id: UUID | str | None = None) -> bool:
 
 
 async def _handle_execution_result(
-    db,
+    db: AsyncSession,
     job: DownloadJob,
     result: job_executor.ExecutionResult,
 ) -> bool:
@@ -175,28 +259,43 @@ async def _handle_execution_result(
     return await _handle_execution_error(db, job, result.error)
 
 
-async def _handle_circuit_open(db, active_job_id: UUID, cb_error: CircuitBreakerOpenError) -> bool:
+async def _handle_circuit_open(
+    db: AsyncSession, active_job_id: UUID, cb_error: CircuitBreakerOpenError
+) -> bool:
+    """
+    Defer a processing job while its service circuit breaker is open.
+
+    Parameters:
+        active_job_id (UUID): Identifier of the job to defer.
+        cb_error (CircuitBreakerOpenError): Circuit-breaker error containing the service and recovery details.
+
+    Returns:
+        bool: `False` because the job is deferred or is no longer processing.
+    """
     logger.warning(
         "circuit_breaker_open_deferring",
         job_id=str(active_job_id),
         service=cb_error.service_name,
         reset_timeout=cb_error.reset_timeout,
     )
-    result = await db.execute(
-        update(DownloadJob)
-        .where(
-            DownloadJob.id == active_job_id,
-            DownloadJob.status == "processing",
-        )
-        .values(
-            status="deferred",
-            error=f"Circuit breaker open ({cb_error.service_name}), "
-            f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
-            last_error=f"Circuit breaker open ({cb_error.service_name}), "
-            f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
-            error_category="transient",
-            updated_at=datetime.now(UTC),
-        )
+    result = cast(
+        CursorResult[Any],
+        await db.execute(
+            update(DownloadJob)
+            .where(
+                DownloadJob.id == active_job_id,
+                DownloadJob.status == "processing",
+            )
+            .values(
+                status="deferred",
+                error=f"Circuit breaker open ({cb_error.service_name}), "
+                f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
+                last_error=f"Circuit breaker open ({cb_error.service_name}), "
+                f"deferred until recovery (cooldown: {cb_error.reset_timeout}s)",
+                error_category="transient",
+                updated_at=datetime.now(UTC),
+            ),
+        ),
     )
     await db.commit()
     if result.rowcount == 0:
@@ -218,7 +317,9 @@ async def _handle_circuit_open(db, active_job_id: UUID, cb_error: CircuitBreaker
     return False
 
 
-async def _handle_execution_error(db, claimed_job: DownloadJob, error: BaseException) -> bool:
+async def _handle_execution_error(
+    db: AsyncSession, claimed_job: DownloadJob, error: BaseException
+) -> bool:
     active_job_id = claimed_job.id
     update_worker_state(status="running", current_job_started_at=None)
 

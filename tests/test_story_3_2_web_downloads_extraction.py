@@ -125,7 +125,7 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
             data={"email": email, "password": password},
             headers={"X-CSRF-Token": csrf_token},
         )
-        access_token = login_response.cookies.get("access_token", "")
+        access_token = login_response.cookies.get("__Host-access_token", "")
         csrf_token = (
             login_response.cookies.get("csrf_token")
             or client.cookies.get("csrf_token")
@@ -145,7 +145,7 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
                 "/web/downloads",
                 data={"url": sample_url},
                 headers={"HX-Request": "true", "X-CSRF-Token": csrf_token},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert create_response.status_code == 200
@@ -163,7 +163,7 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
 
         list_response = await client.get(
             "/web/downloads",
-            cookies={"access_token": access_token},
+            cookies={"__Host-access_token": access_token},
         )
         csrf_token = get_csrf_from_response(list_response) or csrf_token
         sse_events = await _emit_initial_snapshot(TestingSessionLocal, user_id, OrderedDict())
@@ -174,7 +174,7 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
         delete_response = await client.delete(
             f"/web/downloads/{job_id}",
             headers={"HX-Request": "true", "X-CSRF-Token": csrf_token},
-            cookies={"access_token": access_token},
+            cookies={"__Host-access_token": access_token},
         )
 
     assert list_response.status_code == 200

@@ -72,6 +72,15 @@ class Settings(BaseSettings):
     throttle_risk_threshold_scale: int = 10
     throttle_risk_threshold: float = 0.7
 
+    # Browser downloader microservice (Phase 2 worker integration).
+    # When disabled (default), the worker routes all jobs to yt-dlp,
+    # matching pre-Phase-2 behavior. P4 will expand the rest of the
+    # surface (image, sandbox_runtime, recording fallback).
+    browser_downloader_enabled: bool = False
+    browser_downloader_endpoint: str = "http://browser-downloader:3000"
+    browser_downloader_timeout: int = 300
+    browser_downloader_cb_use_redis: bool = False
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""
@@ -96,6 +105,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_and_construct(self) -> "Settings":
+        """
+        Validate the application settings and construct derived configuration values.
+
+        Applies testing defaults when testing is enabled; otherwise validates configured
+        values, resolves storage, and constructs database and Redis URLs.
+
+        Returns:
+                Settings: The validated and fully constructed settings instance
+        """
         if _is_testing_enabled():
             return self._apply_testing_defaults()
 
@@ -104,6 +122,7 @@ class Settings(BaseSettings):
         self._build_database_url()
         self._validate_secret_key()
         self._validate_cors()
+        self._validate_browser_downloader()
         self._resolve_storage()
         self._build_redis_url()
         return self
@@ -169,13 +188,19 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid {name}: {value!r} must be in range 1-65535")
 
     def _build_database_url(self) -> None:
+        """
+        Build the database connection URL when one has not been provided.
+
+        Raises:
+            ValueError: If no database URL or database password is configured.
+        """
         if self.database_url:
             return
         if not self.db_password:
             raise ValueError(
                 "Either DATABASE_URL or DB_PASSWORD must be set. "
                 "For Docker: set DB_PASSWORD in .env. "
-                "For local dev: set DATABASE_URL in .env."
+                "For local dev: set DATABASE_URL in .env.",
             )
         encoded_password = quote_plus(self.db_password)
         self.database_url = (
@@ -184,10 +209,16 @@ class Settings(BaseSettings):
         )
 
     def _validate_secret_key(self) -> None:
+        """
+        Validate that the configured secret key is present, sufficiently long, and has adequate entropy.
+
+        Raises:
+            ValueError: If the secret key is missing, shorter than 32 characters, or has insufficient entropy.
+        """
         if not self.secret_key:
             raise ValueError(
                 "SECRET_KEY is required. "
-                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+                'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"',
             )
 
         if len(self.secret_key) < 32:
@@ -198,10 +229,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SECRET_KEY has insufficient entropy "
                 f"(~{entropy_per_char:.1f} bits/char, need >= 2.9). "
-                'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"'
+                'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"',
             )
 
     def _validate_cors(self) -> None:
+        """
+        Validate and normalize the configured CORS origins.
+
+        Raises:
+            ValueError: If wildcard origins are configured or an origin is invalid.
+        """
         if self.cors_origins == "*":
             raise ValueError("CORS_ORIGINS cannot be '*' when credentialed requests are enabled")
 
@@ -247,6 +284,11 @@ class Settings(BaseSettings):
         self.storage_path = str(path)
 
     def _build_redis_url(self) -> None:
+        """
+        Construct the Redis connection URL from the configured host, port, and optional password.
+
+        The existing Redis URL is preserved when provided.
+        """
         if self.redis_url:
             return
         if self.redis_password:
@@ -254,6 +296,31 @@ class Settings(BaseSettings):
             self.redis_url = f"redis://:{encoded_password}@{self.redis_host}:{self.redis_port}"
         else:
             self.redis_url = f"redis://{self.redis_host}:{self.redis_port}"
+
+    def _validate_browser_downloader(self) -> None:
+        """
+        Validate the browser downloader timeout and endpoint configuration.
+
+        Raises:
+                ValueError: If the timeout is less than one or the endpoint is missing or is not an HTTP(S) URL with a host.
+        """
+        if self.browser_downloader_timeout < 1:
+            raise ValueError(
+                f"Invalid BROWSER_DOWNLOADER_TIMEOUT: {self.browser_downloader_timeout!r} must be >= 1",
+            )
+        if not self.browser_downloader_endpoint:
+            raise ValueError("BROWSER_DOWNLOADER_ENDPOINT must be a non-empty URL")
+        try:
+            parsed = urlparse(self.browser_downloader_endpoint)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid BROWSER_DOWNLOADER_ENDPOINT: {self.browser_downloader_endpoint!r}",
+            ) from exc
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(
+                f"Invalid BROWSER_DOWNLOADER_ENDPOINT: {self.browser_downloader_endpoint!r} "
+                "must be an http(s) URL with a host",
+            )
 
 
 settings = Settings()

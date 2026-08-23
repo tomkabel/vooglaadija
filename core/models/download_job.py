@@ -22,14 +22,20 @@ class DownloadJob(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     user: Mapped[User] = relationship("User", back_populates="download_jobs")
     failed_job: Mapped[FailedJob | None] = relationship(
-        "FailedJob", back_populates="original_job", uselist=False
+        "FailedJob",
+        back_populates="original_job",
+        uselist=False,
     )
     outbox_entries: Mapped[list[Outbox]] = relationship(
-        "Outbox", back_populates="job", cascade="all, delete-orphan"
+        "Outbox",
+        back_populates="job",
+        cascade="all, delete-orphan",
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")
@@ -50,5 +56,7 @@ class DownloadJob(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
     )

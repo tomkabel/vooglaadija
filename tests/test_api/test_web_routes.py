@@ -495,8 +495,8 @@ class TestLoginForm:
             )
 
         assert login_response.status_code == 303
-        assert "access_token" in login_response.cookies
-        assert "refresh_token" in login_response.cookies
+        assert "__Host-access_token" in login_response.cookies
+        assert "__Host-refresh_token" in login_response.cookies
 
     @pytest.mark.asyncio
     async def test_login_invalid_csrf(self):
@@ -629,8 +629,8 @@ class TestRegisterForm:
             )
 
         assert reg_response.status_code == 303
-        assert "access_token" in reg_response.cookies
-        assert "refresh_token" in reg_response.cookies
+        assert "__Host-access_token" in reg_response.cookies
+        assert "__Host-refresh_token" in reg_response.cookies
 
     @pytest.mark.asyncio
     async def test_register_success_persists_default_username_and_hashed_password(self):
@@ -870,7 +870,7 @@ class TestDashboardPage:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -879,7 +879,7 @@ class TestDashboardPage:
 
             dashboard_response = await client.get(
                 "/web/downloads",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert dashboard_response.status_code == 200
@@ -902,7 +902,7 @@ class TestDashboardPage:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -911,7 +911,7 @@ class TestDashboardPage:
 
             dashboard_response = await client.get(
                 "/web/downloads",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert dashboard_response.status_code == 200
@@ -949,7 +949,7 @@ class TestDashboardPage:
                 data={"email": email, "password": password},
                 headers={"X-CSRF-Token": csrf_token},
             )
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
 
             async with TestingSessionLocal() as session:
                 user_result = await session.execute(select(User).where(User.email == email))
@@ -971,7 +971,7 @@ class TestDashboardPage:
 
             dashboard_response = await client.get(
                 "/web/downloads",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert dashboard_response.status_code == 200
@@ -1036,7 +1036,7 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1062,7 +1062,7 @@ class TestCreateDownloadForm:
                     "/web/downloads",
                     data={"url": sample_url},
                     headers=headers,
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 200
@@ -1087,7 +1087,7 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1113,7 +1113,7 @@ class TestCreateDownloadForm:
                     "/web/downloads",
                     data={"url": sample_url},
                     headers=headers,
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 200
@@ -1172,7 +1172,7 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1187,7 +1187,7 @@ class TestCreateDownloadForm:
                 "/web/downloads",
                 data={"url": "https://not-youtube.com/video"},
                 headers=headers,
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert create_response.status_code == 422
@@ -1210,7 +1210,7 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1236,7 +1236,7 @@ class TestCreateDownloadForm:
                     "/web/downloads",
                     data={"url": sample_url},
                     headers=headers,
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 200
@@ -1264,7 +1264,7 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1279,7 +1279,7 @@ class TestCreateDownloadForm:
                 "/web/downloads",
                 data={"url": "https://not-youtube.com/video"},
                 headers=headers,
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert create_response.status_code == 422
@@ -1308,13 +1308,13 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
 
             create_response = await client.post(
                 "/web/downloads",
                 data={"url": sample_url},
                 headers={"HX-Request": "true", "X-CSRF-Token": "invalid_token"},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert create_response.status_code == 403
@@ -1341,7 +1341,7 @@ class TestCreateDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1361,7 +1361,7 @@ class TestCreateDownloadForm:
                     "/web/downloads",
                     data={"url": sample_url},
                     headers=headers,
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 500
@@ -1390,7 +1390,7 @@ class TestCreateDownloadFullPage:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1406,7 +1406,7 @@ class TestCreateDownloadFullPage:
                     "/web/downloads/full",
                     data={"url": sample_url},
                     headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 303
@@ -1431,7 +1431,7 @@ class TestCreateDownloadFullPage:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1447,7 +1447,7 @@ class TestCreateDownloadFullPage:
                     "/web/downloads/full",
                     data={"url": sample_url},
                     headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 303
@@ -1507,7 +1507,7 @@ class TestDeleteDownload:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1523,7 +1523,7 @@ class TestDeleteDownload:
             delete_response = await client.delete(
                 f"/web/downloads/{fake_uuid}",
                 headers=headers,
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert delete_response.status_code == 404
@@ -1546,7 +1546,7 @@ class TestDeleteDownload:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1560,7 +1560,7 @@ class TestDeleteDownload:
             delete_response = await client.delete(
                 "/web/downloads/not-a-uuid",
                 headers=headers,
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert delete_response.status_code == 400
@@ -1598,7 +1598,7 @@ class TestDownloadFile:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1608,7 +1608,7 @@ class TestDownloadFile:
             fake_uuid = str(uuid.uuid4())
             download_response = await client.get(
                 f"/web/downloads/{fake_uuid}/file",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert download_response.status_code == 404
@@ -1631,7 +1631,7 @@ class TestDownloadFile:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1640,7 +1640,7 @@ class TestDownloadFile:
 
             download_response = await client.get(
                 "/web/downloads/not-a-uuid/file",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert download_response.status_code == 400
@@ -1817,7 +1817,7 @@ class TestSettingsPage:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1826,7 +1826,7 @@ class TestSettingsPage:
 
             response = await client.get(
                 "/web/settings",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 200
@@ -1848,7 +1848,7 @@ class TestSettingsPage:
                 data={"email": email, "password": password},
                 headers={"X-CSRF-Token": csrf_token},
             )
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1857,7 +1857,7 @@ class TestSettingsPage:
 
             response = await client.get(
                 "/web/settings?error=bad_current_password",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 200
@@ -1888,7 +1888,7 @@ class TestUpdateUsername:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1897,7 +1897,7 @@ class TestUpdateUsername:
 
             # Get fresh CSRF token
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -1905,7 +1905,7 @@ class TestUpdateUsername:
                 "/web/settings/username",
                 data={"username": "  newname  "},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         async with TestingSessionLocal() as session:
@@ -1934,7 +1934,7 @@ class TestUpdateUsername:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1942,7 +1942,7 @@ class TestUpdateUsername:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -1950,7 +1950,7 @@ class TestUpdateUsername:
                 "/web/settings/username",
                 data={"username": "ab"},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         async with TestingSessionLocal() as session:
@@ -1979,7 +1979,7 @@ class TestUpdateUsername:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -1990,7 +1990,7 @@ class TestUpdateUsername:
                 "/web/settings/username",
                 data={"username": "validname"},
                 headers={"X-CSRF-Token": "invalid_token"},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2018,7 +2018,7 @@ class TestChangePassword:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2026,7 +2026,7 @@ class TestChangePassword:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2038,12 +2038,12 @@ class TestChangePassword:
                     "new_password_confirm": "newpassword123",
                 },
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
             old_token_response = await client.get(
                 "/web/settings",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
             fresh_csrf_response = await client.get("/web/login")
@@ -2088,7 +2088,7 @@ class TestChangePassword:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2096,7 +2096,7 @@ class TestChangePassword:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2108,7 +2108,7 @@ class TestChangePassword:
                     "new_password_confirm": "newpassword123",
                 },
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2132,7 +2132,7 @@ class TestChangePassword:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2140,7 +2140,7 @@ class TestChangePassword:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2152,7 +2152,7 @@ class TestChangePassword:
                     "new_password_confirm": "differentpass",
                 },
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2176,7 +2176,7 @@ class TestChangePassword:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2184,7 +2184,7 @@ class TestChangePassword:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2196,7 +2196,7 @@ class TestChangePassword:
                     "new_password_confirm": "short",
                 },
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2224,7 +2224,7 @@ class TestDeleteDownloadForm:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2236,7 +2236,7 @@ class TestDeleteDownloadForm:
             response = await client.delete(
                 f"/web/downloads/{fake_uuid}",
                 headers={"X-CSRF-Token": "invalid_token"},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 403
@@ -2636,7 +2636,7 @@ class TestCreateDownloadFullPageErrors:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2647,7 +2647,7 @@ class TestCreateDownloadFullPageErrors:
                 "/web/downloads/full",
                 data={"url": sample_url},
                 headers={"X-CSRF-Token": "invalid_token"},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert create_response.status_code == 303
@@ -2671,7 +2671,7 @@ class TestCreateDownloadFullPageErrors:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2679,7 +2679,7 @@ class TestCreateDownloadFullPageErrors:
             )
 
             csrf_response = await client.get(
-                "/web/downloads", cookies={"access_token": access_token}
+                "/web/downloads", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2687,7 +2687,7 @@ class TestCreateDownloadFullPageErrors:
                 "/web/downloads/full",
                 data={"url": "https://not-youtube.com/video"},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert create_response.status_code == 303
@@ -2711,7 +2711,7 @@ class TestCreateDownloadFullPageErrors:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2719,7 +2719,7 @@ class TestCreateDownloadFullPageErrors:
             )
 
             csrf_response = await client.get(
-                "/web/downloads", cookies={"access_token": access_token}
+                "/web/downloads", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2732,7 +2732,7 @@ class TestCreateDownloadFullPageErrors:
                     "/web/downloads/full",
                     data={"url": sample_url},
                     headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert create_response.status_code == 303
@@ -2760,7 +2760,7 @@ class TestDeleteAccount:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2771,7 +2771,7 @@ class TestDeleteAccount:
                 "/web/settings/delete-account",
                 data={"password": password, "confirm_text": "DELETE"},
                 headers={"X-CSRF-Token": "invalid_token"},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2795,7 +2795,7 @@ class TestDeleteAccount:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2803,7 +2803,7 @@ class TestDeleteAccount:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2811,7 +2811,7 @@ class TestDeleteAccount:
                 "/web/settings/delete-account",
                 data={"password": password, "confirm_text": "WRONG"},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2835,7 +2835,7 @@ class TestDeleteAccount:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2843,7 +2843,7 @@ class TestDeleteAccount:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2851,7 +2851,7 @@ class TestDeleteAccount:
                 "/web/settings/delete-account",
                 data={"password": "wrongpassword", "confirm_text": "DELETE"},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 303
@@ -2879,7 +2879,7 @@ class TestDeleteAccount:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2902,7 +2902,7 @@ class TestDeleteAccount:
                 job_id = job.id
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2912,7 +2912,7 @@ class TestDeleteAccount:
                     "/web/settings/delete-account",
                     data={"password": password, "confirm_text": "DELETE"},
                     headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         async with TestingSessionLocal() as session:
@@ -2921,7 +2921,14 @@ class TestDeleteAccount:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/web/login?account_deleted=1"
-        assert "access_token" not in response.cookies or response.cookies.get("access_token") == ""
+        assert (
+            "__Host-access_token" not in response.cookies
+            or response.cookies.get("__Host-access_token") == ""
+        )
+        assert (
+            "__Host-refresh_token" not in response.cookies
+            or response.cookies.get("__Host-refresh_token") == ""
+        )
         assert downloaded_file.exists() is False
         assert deleted_user is None
         assert deleted_job is None
@@ -2944,7 +2951,7 @@ class TestDeleteAccount:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -2952,7 +2959,7 @@ class TestDeleteAccount:
             )
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -2963,7 +2970,7 @@ class TestDeleteAccount:
                     "X-CSRF-Token": csrf_token if csrf_token else "",
                     "HX-Request": "true",
                 },
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert response.status_code == 200
@@ -2987,7 +2994,7 @@ class TestDeleteAccount:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3017,7 +3024,7 @@ class TestDeleteAccount:
                 await session.commit()
 
             csrf_response = await client.get(
-                "/web/settings", cookies={"access_token": access_token}
+                "/web/settings", cookies={"__Host-access_token": access_token}
             )
             csrf_token = get_csrf_from_response(csrf_response)
 
@@ -3028,7 +3035,7 @@ class TestDeleteAccount:
                     "/web/settings/delete-account",
                     data={"password": password, "confirm_text": "DELETE"},
                     headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert response.status_code == 303
@@ -3056,7 +3063,7 @@ class TestDeleteDownloadFormBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3090,7 +3097,7 @@ class TestDeleteDownloadFormBranches:
             delete_response = await client.delete(
                 f"/web/downloads/{job_id}",
                 headers=headers,
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert delete_response.status_code == 409
@@ -3114,7 +3121,7 @@ class TestDeleteDownloadFormBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3151,7 +3158,7 @@ class TestDeleteDownloadFormBranches:
                 delete_response = await client.delete(
                     f"/web/downloads/{job_id}",
                     headers=headers,
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert delete_response.status_code == 403
@@ -3179,7 +3186,7 @@ class TestDeleteDownloadFormBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3219,7 +3226,7 @@ class TestDeleteDownloadFormBranches:
                     delete_response = await client.delete(
                         f"/web/downloads/{job_id}",
                         headers=headers,
-                        cookies={"access_token": access_token},
+                        cookies={"__Host-access_token": access_token},
                     )
 
         assert delete_response.status_code == 200
@@ -3254,7 +3261,7 @@ class TestDownloadFileBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3282,7 +3289,7 @@ class TestDownloadFileBranches:
 
             download_response = await client.get(
                 f"/web/downloads/{job_id}/file",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert download_response.status_code == 400
@@ -3306,7 +3313,7 @@ class TestDownloadFileBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3335,7 +3342,7 @@ class TestDownloadFileBranches:
 
             download_response = await client.get(
                 f"/web/downloads/{job_id}/file",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert download_response.status_code == 404
@@ -3361,7 +3368,7 @@ class TestDownloadFileBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3391,7 +3398,7 @@ class TestDownloadFileBranches:
 
             download_response = await client.get(
                 f"/web/downloads/{job_id}/file",
-                cookies={"access_token": access_token},
+                cookies={"__Host-access_token": access_token},
             )
 
         assert download_response.status_code == 410
@@ -3418,7 +3425,7 @@ class TestDownloadFileBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3451,7 +3458,7 @@ class TestDownloadFileBranches:
 
                 download_response = await client.get(
                     f"/web/downloads/{job_id}/file",
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert download_response.status_code == 404
@@ -3475,7 +3482,7 @@ class TestDownloadFileBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
 
             from core.models.user import User
 
@@ -3500,7 +3507,7 @@ class TestDownloadFileBranches:
 
                 download_response = await client.get(
                     f"/web/downloads/{job_id}/file",
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert download_response.status_code == 403
@@ -3529,7 +3536,7 @@ class TestDownloadFileBranches:
                 headers={"X-CSRF-Token": csrf_token},
             )
 
-            access_token = login_resp.cookies.get("access_token", "")
+            access_token = login_resp.cookies.get("__Host-access_token", "")
             csrf_token = (
                 login_resp.cookies.get("csrf_token")
                 or client.cookies.get("csrf_token")
@@ -3562,7 +3569,7 @@ class TestDownloadFileBranches:
 
                 download_response = await client.get(
                     f"/web/downloads/{job_id}/file",
-                    cookies={"access_token": access_token},
+                    cookies={"__Host-access_token": access_token},
                 )
 
         assert download_response.status_code == 200

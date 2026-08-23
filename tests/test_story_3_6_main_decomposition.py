@@ -308,8 +308,8 @@ async def test_root_redirects_missing_invalid_and_valid_tokens_unchanged() -> No
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         missing_response = await client.get("/")
-        invalid_response = await client.get("/", cookies={"access_token": "invalid-token"})
-        valid_response = await client.get("/", cookies={"access_token": valid_token})
+        invalid_response = await client.get("/", cookies={"__Host-access_token": "invalid-token"})
+        valid_response = await client.get("/", cookies={"__Host-access_token": valid_token})
 
     assert missing_response.status_code == 303
     assert missing_response.headers["location"] == "/web/login"

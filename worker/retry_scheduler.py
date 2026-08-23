@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.error_classifier import (
@@ -51,11 +51,19 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
-    """Classify an error and decide whether the job should retry or fail finally."""
+    """
+    Classify an error and determine whether the job should be retried or marked as permanently failed.
+
+    Parameters:
+        error (BaseException): The error encountered while processing the job.
+
+    Returns:
+        RetryDecision: The retry or final-failure decision, including the error category, retry limit, delay, and relevant error metadata.
+    """
     error_str = str(error)
     classification = classify_error(error_str)
     category = classification.category
-    job_max_retries = job.max_retries if job.max_retries else 3
+    job_max_retries = job.max_retries if job.max_retries is not None else 3
     effective_max = min(CATEGORY_POLICIES[category].max_retries, job_max_retries)
 
     ERROR_CLASSIFICATION.labels(category=category.value).inc()
@@ -119,7 +127,16 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
 
 
 async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDecision) -> bool:
-    """Persist retry scheduling, then enqueue Redis and clear synced outbox rows."""
+    """
+    Persist a retry schedule and enqueue the job for a later attempt.
+
+    Parameters:
+        job (DownloadJob): The processing job to reschedule.
+        decision (RetryDecision): The retry timing, category, and error metadata to persist.
+
+    Returns:
+        bool: `true` if the job is enqueued successfully, `false` if scheduling is skipped or enqueueing fails.
+    """
     active_job_id = job.id
     if decision.next_retry_at is None:
         delay = decision.delay_seconds or 0.0
@@ -139,7 +156,7 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
             last_error=decision.accumulated_error,
             error_category=decision.category.value,
             updated_at=datetime.now(UTC),
-        )
+        ),
     )
     if int(getattr(retry_result, "rowcount", 0) or 0) == 0:
         await db.rollback()
@@ -158,7 +175,7 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
                 "retry_count": job.retry_count + 1,
                 "category": decision.category.value,
                 "next_retry_at": decision.next_retry_at.isoformat(),
-            }
+            },
         ),
         status="pending",
     )
@@ -169,12 +186,19 @@ async def schedule_retry(db: AsyncSession, job: DownloadJob, decision: RetryDeci
     try:
         enqueued = await push_to_retry_queue(active_job_id, decision.next_retry_at.timestamp())
         if enqueued:
-            await db.execute(delete(Outbox).where(Outbox.id == outbox_entry.id))
+            from sqlalchemy import update as sqlalchemy_update
+
+            await db.execute(
+                sqlalchemy_update(Outbox)
+                .where(Outbox.id == outbox_entry.id)
+                .values(status="processed", processed_at=datetime.now(UTC)),
+            )
             await db.commit()
             RETRIES_TOTAL.labels(category=decision.category.value).inc()
         else:
             logger.error("job_failed_to_enqueue_for_retry", job_id=str(active_job_id))
     except Exception as enqueue_error:
+        await db.rollback()
         logger.error(
             "job_failed_to_enqueue_for_retry",
             job_id=str(active_job_id),

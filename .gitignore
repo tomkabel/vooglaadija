@@ -111,6 +111,8 @@ npm-debug.log*
 # Node.js (if used)
 # =============================================
 node_modules/
+# PR-review temp artifacts
+.prtmp/
 # Only ignore root package-lock.json, not frontend/package-lock.json
 /package-lock.json
 
@@ -183,6 +185,18 @@ docs/CRITIQUE-ISSUES.md
 .kilocode/skills/*
 .agents/.story-automator-active
 
+# Local scan and audit artifacts (not checked in)
+.betterleaks.toml
+.betterleaksignore
+betterleaks-setup.md
+betterleaks.sarif
+SOTA-AUDIT-REPORT.md
+fail-console.md
+fail-result.md
+fail.har
+# HAR files and local exports that are ephemeral
+notegpt-clone/
+
 # =============================================
 # Weekly repo audit artifacts (never committed)
 # =============================================
@@ -190,3 +204,31 @@ audit-report/
 audit-report.md
 audit-report.json
 jscpd-*/
+# Added by code-review-graph
+.code-review-graph/
+
+# =============================================
+# Agent runtime state (m1nd daemon, firecrawl MCP, scratch) — never commit
+# =============================================
+checkpoint-store/
+checkpoint-working-set-v1.json
+boot_*.json
+daemon_*.json
+antibodies.json
+auto_ingest_state.json
+calibration_state.json
+document_artifact_inventory.json
+document_cache_index.json
+graph_snapshot.json
+ingest_roots.json
+plasticity_state.json
+temporal_state_v1.json
+tremor_state.json
+trust_state.json
+*_state.json
+.firecrawl/
+gh-pr-comments.md
+tests.txt
+
+# Scratch POC scripts (experimental, not committed)
+browser-downloader/poc*.js

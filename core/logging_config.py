@@ -69,13 +69,15 @@ def rename_event_key(
 
 
 def configure_logging(log_level: str = "INFO") -> None:
-    """Configure structlog for the application.
+    """
+    Configure structured logging for the application.
 
-    Production: JSON structured logs for log aggregation
-    Development: Human-readable colored output
+    Production environments use JSON output for log aggregation; other environments
+    use colored, human-readable console output. Also configures standard-library
+    logging and suppresses verbose third-party loggers.
 
     Args:
-        log_level: Minimum log level to output (default: INFO)
+        log_level: Minimum severity level for emitted logs.
     """
     is_production = os.environ.get("ENVIRONMENT", "development") == "production"
 
@@ -151,27 +153,15 @@ def configure_logging(log_level: str = "INFO") -> None:
 
 
 def get_logger(name: str | None = None, **kwargs: Any) -> "BoundLogger":
-    """Get a structured logger instance.
+    """
+    Get a configured structured logger, optionally with bound context.
 
     Args:
-        name: Logger name (typically __name__ for the module)
-        **kwargs: Additional context to bind to all log messages
+        name: Logger name, typically the module's ``__name__``.
+        **kwargs: Context values included in subsequent log messages.
 
     Returns:
-        Configured structlog BoundLogger
-
-    Example:
-        logger = get_logger(__name__)
-        logger.info("user_action", action="login", user_id=123)
-
-        # With bound context
-        logger = get_logger(__name__, request_id="abc-123")
-        logger.info("processing")  # All logs include request_id
-
-        # Context manager for temporary context
-        from structlog.contextvars import bind_contextvars
-        with bind_contextvars(user_id=123, request_id="abc"):
-            logger.info("within_context")  # Includes both user_id and request_id
+        A configured structlog bound logger.
     """
     logger = structlog.get_logger(name)
     if kwargs:

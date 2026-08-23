@@ -2,12 +2,14 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.utils.validators import is_supported_url
 
 
 class DownloadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     url: Annotated[str, Field(min_length=1, max_length=2000)]
 
     @field_validator("url")
