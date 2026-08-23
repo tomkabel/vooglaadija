@@ -14,5 +14,11 @@ mkdir -p /app/storage/downloads /app/storage/temp || error_exit "Failed to creat
 echo "Running database migrations..."
 /app/migrate.sh || error_exit "Migration failed"
 
+# Seed the demo account (idempotent; no-op if already present).
+# Keeps /web/demo-login working after every fresh deploy or DB wipe
+# without a separate one-off container.
+echo "Seeding demo account..."
+/app/seed_demo.sh || echo "WARNING: demo seeding step returned non-zero." >&2
+
 echo "Starting application..."
 exec "$@"
