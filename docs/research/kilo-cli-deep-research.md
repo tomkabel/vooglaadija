@@ -13,7 +13,7 @@ The Kilo Code CLI is a powerful terminal-based AI coding assistant built on the 
 ### 1.1 Core Components
 
 | Component | Location | Purpose |
-|-----------|----------|---------|
+| ----------- | ---------- | --------- |
 | **Skills** | `.kilocode/skills/`, `~/.kilocode/skills/` | Portable instruction packages that auto-activate based on description matching |
 | **Workflows** | `.kilocode/workflows/`, `~/.kilocode/workflows/` | Markdown files with step-by-step instructions, invoked via `/filename.md` |
 | **Custom Subagents** | `kilo.json` or `.kilo/agents/*.md` | Specialized agents with isolated contexts |
@@ -45,7 +45,7 @@ kilo completion         # Shell completion
 ### 1.3 Built-in Agents/Modes
 
 | Mode | Type | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | Code | primary | Default coding mode, full tool access |
 | Ask | primary | Read-only Q&A mode |
 | Debug | primary | Debugging assistance |
@@ -69,7 +69,7 @@ kilo completion         # Shell completion
 **Recommended Improvements:**
 
 | Feature | Priority | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | **Slash Command Skills** | High | Implement `/skill-name` invocation as per Issue #6731 |
 | **Built-in `/learn` Command** | High | Add agentskill.sh integration for 110K+ skill discovery |
 | **Skill Versioning** | Medium | Add version field to SKILL.md for update tracking |
@@ -101,7 +101,7 @@ uses:
 **Recommended Improvements:**
 
 | Feature | Priority | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | **Workflow Variables** | High | Allow `{{variable}}` substitution in workflows |
 | **Conditional Steps** | Medium | Support `{{#if condition}}...{{/if}}` branching |
 | **Workflow Chaining** | Medium | Allow workflows to call other workflows |
@@ -134,7 +134,7 @@ uses:
 **Recommended Improvements:**
 
 | Feature | Priority | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | **Hierarchical Agents** | High | Support agent teams with parent-child relationships |
 | **Agent Communication Protocol** | High | Enable agents to exchange structured data |
 | **Dynamic Agent Creation** | Medium | Create agents on-the-fly based on task requirements |
@@ -174,7 +174,7 @@ timeout: 300
 **Recommended Improvements:**
 
 | Feature | Priority | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | **Mode Composability** | Medium | Allow modes to inherit from base modes |
 | **Mode Transitions** | Medium | Define smooth transitions between modes |
 | **Context Carry-over** | Medium | Preserve context when switching modes |
@@ -192,7 +192,7 @@ timeout: 300
 **Recommended Improvements:**
 
 | Feature | Priority | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | **Rule Dependencies** | Medium | Allow rules to include other rules |
 | **Rule Priority/Weighting** | Medium | Explicit priority values for conflict resolution |
 | **Rule Testing** | Medium | Test rules against sample inputs |
@@ -210,7 +210,7 @@ timeout: 300
 **Recommended Improvements:**
 
 | Feature | Priority | Description |
-|---------|----------|-------------|
+| --------- | ---------- | ------------- |
 | **Background Jobs** | High | `kilo job` command for background task management |
 | **Task Queue** | High | Persistent queue for sequential task processing |
 | **WebSocket Streaming** | Medium | Real-time output streaming to web UI |
@@ -227,7 +227,7 @@ timeout: 300
 Based on patterns from superpowers (46k stars), agents (28k stars), and claude-flow (12.6k stars):
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **Agent SWARM Protocol** | Implement swarm-based task distribution |
 | **Consensus Voting** | Multiple agents vote on decisions |
 | **Debate Mode** | Agents argue different sides of an issue |
@@ -238,7 +238,7 @@ Based on patterns from superpowers (46k stars), agents (28k stars), and claude-f
 Based on patterns from claude-mem (24k stars):
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **Semantic Memory** | Store and retrieve learnings semantically |
 | **Project Memory** | Persistent context per project |
 | **Cross-Session Context** | Retain context across sessions |
@@ -247,7 +247,7 @@ Based on patterns from claude-mem (24k stars):
 ### 3.3 Skills Ecosystem Integration
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **agentskill.sh Integration** | Native `/learn` command for 110K+ skills |
 | **Tessl Registry** | Support for Tessl's evaluated skill registry |
 | **Skill Marketplace** | Browse and install skills from marketplace |
@@ -256,7 +256,7 @@ Based on patterns from claude-mem (24k stars):
 ### 3.4 CI/CD Integration Enhancements
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **GitHub Actions Native** | `kilo github` improved integration |
 | **GitLab CI Support** | Native GitLab CI/CD integration |
 | **Jenkins Plugin** | Enterprise Jenkins integration |
@@ -265,7 +265,7 @@ Based on patterns from claude-mem (24k stars):
 ### 3.5 IDE Integration Improvements
 
 | Feature | Description |
-|---------|-------------|
+| --------- | ------------- |
 | **VS Code Web** | Browser-based VS Code extension |
 | **Neovim Plugin** | First-class Neovim integration |
 | **Emacs Mode** | Emacs major mode for Kilo |
