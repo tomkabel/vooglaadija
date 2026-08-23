@@ -20,12 +20,9 @@ from app.api.routes.web.web_helpers import (
     _resolve_login_errors,
     _resolve_register_errors,
     _validate_redirect_url,
-    get_csrf_token,
-    get_template_context,
     logger,
+    render_csrf_page,
     rotate_csrf_token,
-    set_csrf_token_cookie,
-    templates,
     validate_csrf_token,
 )
 from app.api.routes.web_helpers import _error_html
@@ -77,21 +74,14 @@ async def login_page(
     Returns:
         HTMLResponse: The rendered login page response.
     """
-    token = get_csrf_token(request)
     error_message, field_errors = _resolve_login_errors(error)
-    response = templates.TemplateResponse(
+    return render_csrf_page(
         request,
         "login.html",
-        get_template_context(
-            request,
-            csrf_token=token,
-            return_url=return_url,
-            error=error_message,
-            field_errors=field_errors,
-        ),
+        return_url=return_url,
+        error=error_message,
+        field_errors=field_errors,
     )
-    set_csrf_token_cookie(response, token)
-    return response
 
 
 class LoginForm:
@@ -179,20 +169,13 @@ async def register_page(
     Returns:
         HTMLResponse: The rendered registration page.
     """
-    token = get_csrf_token(request)
     error_message, field_errors = _resolve_register_errors(error)
-    response = templates.TemplateResponse(
+    return render_csrf_page(
         request,
         "register.html",
-        get_template_context(
-            request,
-            csrf_token=token,
-            error=error_message,
-            field_errors=field_errors,
-        ),
+        error=error_message,
+        field_errors=field_errors,
     )
-    set_csrf_token_cookie(response, token)
-    return response
 
 
 @router.post("/register", response_model=None)

@@ -10,11 +10,8 @@ from app.api.rate_limit_config import limiter
 from app.api.routes.web.web_helpers import (
     _htmx_or_redirect,
     _resolve_settings_errors,
-    get_csrf_token,
-    get_template_context,
     is_htmx_request,
-    set_csrf_token_cookie,
-    templates,
+    render_csrf_page,
     validate_csrf_token,
 )
 from app.api.routes.web_helpers import _error_html, _success_html
@@ -48,23 +45,16 @@ async def settings_page(
     Returns:
         HTMLResponse: The rendered settings page.
     """
-    token = get_csrf_token(request)
     username = current_user.username or _default_username_from_email(current_user.email)
     error_message, field_errors = _resolve_settings_errors(error)
-    response = templates.TemplateResponse(
+    return render_csrf_page(
         request,
         "settings.html",
-        get_template_context(
-            request,
-            csrf_token=token,
-            current_user=current_user,
-            username=username,
-            error=error_message,
-            field_errors=field_errors,
-        ),
+        current_user=current_user,
+        username=username,
+        error=error_message,
+        field_errors=field_errors,
     )
-    set_csrf_token_cookie(response, token)
-    return response
 
 
 @router.post("/settings/username", response_model=None)

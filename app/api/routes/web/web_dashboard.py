@@ -4,9 +4,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from app.api.routes.web.web_helpers import (
-    get_csrf_token,
     get_template_context,
-    set_csrf_token_cookie,
+    render_csrf_page,
     templates,
 )
 from core.config import settings
@@ -29,14 +28,7 @@ async def chaos_lab_page(request: Request) -> HTMLResponse:
     if not settings.feature_chaos_api_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
 
-    token = get_csrf_token(request)
-    response = templates.TemplateResponse(
-        request,
-        "chaos-lab.html",
-        get_template_context(request, csrf_token=token),
-    )
-    set_csrf_token_cookie(response, token)
-    return response
+    return render_csrf_page(request, "chaos-lab.html")
 
 
 @router.get("/chaos-lab/status")

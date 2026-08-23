@@ -102,7 +102,7 @@ def test_security_workflow_uploads_safety_report_even_on_failure():
     assert (
         "      - name: Upload security report\n        uses: actions/upload-artifact@"
     ) in workflow
-    assert "        if: always()\n" in workflow
+    assert "if: always() && hashFiles('security-report.json') != ''" in workflow
     assert "          path: security-report.json\n" in workflow
 
 

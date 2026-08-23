@@ -10,11 +10,10 @@ from app.api.dependencies import CurrentUserFromCookie, DbSession
 from app.api.rate_limit_config import limiter
 from app.api.routes.web.web_helpers import (
     _htmx_or_redirect,
-    get_csrf_token,
     get_template_context,
     logger,
+    render_csrf_page,
     rotate_csrf_token,
-    set_csrf_token_cookie,
     templates,
     validate_csrf_token,
 )
@@ -67,19 +66,12 @@ async def dashboard_page(
 ) -> HTMLResponse:
     """Render main dashboard page with download list."""
     result = await DownloadService(db, current_user.id).list(page=1, per_page=50)
-    token = get_csrf_token(request)
-    response = templates.TemplateResponse(
+    return render_csrf_page(
         request,
         "dashboard.html",
-        get_template_context(
-            request,
-            csrf_token=token,
-            current_user=current_user,
-            jobs=result.jobs,
-        ),
+        current_user=current_user,
+        jobs=result.jobs,
     )
-    set_csrf_token_cookie(response, token)
-    return response
 
 
 @router.post("/downloads", response_model=None)
