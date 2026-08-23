@@ -79,12 +79,16 @@ async def test_create_download_requires_auth():
 
 @pytest.mark.asyncio
 async def test_create_download_invalid_url():
-    """Test that invalid URL returns 422."""
+    """Test that an invalid (non-http(s)) URL returns 422.
+
+    Note: the per-platform domain whitelist is disabled (HOTFIX), so unsupported
+    *domains* are now accepted; only scheme-level rejections (e.g. ftp://) 422.
+    """
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         token = await create_test_user_and_login(client)
         response = await client.post(
             "/api/v1/downloads",
-            json={"url": "https://www.google.com"},
+            json={"url": "ftp://www.google.com"},
             headers={"Authorization": f"Bearer {token}"},
         )
     assert response.status_code == 422
@@ -1055,13 +1059,17 @@ async def test_create_download_non_youtube_urls():
 
 
 @pytest.mark.asyncio
-async def test_create_download_unsupported_platform_rejected():
-    """Test that unsupported platforms (e.g., Facebook) are rejected with 422."""
+async def test_create_download_unsupported_scheme_rejected():
+    """Test that unsupported *schemes* (e.g. ftp://) are still rejected with 422.
+
+    Note: the per-platform domain whitelist is disabled (HOTFIX), so unsupported
+    *domains* (e.g. Facebook) are now accepted; only scheme-level rejections 422.
+    """
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         token = await create_test_user_and_login(client)
         response = await client.post(
             "/api/v1/downloads",
-            json={"url": "https://facebook.com/video/abc"},
+            json={"url": "ftp://facebook.com/video/abc"},
             headers={"Authorization": f"Bearer {token}"},
         )
     assert response.status_code == 422

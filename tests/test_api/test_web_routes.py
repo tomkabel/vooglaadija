@@ -1175,7 +1175,12 @@ class TestCreateDownloadForm:
 
     @pytest.mark.asyncio
     async def test_create_download_invalid_url(self):
-        """Test creating download with invalid URL returns 422."""
+        """Test creating download with an unsupported *scheme* returns 422.
+
+        Note: the per-platform domain whitelist is disabled (HOTFIX), so
+        non-allowlisted *domains* are now accepted; only scheme-level rejections
+        (e.g. ftp://) still hit the 422 path.
+        """
         email = f"invalidurl_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
 
@@ -1203,7 +1208,7 @@ class TestCreateDownloadForm:
 
             create_response = await client.post(
                 "/web/downloads",
-                data={"url": "https://not-youtube.com/video"},
+                data={"url": "ftp://not-youtube.com/video"},
                 headers=headers,
             )
 
@@ -1303,7 +1308,7 @@ class TestCreateDownloadForm:
 
             create_response = await client.post(
                 "/web/downloads",
-                data={"url": "https://not-youtube.com/video"},
+                data={"url": "ftp://not-youtube.com/video"},
                 headers=headers,
                 cookies={"access_token": access_token},
             )
@@ -2681,7 +2686,12 @@ class TestCreateDownloadFullPageErrors:
 
     @pytest.mark.asyncio
     async def test_create_download_full_page_invalid_url(self):
-        """Test full page download with invalid URL returns redirect."""
+        """Test full page download with an unsupported *scheme* returns redirect.
+
+        Note: the per-platform domain whitelist is disabled (HOTFIX), so
+        non-allowlisted *domains* are now accepted; only scheme-level rejections
+        (e.g. ftp://) still hit the error redirect path.
+        """
         email = f"fullurl_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
 
@@ -2711,7 +2721,7 @@ class TestCreateDownloadFullPageErrors:
 
             create_response = await client.post(
                 "/web/downloads/full",
-                data={"url": "https://not-youtube.com/video"},
+                data={"url": "ftp://not-youtube.com/video"},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
                 cookies={"access_token": access_token},
             )

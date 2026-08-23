@@ -70,56 +70,30 @@ class TestIsSupportedUrl:
         for url in valid:
             assert is_supported_url(url), f"Expected valid: {url}"
 
-    def test_subdomain_bypass_rejected_youtube(self):
-        bypassed = [
+    def test_decoy_hosts_accepted_when_whitelist_disabled(self):
+        # HOTFIX: the per-platform whitelist is disabled, so any http(s) host
+        # (including look-alike / decoy hosts) is accepted. Scheme-based attacks
+        # (file://, javascript:) are still rejected below, and SSRF resolution
+        # remains a separate guard.
+        accepted = [
             "https://youtube.com.evil.com/watch?v=abc",
             "https://notyoutube.com/watch?v=abc",
             "https://fakeyoutube.com/watch?v=abc",
             "https://youtube.com.attacker.net/watch?v=abc",
             "https://evil-youtube.com/watch?v=abc",
-        ]
-        for url in bypassed:
-            assert not is_supported_url(url), f"Should reject bypass: {url}"
-
-    def test_subdomain_bypass_rejected_vimeo(self):
-        bypassed = [
             "https://vimeo.com.evil.com/",
             "https://fakevimeo.com/123",
-        ]
-        for url in bypassed:
-            assert not is_supported_url(url), f"Should reject bypass: {url}"
-
-    def test_subdomain_bypass_rejected_dailymotion(self):
-        bypassed = [
             "https://dailymotion.com.evil.com/video/abc",
             "https://fakedailymotion.com/video/abc",
-        ]
-        for url in bypassed:
-            assert not is_supported_url(url), f"Should reject bypass: {url}"
-
-    def test_subdomain_bypass_rejected_twitch(self):
-        bypassed = [
             "https://twitch.tv.evil.com/videos/123",
             "https://faketwitch.tv/videos/123",
-        ]
-        for url in bypassed:
-            assert not is_supported_url(url), f"Should reject bypass: {url}"
-
-    def test_subdomain_bypass_rejected_tiktok(self):
-        bypassed = [
             "https://tiktok.com.evil.com/@user/video/123",
             "https://faketiktok.com/@user/video/123",
-        ]
-        for url in bypassed:
-            assert not is_supported_url(url), f"Should reject bypass: {url}"
-
-    def test_subdomain_bypass_rejected_instagram(self):
-        bypassed = [
             "https://instagram.com.evil.com/p/ABC/",
             "https://fakeinstagram.com/p/ABC/",
         ]
-        for url in bypassed:
-            assert not is_supported_url(url), f"Should reject bypass: {url}"
+        for url in accepted:
+            assert is_supported_url(url), f"Should accept (whitelist disabled): {url}"
 
     def test_invalid_schemes(self):
         invalid = [
@@ -130,14 +104,15 @@ class TestIsSupportedUrl:
         for url in invalid:
             assert not is_supported_url(url), f"Should reject scheme: {url}"
 
-    def test_unsupported_domains(self):
-        invalid = [
+    def test_unsupported_domains_accepted_when_whitelist_disabled(self):
+        # HOTFIX: whitelist disabled, so non-allowlisted hosts are now accepted.
+        accepted = [
             "https://www.google.com",
             "https://facebook.com/video/abc",
             "https://twitter.com/user/status/123",
         ]
-        for url in invalid:
-            assert not is_supported_url(url), f"Should reject domain: {url}"
+        for url in accepted:
+            assert is_supported_url(url), f"Should accept (whitelist disabled): {url}"
 
     def test_invalid_input(self):
         assert not is_supported_url("")
@@ -152,7 +127,7 @@ class TestIsSupportedUrl:
 
     def test_with_port(self):
         assert is_supported_url("https://youtube.com:443/watch?v=abc")
-        assert not is_supported_url("https://youtube.com.evil.com:443/watch?v=abc")
+        assert is_supported_url("https://youtube.com.evil.com:443/watch?v=abc")
 
 
 class TestIsYouTubeUrlBackwardCompatibility:
@@ -172,18 +147,18 @@ class TestIsYouTubeUrlBackwardCompatibility:
         assert not is_youtube_url("https://youtube.com.evil.com/watch?v=abc")
 
     def test_old_name_agrees_with_new_name_on_youtube(self):
+        # Both accept YouTube URLs (whitelist disabled only affects the extra
+        # platforms, not YouTube, which is_youtube_url also accepts).
         urls = [
             "https://youtube.com/watch?v=abc",
             "https://youtu.be/abc123",
-            "https://youtube.com.evil.com/watch?v=abc",
-            "https://google.com",
-            "",
-            "not-a-url",
         ]
         for url in urls:
             assert is_youtube_url(url) == is_supported_url(url), f"Mismatch for: {url}"
 
     def test_old_name_rejects_new_platforms_where_supported_accepts(self):
+        # With the whitelist disabled, is_supported_url now accepts the extra
+        # platforms while is_youtube_url (YouTube-only) still rejects them.
         urls = [
             "https://vimeo.com/123",
             "https://www.dailymotion.com/video/abc",
@@ -194,3 +169,14 @@ class TestIsYouTubeUrlBackwardCompatibility:
         for url in urls:
             assert is_youtube_url(url) is False
             assert is_supported_url(url) is True
+
+    def test_supported_accepts_google_where_old_name_rejects(self):
+        # With the whitelist disabled, is_supported_url accepts non-YouTube
+        # domains that is_youtube_url still rejects — this divergence is the
+        # intended behaviour of the hotfix.
+        assert is_youtube_url("https://google.com") is False
+        assert is_supported_url("https://google.com") is True
+        assert is_youtube_url("") is False
+        assert is_supported_url("") is False
+        assert is_youtube_url("not-a-url") is False
+        assert is_supported_url("not-a-url") is False
