@@ -5,12 +5,14 @@ Instagram/TikTok diagnosis; Medium for long-term platform reliability_
 
 ## Executive Summary
 
-The two failures in `browser-downloader/problem.md` do not currently have the same cause. The
-repository locks `yt-dlp 2026.3.17`; the current `2026.07.04` release specifically reworked the
-Instagram extractor and added invalid-cookie detection. In a metadata-only reproduction from this
-workspace, the reported Instagram Reel failed with the locked version and succeeded with
-`2026.07.04`, exposing downloadable video and audio formats without cookies. The first corrective
-action is therefore an extractor/dependency update, not a browser rewrite.
+The two failures in `browser-downloader/problem.md` do not currently have the same cause. At the
+time of this report the repository locked `yt-dlp 2026.3.17`; the current `2026.07.04` release
+specifically reworked the Instagram extractor and added invalid-cookie detection. In a
+metadata-only reproduction from this workspace, the reported Instagram Reel failed with the
+locked version and succeeded with `2026.07.04`, exposing downloadable video and audio formats
+without cookies. The first corrective action was therefore an extractor/dependency update, not a
+browser rewrite. (Status: the project has since adopted `yt-dlp>=2026.7.4`, resolving to
+`2026.8.19` in `uv.lock`, so the corrective upgrade below is already applied.)
 
 The TikTok fixture returned `Your IP address is blocked from accessing this post` under both
 versions. A browser launched on the same worker or VM keeps the same egress IP, so routing that
@@ -29,8 +31,10 @@ credentials.
 
 ### 1.1 Repository state
 
-The dependency declaration permits any `yt-dlp >=2025.3.0`, but `uv.lock` resolves it to
-`2026.3.17`. The upstream project describes stable releases as potentially stale when sites change,
+At the time of writing, the dependency declaration permitted any `yt-dlp >=2025.3.0`, and
+`uv.lock` resolved it to `2026.3.17` — since superseded: `pyproject.toml` now requires
+`yt-dlp>=2026.7.4` and `uv.lock` resolves `2026.8.19`, which satisfies the extractor rework this
+report recommends. The upstream project describes stable releases as potentially stale when sites change,
 recommends the nightly channel to regular users, and advises testing nightly before filing extractor
 bugs. It also recommends `curl_cffi` for sites requiring browser-request impersonation.
 ([yt-dlp update channels and dependencies](https://github.com/yt-dlp/yt-dlp/blob/master/README.md#update))
