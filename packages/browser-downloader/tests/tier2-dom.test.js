@@ -129,4 +129,18 @@ describe('tier2-dom — blob detection + lifecycle', () => {
     const p = detectBlob(page, { timeout: 200 });
     await expect(p).rejects.toMatchObject({ code: 'no_media_found' });
   });
+
+  it('exits promptly when the AbortSignal fires during polling', async () => {
+    const ac = new AbortController();
+    const { page } = makeTier2Page({
+      blobUrl: null,
+      payload: null,
+      drmSequence: [false, false, false],
+    });
+    // Abort shortly after polling starts; without the signal check the loop
+    // would keep evaluating a (potentially closed) page until the timeout.
+    const p = detectBlob(page, { timeout: 5000, signal: ac.signal });
+    setTimeout(() => ac.abort(), 20);
+    await expect(p).rejects.toMatchObject({ code: 'timeout' });
+  });
 });
