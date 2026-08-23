@@ -141,6 +141,24 @@ describe('tier1-cdp — interception', () => {
     expect(client.detach).toHaveBeenCalledTimes(1);
   });
 
+  it('detects DRM in a #EXT-X-SESSION-KEY tag (SAMPLE-AES) and throws drm_detected', async () => {
+    const { page, client, emit } = makePage({
+      getResponseBody: () => ({
+        body: '#EXTM3U\n#EXT-X-SESSION-KEY:METHOD=SAMPLE-AES,URI="skd://key"\nseg0.ts\n',
+        base64Encoded: false,
+      }),
+    });
+    const p = interceptMedia(page, 'https://x/v.m3u8', { timeout: 1000 });
+    await flush();
+    emit('Network.responseReceived', {
+      requestId: 'r1',
+      response: { url: 'https://x/v.m3u8', mimeType: 'application/vnd.apple.mpegurl', status: 200 },
+    });
+    emit('Network.loadingFinished', { requestId: 'r1' });
+    await expect(p).rejects.toMatchObject({ code: 'drm_detected' });
+    expect(client.detach).toHaveBeenCalledTimes(1);
+  });
+
   it('detects DRM in a DASH manifest (ContentProtection) and throws drm_detected', async () => {
     const { page, client, emit } = makePage({
       getResponseBody: () => ({
