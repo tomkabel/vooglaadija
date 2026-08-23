@@ -33,7 +33,7 @@ The REST API counterpart (`downloads.py`) implements identical operations with *
 This module does ALL of:
 
 | Responsibility | Approx. Lines |
-|---|---|
+| --- | --- |
 | Job claiming (DB UPDATE WHERE status=pending) | ~40 |
 | Chaos injection checking | ~50 |
 | Circuit breaker interaction + deferred queue management | ~25 + helpers |
@@ -125,7 +125,7 @@ PostgreSQL supports `UPDATE ... RETURNING`. Use it to eliminate two round-trips.
 ### Missing composite indexes
 
 | Missing Index | Query Pattern |
-|---|---|
+| --- | --- |
 | `download_jobs(user_id, status)` | Worker claim: `WHERE user_id=X AND status='pending'` |
 | `download_jobs(user_id, created_at DESC)` | Paginated listing with ORDER BY |
 | `download_jobs(status, updated_at)` | Zombie sweeper + `reset_stuck_jobs` |
@@ -314,7 +314,7 @@ No environment variable overrides. Production tuning requires code changes. The 
 ## Severity Summary
 
 | # | Severity | Flaw | Category |
-|---|----------|------|----------|
+| --- | ---------- | ------ | ---------- |
 | 1 | 🔴 Critical | No boundary between app/ and worker/ | Missing boundary |
 | 2 | 🔴 Critical | `app/services/` imports `worker/queue.py` | Reverse dependency |
 | 3 | 🔴 Critical | Dual Redis connection pools | Hidden duplication |
