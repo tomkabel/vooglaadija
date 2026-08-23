@@ -336,16 +336,5 @@ Suitable for scenarios needing to download multiple course videos or series vide
 - [Online Courses Download](https://flowpick.net/docs/usecases/online-courses) — Course video batch download
 - [Live Replay Saving](https://flowpick.net/docs/usecases/live-replays) — Large file streaming download
 - [Common Issues Troubleshooting](https://flowpick.net/docs/troubleshooting/common-issues) — Diagnosis of CORS errors and other issues
-- [Known Issues](https://flowpick.net/docs/troubleshooting/known-issues) — Known limitations of online tools[Keyboard Shortcuts](https://flowpick.net/docs/features/keyboard-shortcuts)
-
-[
-
-Complete reference for FlowPick keyboard shortcuts — default bindings, customization methods, conflict resolution, and efficiency workflows.
-
-](https://flowpick.net/docs/features/keyboard-shortcuts)[
-
-Browser Compatibility
-
-FlowPick feature support across different browsers, including API compatibility matrix, fallback strategies, and browser selection recommendations.
-
-](https://flowpick.net/docs/advanced/browser-compatibility)
+- [Known Issues](https://flowpick.net/docs/troubleshooting/known-issues) — Known limitations of online tools
+- [Keyboard Shortcuts](https://flowpick.net/docs/features/keyboard-shortcuts) — Complete reference for FlowPick keyboard shortcuts — default bindings, customization methods, conflict resolution, and efficiency workflows.
