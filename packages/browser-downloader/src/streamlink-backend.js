@@ -130,7 +130,10 @@ export function decryptHlsSegment(segmentBuf, keyBuf, ivHex, mediaSequence) {
   try {
     return Buffer.concat([decipher.update(segmentBuf), decipher.final()]);
   } catch {
-    throw new DownloaderError('network_error', 'failed to decrypt HLS segment (corrupt or wrong key)');
+    throw new DownloaderError(
+      'network_error',
+      'failed to decrypt HLS segment (corrupt or wrong key)',
+    );
   }
 }
 
@@ -670,10 +673,7 @@ export async function downloadManifestFallback(url, outPath, opts = {}) {
     // Preflight: not an HLS playlist (an HTML error page can be served with
     // HTTP 200) → fast terminal error instead of retrying junk segment URLs.
     if (!text.trimStart().startsWith('#EXTM3U')) {
-      throw new DownloaderError(
-        'no_media_found',
-        'not an HLS playlist (missing #EXTM3U header)',
-      );
+      throw new DownloaderError('no_media_found', 'not an HLS playlist (missing #EXTM3U header)');
     }
 
     // Encrypted HLS: DRM methods or non-identity KEYFORMAT.

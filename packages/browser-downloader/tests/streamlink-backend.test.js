@@ -1,5 +1,5 @@
-import { EventEmitter } from 'node:events';
 import { createCipheriv } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { access } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,10 +28,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 
 import { downloadManifestFallback, downloadStream, runSpawn } from '../src/streamlink-backend.js';
-import {
-  decryptHlsSegment,
-  parseHlsKeyTag,
-} from '../src/streamlink-backend.js';
+import { decryptHlsSegment, parseHlsKeyTag } from '../src/streamlink-backend.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -409,9 +406,7 @@ describe('streamlink backend — manifest preflight (phase 3)', () => {
   it('rejects a live playlist (no #EXT-X-ENDLIST) with no_media_found', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        okRes({ text: '#EXTM3U\n#EXT-X-TARGETDURATION:6\nseg0.ts\nseg1.ts\n' }),
-      ),
+      vi.fn(async () => okRes({ text: '#EXTM3U\n#EXT-X-TARGETDURATION:6\nseg0.ts\nseg1.ts\n' })),
     );
     await expect(
       downloadManifestFallback('https://x/live.m3u8', '/tmp/out.mp4', {
