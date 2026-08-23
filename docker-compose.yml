@@ -28,8 +28,10 @@ x-common-env: &common-env # Database components (app/config.py constructs URL wi
   DB_USER: ${DB_USER:-postgres}
   DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
   DB_NAME: ${DB_NAME:-ytprocessor}
-  DB_HOST: ${DB_HOST:-db}
+  DB_HOST: ${DB_HOST:-pgbouncer}
   DB_PORT: ${DB_PORT:-5432}
+  DB_REPLICA_HOST: ${DB_REPLICA_HOST:-db-replica}
+  DB_REPLICA_PORT: ${DB_REPLICA_PORT:-5432}
   DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
   DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
   DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
@@ -132,7 +134,7 @@ services:
     depends_on:
       storage-init:
         condition: service_completed_successfully
-      db:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -176,7 +178,7 @@ services:
     depends_on:
       storage-init:
         condition: service_completed_successfully
-      db:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -252,11 +254,11 @@ services:
           memory: 256M
 
   # ==========================================
-  # PostgreSQL
+  # PostgreSQL Primary
   # ==========================================
   db:
     container_name: ytprocessor-db
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -266,7 +268,13 @@ services:
       POSTGRES_INITDB_ARGS: '--data-checksums'
     volumes:
       - postgres_data:/var/lib/postgresql/data:Z
+      - ./infra/postgresql/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./infra/postgresql/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     ports: []
+    command: >
+      postgres
+        -c config_file=/etc/postgresql/postgresql.conf
+        -c hba_file=/etc/postgresql/pg_hba.conf
     # PostgreSQL must run as its default user, not overridden by security-context
     deploy:
       resources:
@@ -282,6 +290,90 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ==========================================
+  # PostgreSQL Read Replica
+  # ==========================================
+  db-replica:
+    container_name: ytprocessor-db-replica
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      PGUSER: ${DB_USER:-postgres}
+      PGPASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data:Z
+      - ./infra/postgresql/replica.conf:/etc/postgresql/postgresql.conf:ro
+    ports: []
+    command: >
+      postgres
+        -c config_file=/etc/postgresql/postgresql.conf
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-ytprocessor}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  # ==========================================
+  # PgBouncer — connection pooler
+  # ==========================================
+  pgbouncer:
+    container_name: ytprocessor-pgbouncer
+    image: pgbouncer/pgbouncer:1.24
+    restart: unless-stopped
+    environment:
+      DATABASES_HOST: db
+      DATABASES_PORT: 5432
+      DATABASES_DATABASE: ${DB_NAME:-ytprocessor}
+      DATABASES_USER: ${DB_USER:-postgres}
+      DATABASES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      MAX_DB_CONNECTIONS: 50
+      MAX_USER_CONNECTIONS: 50
+      SERVER_IDLE_TIMEOUT: 600
+    expose:
+      - '5432'
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -p 5432 -U ${DB_USER:-postgres}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     logging:
       driver: json-file
       options:
@@ -471,7 +563,7 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     profiles: ['backup']
     restart: 'no'
     volumes:
@@ -513,7 +605,7 @@ services:
     entrypoint: |
       /bin/sh -c "
         set -e
-        apk add --no-cache postgresql15-client >/dev/null 2>&1
+        apk add --no-cache postgresql17-client >/dev/null 2>&1
         echo '0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1' > /etc/crontabs/root
         crond -f -l 2
       "
@@ -531,6 +623,8 @@ services:
 volumes:
   postgres_data:
     name: ytprocessor-postgres-data
+  postgres_replica_data:
+    name: ytprocessor-postgres-replica-data
   redis_data:
     name: ytprocessor-redis-data
   storage:

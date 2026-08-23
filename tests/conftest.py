@@ -1,61 +1,71 @@
 import os
 import sys
 
-# CRITICAL: Set environment variables BEFORE any other imports
 os.environ["TESTING"] = "1"
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-not-for-production-use-32chars"
 
-# Determine unique database URL per xdist worker to avoid race conditions
-_worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
-_test_db_path = os.path.abspath(f"test_{_worker_id}.db")
-_test_db_url = f"sqlite+aiosqlite:///{_test_db_path}"
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from testcontainers.postgres import PostgresContainer
 
-# Remove stale per-worker database from previous runs.
-# create_all skips existing tables so a stale file with an older schema
-# won't be updated to match the current model definitions.
-try:
-    os.remove(_test_db_path)
-except OSError:
-    pass
-
-# Force reconfigure the database URL before any app imports.
-# This ensures the app uses SQLite instead of PostgreSQL.
-import core.config  # noqa: E402
-
-core.config.settings.database_url = _test_db_url
-
-from collections.abc import AsyncGenerator  # noqa: E402
-
-import pytest  # noqa: E402
-from sqlalchemy.ext.asyncio import (  # noqa: E402
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-from sqlalchemy.pool import NullPool  # noqa: E402
-
-from core import models as core_models  # noqa: E402
-from core.database import Base, get_db  # noqa: E402
+from core import models as core_models  # noqa: F401
 
 _REGISTERED_MODEL_EXPORTS = core_models.__all__
 
-# Now import app - it will use the SQLite URL we set above
+postgres_container = PostgresContainer("postgres:17-alpine")
+postgres_container.start()
+
+_container_host = postgres_container.get_container_host_ip()
+_container_port = str(postgres_container.get_container_host_port())
+_container_user = postgres_container.username
+_container_password = postgres_container.password
+_container_dbname = postgres_container.dbname
+
+_worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+_worker_db_name = f"test_{_worker_id}"
+
+_sync_url = (
+    f"postgresql+psycopg://{_container_user}:{_container_password}"
+    f"@{_container_host}:{_container_port}/{_container_dbname}"
+)
+_sync_engine = create_engine(_sync_url)
+with _sync_engine.connect() as conn:
+    conn.execute(text("COMMIT"))
+    conn.execute(text(f'DROP DATABASE IF EXISTS "{_worker_db_name}"'))
+    conn.execute(text(f'CREATE DATABASE "{_worker_db_name}"'))
+    conn.commit()
+_sync_engine.dispose()
+
+os.environ["DB_HOST"] = _container_host
+os.environ["DB_PORT"] = _container_port
+os.environ["DB_USER"] = _container_user
+os.environ["DB_PASSWORD"] = _container_password
+os.environ["DB_NAME"] = _worker_db_name
+
+import core.config  # noqa: E402
+
+_worker_database_url = (
+    f"postgresql+asyncpg://{_container_user}:{_container_password}"
+    f"@{_container_host}:{_container_port}/{_worker_db_name}"
+)
+core.config.settings.database_url = _worker_database_url
+
 from app.main import app as fastapi_app  # noqa: E402
+from core.database import Base, get_db  # noqa: E402
 
-TEST_DATABASE_URL = _test_db_url
-
+TEST_DATABASE_URL = _worker_database_url
 
 test_engine = create_async_engine(
     TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=NullPool,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
 )
 
-# Use async_sessionmaker for proper async session support
 TestingSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-# Set up dependency override at session scope - applies to all tests
 def override_get_db():
     async def inner():
         async with TestingSessionLocal() as session:
@@ -64,20 +74,18 @@ def override_get_db():
     return inner
 
 
-# Set the overrides on the FastAPI app instance
 fastapi_app.dependency_overrides[get_db] = override_get_db()
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def _session_cleanup() -> AsyncGenerator[None, None]:
-    """Dispose the test engine after all tests in the worker finish."""
+async def _session_cleanup():
     yield
     await test_engine.dispose()
+    postgres_container.stop()
 
 
 @pytest.fixture(scope="function", autouse=True)
-async def setup_database() -> AsyncGenerator[None, None]:
-    """Create tables before each test and drop after."""
+async def setup_database():
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -87,11 +95,6 @@ async def setup_database() -> AsyncGenerator[None, None]:
 
 @pytest.fixture(autouse=True)
 def _reset_shutdown_event():
-    """Reset global worker shutdown state before each test.
-
-    Some tests set shutdown_event or shutdown_requested_at to trigger shutdown behavior,
-    which persists across tests in the same xdist worker process.
-    """
     try:
         from worker.state import shutdown_event
 
@@ -106,8 +109,6 @@ def _reset_shutdown_event():
 
 @pytest.fixture(autouse=True)
 def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Avoid Redis-backed blacklist checks for ordinary authenticated test requests."""
-
     async def _not_blacklisted(_token_jti: str) -> bool:
         return False
 
@@ -119,8 +120,7 @@ def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Provide a database session for tests."""
+async def db_session() -> AsyncSession:
     async with TestingSessionLocal() as session:
         yield session
 
@@ -136,13 +136,6 @@ async def create_test_user_and_login(
     password: str = "securepassword123",
     _lock=None,
 ) -> str:
-    """Register and login a test user using a unique email per call.
-
-    Uses a UUID prefix on the email to avoid isolation issues with
-    parallel xdist workers. Returns the access token string.
-
-    The optional _lock parameter is unused (kept for API compatibility).
-    """
     import uuid
 
     unique_email = f"{uuid.uuid4().hex[:8]}@{email.split('@')[1]}"

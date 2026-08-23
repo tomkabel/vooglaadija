@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     db_name: str = "ytprocessor"
     db_host: str = "localhost"
     db_port: str = "5432"
+    db_replica_host: str = ""
+    db_replica_port: str = "5432"
     db_pool_size: int = 10
     db_max_overflow: int = 5
     db_pool_timeout: int = 30
@@ -202,6 +204,22 @@ class Settings(BaseSettings):
                 "For Docker: set DB_PASSWORD in .env. "
                 "For local dev: set DATABASE_URL in .env.",
             )
+        encoded_password = quote_plus(self.db_password)
+        self.database_url = (
+            f"postgresql+asyncpg://{self.db_user}:{encoded_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+    @property
+    def database_replica_url(self) -> str:
+        """Build the read replica URL from configured replica host."""
+        if not self.db_replica_host:
+            return self.database_url
+        encoded_password = quote_plus(self.db_password)
+        return (
+            f"postgresql+asyncpg://{self.db_user}:{encoded_password}"
+            f"@{self.db_replica_host}:{self.db_replica_port}/{self.db_name}"
+        )
         encoded_password = quote_plus(self.db_password)
         self.database_url = (
             f"postgresql+asyncpg://{self.db_user}:{encoded_password}"
