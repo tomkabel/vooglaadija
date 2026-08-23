@@ -42,9 +42,7 @@ export function recordDownload(status, tier, error, startMs) {
         error: error ?? 'none',
       })
       .inc();
-    downloadDurationSeconds
-      .labels({ status })
-      .observe((performance.now() - startMs) / 1000);
+    downloadDurationSeconds.labels({ status }).observe((performance.now() - startMs) / 1000);
   } catch {
     /* metrics are best-effort */
   }
