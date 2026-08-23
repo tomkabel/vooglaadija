@@ -154,8 +154,9 @@ ENV PYTHONPATH=/app \
 
 COPY entrypoint.sh /app/entrypoint.sh
 COPY migrate.sh /app/migrate.sh
-RUN chmod +x /app/entrypoint.sh /app/migrate.sh && \
-    chown appuser:appuser /app/entrypoint.sh /app/migrate.sh
+COPY seed_demo.sh /app/seed_demo.sh
+RUN chmod +x /app/entrypoint.sh /app/migrate.sh /app/seed_demo.sh && \
+    chown appuser:appuser /app/entrypoint.sh /app/migrate.sh /app/seed_demo.sh
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD ["curl", "-fsS", "-o", "/dev/null", "http://localhost:8000/health"]
