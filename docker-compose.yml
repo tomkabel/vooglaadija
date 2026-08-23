@@ -94,6 +94,8 @@ services:
     restart: 'no'
     volumes:
       - storage:/app/storage:rw
+    # Named volumes are now bind-mounted to the HDDs via the volume
+    # definitions at the bottom of this file (see DATA_ROOT doc).
     command: |
       sh -c "
         echo 'Fixing storage permissions...';
@@ -128,7 +130,7 @@ services:
     expose:
       - '8000'
     volumes:
-      - storage:/app/storage:Z # SELinux label
+      - storage:/app/storage # bind-mounted to HDD (see volumes: block)
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -168,7 +170,7 @@ services:
       DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
     volumes:
-      - storage:/app/storage:Z
+      - storage:/app/storage
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -216,7 +218,7 @@ services:
       # PostgreSQL tuning for containers
       POSTGRES_INITDB_ARGS: '--data-checksums'
     volumes:
-      - postgres_data:/var/lib/postgresql/data:Z
+      - postgres_data:/var/lib/postgresql/data
     ports: []
     # PostgreSQL must run as its default user, not overridden by security-context
     deploy:
@@ -262,7 +264,7 @@ services:
       - --appendfilename
       - 'appendonly.aof'
     volumes:
-      - redis_data:/data:Z
+      - redis_data:/data
     environment:
       REDISCLI_AUTH: '${REDIS_PASSWORD}'
     security_opt:
@@ -427,7 +429,7 @@ services:
     restart: 'no'
     volumes:
       - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
-      - ./infra/backup/backup-data:/var/backup/ytprocessor
+      - backup_data:/var/backup/ytprocessor
     environment:
       PGHOST: db
       PGPORT: 5432
@@ -452,7 +454,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
-      - ./infra/backup/backup-data:/var/backup/ytprocessor
+      - backup_data:/var/backup/ytprocessor
     environment:
       PGHOST: db
       PGPORT: 5432
@@ -479,14 +481,64 @@ services:
         max-size: '10m'
         max-file: '3'
 
+# ============================================================
+# DATA_ROOT — all large/persistent data lives on the HDDs, NOT the root SSD
+# ============================================================
+# The named volumes below are backed by host bind mounts on the HDDs so that
+# Docker stores every byte of real data under /mnt/<disk>/... instead of
+# /var/lib/docker/volumes/ (which is on the root SSD).
+#
+#   /dev/vdb2 (2.0T, empty) -> /mnt/new_storage  (general blob storage)
+#   /dev/vdb1 (6.0T)        -> /mnt/db_storage   (PostgreSQL data)
+#
+# The host directories were pre-created with the correct ownership/permissions
+# for each service's runtime UID (postgres 70:70, redis 999:1000,
+# prometheus 65534, grafana 472, app 1000:1000).
+#
+# To relocate later, change the `device:` paths below AND move the host
+# directories (e.g. rsync /mnt/new_storage/* to the new path).
+# ============================================================
+
 volumes:
   postgres_data:
     name: ytprocessor-postgres-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/db_storage/postgres
   redis_data:
     name: ytprocessor-redis-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/redis
   storage:
     name: ytprocessor-storage
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/storage
   prometheus_data:
     name: ytprocessor-prometheus-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/prometheus
   grafana_data:
     name: ytprocessor-grafana-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/grafana
+  backup_data:
+    name: ytprocessor-backup-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/backups
