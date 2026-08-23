@@ -42,7 +42,7 @@ dependencies = [
 
     # SECURITY UPDATES - address transitive dependency vulnerabilities
     "ecdsa>=0.19.2",  # Fixes Minerva timing attack and DoS via improper DER validation
-    "cryptography>=46.0.7",  # Fixes buffer overflow with non-contiguous buffers
+    "cryptography>=50.0.0",  # Fixes PKCS#7 Bleichenbacher oracle, exponential path-building, wildcard DNS escapes
     "pygments>=2.20.0",  # Fixes ReDoS in AdlLexer inefficient regex
 
     # MEDIUM PRIORITY - Reliability & Debugging
