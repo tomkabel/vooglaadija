@@ -85,9 +85,10 @@ class TestDemoLoginRoute:
 
         assert response.status_code == 303
         assert response.headers["location"] == "/web/downloads"
-        assert "__Host-access_token" in response.cookies
-        assert "__Host-refresh_token" in response.cookies
-        assert response.cookies.get("__Host-access_token") != ""
+        # TESTING defaults set cookie_secure=False → unprefixed cookie names.
+        assert "access_token" in response.cookies
+        assert "refresh_token" in response.cookies
+        assert response.cookies.get("access_token") != ""
 
     @pytest.mark.asyncio
     async def test_demo_login_inactive_user_returns_500(self):
@@ -160,11 +161,11 @@ class TestDemoLoginProtectedAccess:
             login_response = await _demo_login(client)
             assert login_response.status_code == 303
 
-            access_token = login_response.cookies.get("__Host-access_token", "")
+            access_token = login_response.cookies.get("access_token", "")
 
             dashboard_response = await client.get(
                 "/web/downloads",
-                cookies={"__Host-access_token": access_token},
+                cookies={"access_token": access_token},
             )
 
         assert dashboard_response.status_code == 200

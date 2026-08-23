@@ -99,50 +99,86 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
             return 0
 
         processed_entry_ids = []
+        failed_entry_ids = []
         for entry in entries:
             try:
                 enqueued = False
                 if entry.event_type == "retry_scheduled":
-                    payload_data = json.loads(entry.payload) if entry.payload else {}
-                    next_retry_at = payload_data.get("next_retry_at")
-                    if next_retry_at:
-                        retry_timestamp = datetime.fromisoformat(next_retry_at).timestamp()
-                        enqueued = await push_to_retry_queue(entry.job_id, retry_timestamp)
-                        if not enqueued and await _retry_job_is_already_enqueued(entry.job_id):
-                            logger.info(
-                                "retry_outbox_already_recovered",
-                                job_id=str(entry.job_id),
-                            )
-                            enqueued = True
-                    else:
-                        logger.error("missing_next_retry_at_in_payload", job_id=str(entry.job_id))
+                    try:
+                        payload_data = json.loads(entry.payload) if entry.payload else {}
+                    except ValueError:
+                        logger.error(
+                            "invalid_outbox_payload",
+                            job_id=str(entry.job_id),
+                        )
+                        failed_entry_ids.append(entry.id)
                         continue
+                    next_retry_at = payload_data.get("next_retry_at")
+                    if not next_retry_at:
+                        # Permanently undeliverable — mark failed so the row
+                        # stops being re-selected every poll cycle and is
+                        # reaped by cleanup_stale_outbox_entries.
+                        logger.error("missing_next_retry_at_in_payload", job_id=str(entry.job_id))
+                        failed_entry_ids.append(entry.id)
+                        continue
+                    try:
+                        retry_dt = datetime.fromisoformat(next_retry_at)
+                    except ValueError:
+                        logger.error(
+                            "invalid_next_retry_at_in_payload",
+                            job_id=str(entry.job_id),
+                            next_retry_at=next_retry_at,
+                        )
+                        failed_entry_ids.append(entry.id)
+                        continue
+                    # Naive timestamps (SQLite round-trips / legacy rows) are
+                    # UTC per the app convention — fromisoformat would
+                    # otherwise interpret them in server-local time.
+                    if retry_dt.tzinfo is None:
+                        retry_dt = retry_dt.replace(tzinfo=UTC)
+                    enqueued = await push_to_retry_queue(entry.job_id, retry_dt.timestamp())
+                    if not enqueued and await _retry_job_is_already_enqueued(entry.job_id):
+                        logger.info(
+                            "retry_outbox_already_recovered",
+                            job_id=str(entry.job_id),
+                        )
+                        enqueued = True
                 else:
                     enqueued = await push_to_download_queue(entry.job_id)
                 if enqueued:
                     processed_entry_ids.append(entry.id)
                     synced += 1
             except Exception as e:
+                # Transient (Redis unreachable, ...) — leave the row pending
+                # so a later cycle retries it.
                 logger.error(
                     "failed_to_enqueue_job_from_outbox",
                     job_id=str(entry.job_id),
                     error=str(e),
                 )
 
+        now = datetime.now(UTC)
         if processed_entry_ids:
-            now = datetime.now(UTC)
             await db.execute(
                 update(Outbox)
                 .where(Outbox.id.in_(processed_entry_ids))
                 .values(status=_PROCESSED_STATUS, processed_at=now),
             )
+        if failed_entry_ids:
+            await db.execute(
+                update(Outbox)
+                .where(Outbox.id.in_(failed_entry_ids))
+                .values(status=_FAILED_STATUS, processed_at=now),
+            )
+        if processed_entry_ids or failed_entry_ids:
             try:
                 await db.commit()
             except Exception:
                 await db.rollback()
                 logger.error(
-                    "outbox_processed_status_update_failed",
-                    count=len(processed_entry_ids),
+                    "outbox_status_update_failed",
+                    processed=len(processed_entry_ids),
+                    failed=len(failed_entry_ids),
                 )
 
         await _update_staleness_metrics(db)

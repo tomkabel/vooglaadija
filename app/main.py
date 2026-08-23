@@ -32,7 +32,7 @@ from app.api.routes.metrics import router as metrics_router
 from app.api.routes.sse import router as sse_router
 from app.api.routes.web import router as web_router
 from app.api.startup import create_lifespan, initialize_sentry
-from app.auth import verify_token
+from app.auth import get_auth_cookie_names, verify_token
 from core.config import settings
 from core.logging_config import configure_logging, get_logger
 
@@ -139,7 +139,7 @@ async def root(request: Request) -> RedirectResponse:
         RedirectResponse: A redirect to `/web/downloads` for valid tokens or
             `/web/login` otherwise.
     """
-    token = request.cookies.get("__Host-access_token")
+    token = request.cookies.get(get_auth_cookie_names()[0])
     if token and verify_token(token) is not None:
         return RedirectResponse(url="/web/downloads", status_code=303)
     return RedirectResponse(url="/web/login", status_code=303)

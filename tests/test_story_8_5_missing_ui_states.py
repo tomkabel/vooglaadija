@@ -64,7 +64,7 @@ async def test_settings_username_save_button_has_scoped_loading_contract():
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
         access_token = await create_test_user_and_login(client)
-        response = await client.get("/web/settings", cookies={"__Host-access_token": access_token})
+        response = await client.get("/web/settings", cookies={"access_token": access_token})
 
     assert response.status_code == 200
     assert 'id="username-settings-form"' in response.text
@@ -93,7 +93,7 @@ async def test_settings_username_htmx_fragments_cover_success_and_error_states()
     """The username save endpoint returns HTMX fragments for success and critical errors."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
         access_token = await create_test_user_and_login(client)
-        client.cookies.set("__Host-access_token", access_token)
+        client.cookies.set("access_token", access_token)
 
         settings_response = await client.get("/web/settings")
         csrf_token = _csrf_token(client, settings_response)

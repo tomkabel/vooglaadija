@@ -61,8 +61,20 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
         RetryDecision: The retry or final-failure decision, including the error category, retry limit, delay, and relevant error metadata.
     """
     error_str = str(error)
-    classification = classify_error(error_str)
-    category = classification.category
+    # Typed errors (e.g. BrowserExecutorError from the browser-downloader
+    # integration) carry an authoritative category; the string-based
+    # classifier is only a fallback for untyped errors. Re-deriving from
+    # str() alone lost the STORAGE category (its marker string matches no
+    # classifier pattern), silently demoting storage failures to UNKNOWN.
+    typed_category = getattr(error, "category", None)
+    typed_signal = getattr(error, "signal", None)
+    if typed_category is not None:
+        category = typed_category
+        signal = typed_signal or "unknown"
+    else:
+        classification = classify_error(error_str)
+        category = classification.category
+        signal = classification.signal
     job_max_retries = job.max_retries if job.max_retries is not None else 3
     effective_max = min(CATEGORY_POLICIES[category].max_retries, job_max_retries)
 
@@ -86,7 +98,7 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
             retry_after=None,
             retry_count=job.retry_count,
             accumulated_error=final_error,
-            signal=classification.signal,
+            signal=signal,
         )
 
     prev_delay = None
@@ -122,7 +134,7 @@ def evaluate(job: DownloadJob, error: BaseException) -> RetryDecision:
         next_retry_at=next_retry,
         formatted_error=formatted_error,
         accumulated_error=formatted_error,
-        signal=classification.signal,
+        signal=signal,
     )
 
 

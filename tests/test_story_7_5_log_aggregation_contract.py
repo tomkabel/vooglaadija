@@ -19,6 +19,7 @@ BASE_COMPOSE_SERVICES = {
     "storage-init",
     "api",
     "worker",
+    "browser-downloader",
     "db",
     "redis",
     "otel-collector",

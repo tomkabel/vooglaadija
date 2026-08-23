@@ -141,8 +141,8 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
     let result = await interceptMedia(page, url, { timeout: tier1Timeout, bodyCap, signal });
 
     if (!result) {
-      result = await detectBlob(page, { timeout: tier2Timeout, bodyCap, signal });
       tierUsed = 2;
+      result = await detectBlob(page, { timeout: tier2Timeout, bodyCap, signal });
     }
 
     const ext = safeExt(result.ext);

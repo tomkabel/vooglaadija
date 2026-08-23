@@ -100,6 +100,11 @@ class _HttpResponse:
 
 ProgressCallback = Callable[[dict], Awaitable[None]]
 
+# Cap on the microservice error body we are willing to buffer/parse. The
+# service's own error payloads are a few hundred bytes; anything larger is
+# treated as a non-JSON body (fall back to the HTTP-status signal).
+_MAX_ERROR_BODY_BYTES = 1 << 20  # 1 MiB
+
 
 # -- Singleton client & breaker -------------------------------------------
 
@@ -141,6 +146,14 @@ def get_browser_downloader_circuit_breaker() -> CircuitBreaker:
             use_redis_distributed=settings.browser_downloader_cb_use_redis,
         )
     return _breaker
+
+
+async def close_browser_client() -> None:
+    """Close the shared HTTP client (worker shutdown hook)."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
 
 
 # -- Public API ------------------------------------------------------------
@@ -241,7 +254,12 @@ async def extract_media(
     except BrowserExecutorError:
         raise
     except Exception as exc:
-        logger.error("browser_downloader_unexpected_error", error=str(exc), exc_info=True)
+        logger.error(
+            "browser_downloader_unexpected_error",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
         raise BrowserExecutorError(
             category=ErrorCategory.UNKNOWN, signal="unexpected_error"
         ) from exc
@@ -313,7 +331,7 @@ async def _call_service(
             headers={"accept": "application/x-ndjson"},
         ) as response:
             if response.status_code != 200:
-                return _parse_failure_response(response)
+                return await _parse_failure_response(response)
             final_payload: dict[str, Any] | None = None
             async for line in response.aiter_lines():
                 if not line.strip():
@@ -394,12 +412,14 @@ def _parse_success_payload(
     # The microservice returns only a JSON `file_path`; it does NOT stream the
     # bytes back over HTTP. The worker stores this path and later serves/deletes
     # it from its OWN filesystem, so the worker and browser-downloader pods must
-    # mount a *shared* volume at the identical `storage_path`. Until that
-    # shared-volume wiring (deferred P4) lands, a file returned here may not
-    # exist on this pod — `download_file` would fail with a missing file and
+    # mount a *shared* volume at the identical `storage_path`. The compose
+    # deployment wires this (both services mount the `storage` volume;
+    # browser-downloader writes under BD_OUTPUT_BASE=/app/storage). Non-compose
+    # deployments without the shared volume still hit the gap below:
+    # `download_file` would fail with a missing file and
     # `cleanup_downloaded_file` would be a silent no-op.
     # TODO(kilo): add a clear runtime error + fetch-via-service path when the
-    # file is absent on this pod (cross-pod delivery gap).
+    # file is absent on this pod (cross-pod delivery gap, non-compose deploys).
     file_path = _validate_file_path(file_path, downloads_dir)
 
     file_name = file_path.rsplit("/", 1)[-1] or file_path
@@ -452,7 +472,7 @@ def _validate_file_path(file_path: str, downloads_dir: str) -> str:
     return str(resolved)
 
 
-def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | None]:
+async def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | None]:
     """
     Classify a non-successful downloader response using its structured error code or HTTP status.
 
@@ -464,6 +484,22 @@ def _parse_failure_response(response: httpx.Response) -> tuple[str, str, str | N
     """
     signal = f"http_{response.status_code}"
     try:
+        # The body arrives as an unconsumed stream (client.stream); read it
+        # first — `response.json()` on a streaming response raises
+        # `httpx.ResponseNotRead` (a RuntimeError, not an HTTPError), which
+        # escaped every handler here and degraded all failures to UNKNOWN.
+        # `aread()` is idempotent for already-consumed responses.
+        await response.aread()
+        if len(response.content) > _MAX_ERROR_BODY_BYTES:
+            logger.warning(
+                "browser_downloader_error_body_too_large",
+                status=response.status_code,
+                size=len(response.content),
+            )
+            raise BrowserExecutorError(
+                category=_map_response_to_category(signal),
+                signal=signal,
+            )
         payload = response.json()
     except (json.JSONDecodeError, ValueError) as err:
         # Non-JSON error body — use the synthesized HTTP status signal so 404/403/429

@@ -586,6 +586,23 @@ describe('streamlink backend — AES-128 key handling (phase 3)', () => {
         timeout: 5000,
         lookup: publicLookup,
       }),
-    ).rejects.toThrow(/key exceeds size cap/);
+    ).rejects.toThrow(/size cap/);
+  });
+});
+
+describe('readBodyCapped — streaming cap', () => {
+  it('stops reading a chunked body once the cap is exceeded', async () => {
+    const { readBodyCapped } = await import('../src/streamlink-backend.js');
+    let pulled = 0;
+    const body = new ReadableStream({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 100) controller.close();
+        else controller.enqueue(new Uint8Array(1024));
+      },
+    });
+    await expect(readBodyCapped({ body }, 10 * 1024)).rejects.toThrow(/size cap/);
+    // The cap is 10 chunks — the reader must have stopped long before 100.
+    expect(pulled).toBeLessThan(30);
   });
 });

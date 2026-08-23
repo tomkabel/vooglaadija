@@ -145,6 +145,30 @@ class CircuitBreaker:
                 CIRCUIT_BREAKER_STATE.labels(service=self.name).set(2)
         return self._state
 
+    def _distributed_half_open_transition(self, last_failure_wall: float | None) -> CircuitState:
+        """OPEN→HALF_OPEN using the shared wall-clock last-failure timestamp.
+
+        In distributed mode the OPEN decision in ``can_execute``/``is_accepting``
+        reads the shared Redis timestamp with ``time.time()``. The half-open
+        transition must use the SAME clock, not the local monotonic marker —
+        mixing them made the breaker NTP-step-sensitive (a backward step kept
+        it OPEN past the reset timeout; a forward step let it fail open).
+        """
+        if self._state == CircuitState.OPEN and last_failure_wall is not None:
+            elapsed = time.time() - last_failure_wall
+            if elapsed >= self.reset_timeout:
+                logger.info(
+                    "circuit_breaker_reset_timeout_elapsed",
+                    service=self.name,
+                    elapsed_seconds=elapsed,
+                    reset_timeout=self.reset_timeout,
+                )
+                self._state = CircuitState.HALF_OPEN
+                self._last_failure_time = None  # Reset timer
+                RECOVERIES.labels(reason="circuit_breaker_recovery").inc()
+                CIRCUIT_BREAKER_STATE.labels(service=self.name).set(2)
+        return self._state
+
     @property
     def is_closed(self) -> bool:
         """Check if circuit is closed (normal operation)."""
@@ -188,6 +212,10 @@ class CircuitBreaker:
                         self._failure_count = d_failures
                         CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
 
+            if self._use_redis:
+                # Distributed: both decisions read the shared wall-clock
+                # timestamp — never mix in the local monotonic marker.
+                return self._distributed_half_open_transition(d_last_failure) != CircuitState.OPEN
             return self._check_and_transition_to_half_open() != CircuitState.OPEN
 
     async def _is_chaos_override_active(self) -> bool:
@@ -331,7 +359,12 @@ class CircuitBreaker:
                         CIRCUIT_BREAKER_STATE.labels(service=self.name).set(1)
 
             # First: check for timeout-based transition OPEN→HALF_OPEN under lock
-            current_state = self._check_and_transition_to_half_open()
+            if self._use_redis:
+                # Distributed: use the shared wall-clock timestamp for the
+                # transition too (same clock as the OPEN decision above).
+                current_state = self._distributed_half_open_transition(d_last_failure)
+            else:
+                current_state = self._check_and_transition_to_half_open()
 
             if current_state == CircuitState.CLOSED:
                 return True

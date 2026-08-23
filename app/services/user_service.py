@@ -4,7 +4,7 @@ import os
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.stdlib import BoundLogger
@@ -15,6 +15,7 @@ from app.utils.validators import validate_password
 from core.config import settings
 from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
+from core.models.outbox import Outbox
 from core.models.user import User, not_deleted
 from core.utils.security import validate_path
 
@@ -256,6 +257,13 @@ class UserService:
             raise AccountFileCleanupError(failed_paths)
 
         try:
+            job_ids = [job.id for job in jobs]
+            if job_ids:
+                # Outbox rows reference download_jobs with a plain FK (no
+                # cascade); pending rows would either orphan or fail the
+                # delete. Remove them explicitly (FailedJob cascades via
+                # user_id ON DELETE CASCADE).
+                await self.db.execute(delete(Outbox).where(Outbox.job_id.in_(job_ids)))
             for job in jobs:
                 await self.db.delete(job)
             await self.db.delete(user)

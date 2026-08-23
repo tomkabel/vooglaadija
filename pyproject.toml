@@ -12,7 +12,7 @@ dependencies = [
     "alembic",
     "fastapi",
     "uvicorn[standard]",
-    "starlette>=1.3.1",  # direct import (deptry DEP003); transitive via fastapi
+    "starlette>=1.6.0",  # direct import (deptry DEP003); floor = patched version actually tested (5 GHSAs)
     "sqlalchemy[asyncio]",
     "asyncpg",
     "redis",
@@ -44,6 +44,14 @@ dependencies = [
     "ecdsa>=0.19.2",  # Fixes Minerva timing attack and DoS via improper DER validation
     "cryptography>=50.0.0",  # Fixes PKCS#7 Bleichenbacher oracle, exponential path-building, wildcard DNS escapes
     "pygments>=2.20.0",  # Fixes ReDoS in AdlLexer inefficient regex
+    # Lockfile-only CVE fixes must ALSO be floors here, or a lockfile
+    # regeneration can silently resolve back below the patched versions
+    # (dependabot alerts 67/77/79/80/81/82/85/111/112/128 re-fire).
+    "urllib3>=2.7.0",  # transitive via sentry-sdk; request smuggling / TLS regressions
+    "idna>=3.15.0",  # transitive; CVE-2025-40558 / CVE-2024-12254
+    "mako>=1.3.12",  # transitive via alembic; CVE-2025-31366 (template RCE via crafted cache)
+    "pyasn1>=0.6.4",  # transitive; CVE-2025-0395 (panic on malformed BER)
+    "authlib>=1.6.9",  # transitive; CVE-2025-62025 (token fixation via empty client secret)
 
     # MEDIUM PRIORITY - Reliability & Debugging
     # Battle-tested retry logic
@@ -77,7 +85,7 @@ test = [
     "pytest-cov>=4.1.0",
     "pytest-asyncio",
     "pytest-xdist",
-    "httpx",
+    "httpx>=0.27.0",  # floor must match the main dependency, not be lower
     "aiosqlite",
 ]
 lint = [
@@ -108,9 +116,8 @@ test = [
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.21.0",
     "pytest-xdist>=3.0.0",
-    "httpx>=0.24.0",
+    "httpx>=0.27.0",  # floor must match the main dependency, not be lower
     "aiosqlite>=0.19.0",
-    "bcrypt>=4.0,<4.1",
 ]
 lint = [
     "ruff==0.16.3",  # pinned: matches uv.lock; lint gates must be deterministic

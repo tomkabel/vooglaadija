@@ -30,6 +30,7 @@ from app.auth import (
     clear_token_cookies,
     create_access_token,
     create_refresh_token,
+    get_auth_cookie_names,
     set_token_cookies,
     verify_token,
 )
@@ -251,8 +252,8 @@ async def logout(request: Request) -> HTMLResponse | RedirectResponse:
             _error_html("Invalid CSRF token"),
             "/web/downloads?error=csrf",
         )
-    await _blacklist_token_cookie(request.cookies.get("__Host-access_token"))
-    await _blacklist_token_cookie(request.cookies.get("__Host-refresh_token"))
+    await _blacklist_token_cookie(request.cookies.get(get_auth_cookie_names()[0]))
+    await _blacklist_token_cookie(request.cookies.get(get_auth_cookie_names()[1]))
     redirect = RedirectResponse(url="/web/login?logged_out=1", status_code=303)
     clear_token_cookies(redirect)
     return redirect

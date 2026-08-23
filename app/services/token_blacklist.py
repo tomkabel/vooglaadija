@@ -24,12 +24,13 @@ _jti_cache: dict[str, tuple[bool, float]] = {}
 _JTI_CACHE_TTL = 2.0
 
 
-def _clear_jti_cache() -> None:
-    """Clear expired cache entries (called on every check)."""
-    now = time.monotonic()
-    stale = [k for k, v in _jti_cache.items() if v[1] <= now]
-    for k in stale:
-        del _jti_cache[k]
+def _invalidate_jti_cache(token_jti: str) -> None:
+    """Make a freshly blacklisted/reserved jti visible to the next check.
+
+    Without this, a logout inside the 2s negative-cache window stays
+    invisible and the revoked token keeps working until the entry expires.
+    """
+    _jti_cache[token_jti] = (True, time.monotonic() + _JTI_CACHE_TTL)
 
 
 async def blacklist_token(token_jti: str, ttl_seconds: int = _blacklist_ttl) -> None:
@@ -45,6 +46,7 @@ async def blacklist_token(token_jti: str, ttl_seconds: int = _blacklist_ttl) -> 
         await r.setex(f"{_blacklist_prefix}{token_jti}", ttl_seconds, "1")
     except Exception:
         logger.warning("token_blacklist_write_failed", jti=token_jti, exc_info=True)
+    _invalidate_jti_cache(token_jti)
 
 
 async def reserve_token_jti(token_jti: str, ttl_seconds: int = _blacklist_ttl) -> bool:
@@ -64,6 +66,10 @@ async def reserve_token_jti(token_jti: str, ttl_seconds: int = _blacklist_ttl) -
     except Exception:
         logger.warning("token_blacklist_reserve_failed", jti=token_jti, exc_info=True)
         return False
+    finally:
+        # A reserve IS a blacklist write: the next check must see it even if
+        # it happens inside the negative-cache window.
+        _invalidate_jti_cache(token_jti)
 
 
 async def is_token_blacklisted(token_jti: str) -> bool:

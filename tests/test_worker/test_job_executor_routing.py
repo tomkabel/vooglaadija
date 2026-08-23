@@ -129,10 +129,30 @@ class TestExecuteRoutesToBrowserExecutor:
             update_result.scalar_one_or_none = MagicMock(return_value=job)
             db.execute.return_value = update_result
 
-            await execute(db, job, start_time=0.0)
+            with patch.object(
+                job_executor,
+                "publish_job_status",
+                AsyncMock(),
+            ) as mock_publish:
+                await execute(db, job, start_time=0.0)
 
-        mock_browser.assert_awaited_once()
-        mock_ytdlp.assert_not_awaited()
+            mock_browser.assert_awaited_once()
+            mock_ytdlp.assert_not_awaited()
+
+            # The completion path must actually write the DB row. Finding:
+            # the re-SELECT returned the same pre-update `job` object, so the
+            # UPDATE's values were never observed — deleting the completion
+            # code would not have failed these tests. Inspect the compiled
+            # UPDATE parameters instead.
+            completed_updates = [
+                c.args[0].compile().params
+                for c in db.execute.call_args_list
+                if c.args[0].compile().params.get("status") == "completed"
+            ]
+            assert len(completed_updates) == 1
+            assert completed_updates[0]["file_path"] == "/storage/abc.mp4"
+            assert completed_updates[0]["file_name"] == "abc.mp4"
+            mock_publish.assert_awaited_once()
 
     @pytest.mark.asyncio
     @pytest.mark.unit
@@ -221,3 +241,58 @@ class TestExecuteRoutesToBrowserExecutor:
 
         mock_ytdlp.assert_awaited_once()
         mock_browser.assert_not_awaited()
+
+
+class TestExecuteBrowserFailure:
+    """Browser-executor failure paths through execute()."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_browser_failure_returns_error_without_ytdlp_fallback(self) -> None:
+        """A failing microservice call surfaces as ExecutionResult.ERROR.
+
+        Finding: none of the routing tests exercised a browser failure, and
+        there is deliberately NO yt-dlp fallback when the microservice fails
+        (the only fallback is the feature flag) — this pins that decision.
+        """
+        from app.services.error_classifier import ErrorCategory
+        from core.models.download_job import DownloadJob
+        from worker.browser_executor import BrowserExecutorError
+        from worker.job_executor import ExecutionStatus, execute
+
+        job = DownloadJob(
+            id="550e8400-e29b-41d4-a716-446655440000",
+            user_id="550e8400-e29b-41d4-a716-446655440005",
+            url="https://tiktok.com/@u/v/1",
+            status="processing",
+            retry_count=0,
+        )
+
+        mock_browser = AsyncMock(
+            side_effect=BrowserExecutorError(category=ErrorCategory.BLOCKED, signal="drm_detected"),
+        )
+        with (
+            patch.object(job_executor.settings, "browser_downloader_enabled", True),
+            patch.object(job_executor.settings, "feature_throttle_preemptive_enabled", False),
+            patch.object(
+                job_executor,
+                "redis_client",
+                AsyncMock(exists=AsyncMock(return_value=0)),
+            ),
+            patch.object(job_executor, "extract_media_browser", mock_browser),
+            patch.object(
+                job_executor,
+                "extract_media_with_circuit_breaker",
+                AsyncMock(),
+            ) as mock_ytdlp,
+        ):
+            db = AsyncMock()
+            db.execute = AsyncMock()
+            db.commit = AsyncMock()
+
+            result = await execute(db, job, start_time=0.0)
+
+        assert result.status == ExecutionStatus.ERROR
+        assert isinstance(result.error, BrowserExecutorError)
+        mock_browser.assert_awaited_once()
+        mock_ytdlp.assert_not_awaited()

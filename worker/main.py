@@ -449,6 +449,9 @@ async def main() -> None:
     if health_server:
         stop_health_server()
     await close_health_redis_client()
+    from worker.browser_executor import close_browser_client
+
+    await close_browser_client()
     logger.info("worker_stopped_gracefully")
 
 

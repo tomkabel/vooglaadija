@@ -34,7 +34,15 @@ def job_id() -> UUID:
 class TestOutboxRecovery:
     @pytest.mark.unit
     async def test_outbox_entry_created_with_job(self, db_session, job_id, user_id):
-        """Test that outbox entry is created in same transaction as job."""
+        """Writer → relay round trip: write_job_to_outbox creates the pending
+        row and sync_outbox_to_queue delivers it.
+
+        Regression (finding): this test hand-inserted Outbox rows, so deleting
+        the production writer (app/services/outbox_service.py) would not have
+        failed anything.
+        """
+        from app.services.outbox_service import write_job_to_outbox
+
         job = DownloadJob(
             id=job_id,
             user_id=user_id,
@@ -43,15 +51,14 @@ class TestOutboxRecovery:
         )
         db_session.add(job)
 
-        outbox_entry = Outbox(
-            id=uuid4(),
+        entry = await write_job_to_outbox(
+            db_session,
             job_id=job_id,
             event_type="enqueue_download",
             payload=json.dumps({"url": "https://www.youtube.com/watch?v=recovery_test"}),
-            status="pending",
         )
-        db_session.add(outbox_entry)
-
+        assert entry is not None
+        assert entry.status == "pending"
         await db_session.commit()
 
         result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
@@ -59,6 +66,15 @@ class TestOutboxRecovery:
         assert outbox is not None
         assert outbox.status == "pending"
         assert outbox.event_type == "enqueue_download"
+
+        mock_redis = AsyncMock()
+        mock_redis.lpush = AsyncMock(return_value=1)
+        with patch("core.queue.redis_client", mock_redis):
+            from worker.outbox_relay import sync_outbox_to_queue
+
+            synced = await sync_outbox_to_queue(batch_size=10)
+            assert synced == 1
+        mock_redis.lpush.assert_called_once_with("download_queue", str(job_id))
 
     @pytest.mark.unit
     async def test_sync_outbox_recovers_pending_entries(self, db_session, job_id, user_id):
@@ -150,6 +166,121 @@ class TestOutboxRecovery:
         mock_redis.zadd.assert_called_once()
         call_args = mock_redis.zadd.call_args
         assert call_args[0][0] == "retry_queue"
+
+    @pytest.mark.unit
+    async def test_sync_outbox_marks_poison_retry_payload_failed(self, db_session, job_id, user_id):
+        """Permanently undeliverable rows are marked failed, not re-selected forever."""
+        job = DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=poison_test",
+            status="pending",
+        )
+        db_session.add(job)
+
+        outbox_entry = Outbox(
+            id=uuid4(),
+            job_id=job_id,
+            event_type="retry_scheduled",
+            payload=json.dumps({"retry_count": 1}),  # missing next_retry_at
+            status="pending",
+        )
+        db_session.add(outbox_entry)
+        await db_session.commit()
+        outbox_id = outbox_entry.id
+
+        mock_redis = AsyncMock()
+        with patch("core.queue.redis_client", mock_redis):
+            from worker.outbox_relay import sync_outbox_to_queue
+
+            synced = await sync_outbox_to_queue(batch_size=10)
+            assert synced == 0
+
+        # Expire the test session so the relay's separate-session commit is visible.
+        await db_session.commit()
+        db_session.expire_all()
+        result = await db_session.execute(select(Outbox).where(Outbox.id == outbox_id))
+        assert result.scalar_one().status == "failed"
+        # A second cycle must not re-select the row.
+        with patch("core.queue.redis_client", AsyncMock()):
+            from worker.outbox_relay import sync_outbox_to_queue
+
+            await sync_outbox_to_queue(batch_size=10)
+        db_session.expire_all()
+        result = await db_session.execute(select(Outbox).where(Outbox.id == outbox_id))
+        assert result.scalar_one().status == "failed"
+
+    @pytest.mark.unit
+    async def test_sync_outbox_marks_malformed_payload_failed(self, db_session, job_id, user_id):
+        """Non-JSON retry payload is permanently undeliverable → failed."""
+        job = DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=badjson_test",
+            status="pending",
+        )
+        db_session.add(job)
+
+        outbox_entry = Outbox(
+            id=uuid4(),
+            job_id=job_id,
+            event_type="retry_scheduled",
+            payload="{not json",
+            status="pending",
+        )
+        db_session.add(outbox_entry)
+        await db_session.commit()
+        outbox_id = outbox_entry.id
+
+        mock_redis = AsyncMock()
+        with patch("core.queue.redis_client", mock_redis):
+            from worker.outbox_relay import sync_outbox_to_queue
+
+            synced = await sync_outbox_to_queue(batch_size=10)
+            assert synced == 0
+
+        await db_session.commit()
+        db_session.expire_all()
+        result = await db_session.execute(select(Outbox).where(Outbox.id == outbox_id))
+        assert result.scalar_one().status == "failed"
+
+    @pytest.mark.unit
+    async def test_sync_outbox_naive_retry_timestamp_is_utc(self, db_session, job_id, user_id):
+        """Naive next_retry_at is interpreted as UTC (not server-local time)."""
+        job = DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=naive_test",
+            status="pending",
+        )
+        db_session.add(job)
+
+        naive_iso = "2026-01-01T00:00:00"  # no tz suffix
+        outbox_entry = Outbox(
+            id=uuid4(),
+            job_id=job_id,
+            event_type="retry_scheduled",
+            payload=json.dumps({"retry_count": 1, "next_retry_at": naive_iso}),
+            status="pending",
+        )
+        db_session.add(outbox_entry)
+        await db_session.commit()
+
+        mock_redis = AsyncMock()
+        mock_redis.zscore = AsyncMock(return_value=None)
+        mock_redis.zadd = AsyncMock(return_value=1)
+        with patch("core.queue.redis_client", mock_redis):
+            from worker.outbox_relay import sync_outbox_to_queue
+
+            synced = await sync_outbox_to_queue(batch_size=10)
+            assert synced == 1
+
+        # 2026-01-01T00:00:00Z == 1767225600 (UTC interpretation). If the
+        # naive string were read as local time the score would differ.
+        expected_ts = datetime(2026, 1, 1, tzinfo=UTC).timestamp()
+        zadd_args = mock_redis.zadd.call_args
+        assert zadd_args[0][0] == "retry_queue"
+        assert abs(next(iter(zadd_args[0][1].values())) - expected_ts) < 1.0
 
     @pytest.mark.unit
     async def test_sync_outbox_skips_already_enqueued(self, db_session, job_id, user_id):

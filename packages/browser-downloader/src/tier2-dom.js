@@ -17,8 +17,14 @@ import { pickExtension } from './validate.js';
 const DEFAULT_BODY_CAP = 500 * 1024 * 1024; // 500MB
 const BLOB_CAP = 64;
 const POLL_INTERVAL = 250;
+// Strong block-page signals: challenge phrases that do not appear in normal
+// prose. The weak single words below are only matched against the page TITLE
+// — body text commonly contains "blocked"/"forbidden"/"unauthorized"
+// innocuously, and matching them anywhere false-positives whole pages into
+// a terminal anti_bot_block.
 const BLOCK_RE =
-  /just a moment|access denied|are you a robot|captcha|verify you are human|blocked|forbidden|unauthorized/i;
+  /just a moment|access denied|are you a robot|captcha|verify you are human|403 forbidden/i;
+const BLOCK_TITLE_RE = /\b(blocked|forbidden|unauthorized)\b/i;
 
 // Pure helper mirroring the in-page cap+evict logic. Exported for unit testing
 /**
@@ -159,11 +165,20 @@ export async function detectBlob(page, opts = {}) {
   let blocked = false;
   try {
     blocked = await page.evaluate(
-      ({ source, flags }) => {
-        const text = `${document.title || ''} ${document.body?.innerText || ''}`;
-        return new RegExp(source, flags).test(text);
+      ({ strong, strongFlags, title, titleFlags }) => {
+        const titleText = document.title || '';
+        const text = `${titleText} ${document.body?.innerText || ''}`;
+        return (
+          new RegExp(strong, strongFlags).test(text) ||
+          new RegExp(title, titleFlags).test(titleText)
+        );
       },
-      { source: BLOCK_RE.source, flags: BLOCK_RE.flags },
+      {
+        strong: BLOCK_RE.source,
+        strongFlags: BLOCK_RE.flags,
+        title: BLOCK_TITLE_RE.source,
+        titleFlags: BLOCK_TITLE_RE.flags,
+      },
     );
   } catch {
     blocked = false;
@@ -215,7 +230,27 @@ export async function detectBlob(page, opts = {}) {
               if (Number.isFinite(cl) && cl > cap) {
                 return { tooLarge: true, type, size: cl };
               }
-              const ab = await r.arrayBuffer();
+              // Stream the body with a hard cap DURING transfer: a chunked /
+              // no-Content-Length response must not be fully buffered in-page
+              // before the cap check (arrayBuffer() + post-check only bounds
+              // retention, not buffering).
+              if (!r.body) {
+                return { tooLarge: true, type, size: 0 };
+              }
+              const reader = r.body.getReader();
+              const parts = [];
+              let size = 0;
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                size += value.length;
+                if (size > cap) {
+                  await reader.cancel().catch(() => {});
+                  return { tooLarge: true, type, size };
+                }
+                parts.push(value);
+              }
+              const ab = await new Blob(parts).arrayBuffer();
               if (ab.byteLength > cap) {
                 return { tooLarge: true, type, size: ab.byteLength };
               }
@@ -265,11 +300,20 @@ export async function detectBlob(page, opts = {}) {
         throw new DownloaderError('drm_detected');
       }
       const blockedNow = await page.evaluate(
-        ({ source, flags }) => {
-          const text = `${document.title || ''} ${document.body?.innerText || ''}`;
-          return new RegExp(source, flags).test(text);
+        ({ strong, strongFlags, title, titleFlags }) => {
+          const titleText = document.title || '';
+          const text = `${titleText} ${document.body?.innerText || ''}`;
+          return (
+            new RegExp(strong, strongFlags).test(text) ||
+            new RegExp(title, titleFlags).test(titleText)
+          );
         },
-        { source: BLOCK_RE.source, flags: BLOCK_RE.flags },
+        {
+          strong: BLOCK_RE.source,
+          strongFlags: BLOCK_RE.flags,
+          title: BLOCK_TITLE_RE.source,
+          titleFlags: BLOCK_TITLE_RE.flags,
+        },
       );
       if (blockedNow) {
         throw new DownloaderError('anti_bot_block');

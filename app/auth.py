@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 
-from core.config import _is_testing_enabled, settings
+from core.config import settings
 
 if TYPE_CHECKING:
     from starlette.responses import Response
@@ -131,22 +131,28 @@ def verify_token(token: str, expected_type: str | None = None) -> dict[str, Any]
 
 
 def _host_cookie_secure() -> bool:
-    """Return the `Secure` flag to use for the `__Host-`-prefixed auth cookies.
+    """Return the `Secure` flag for the auth cookies.
 
-    `__Host-` cookies are rejected by every browser unless `Secure` is set, so
-    real deployments always get `secure=True` — `COOKIE_SECURE=false` (intended
-    for plain-HTTP local dev) must not silently break authentication.
-
-    The single exception is the test suite, which drives the app over
-    `http://` via ASGITransport where httpx's cookie jar drops `Secure`
-    cookies. `Settings._apply_testing_defaults` sets `cookie_secure=False`
-    under `TESTING`, and that is the only case where it is honoured here.
+    `__Host-`-prefixed cookie names REQUIRE the Secure flag — browsers reject
+    the prefix otherwise — so the prefix is only used when cookies are served
+    over TLS (`cookie_secure=True`). Plain-HTTP local dev
+    (`COOKIE_SECURE=false`) gets unprefixed names with Secure off, otherwise
+    browsers never send the cookies back and auth silently appears broken.
     """
-    if _is_testing_enabled():
-        # `getattr` so a partial settings stub (used by some rotation tests)
-        # fails secure rather than raising.
-        return bool(getattr(settings, "cookie_secure", True))
-    return True
+    # `getattr` so a partial settings stub (used by some rotation tests)
+    # fails secure rather than raising.
+    return bool(getattr(settings, "cookie_secure", True))
+
+
+def get_auth_cookie_names() -> tuple[str, str]:
+    """Return the active (access, refresh) cookie names for this deployment.
+
+    Single source of truth for the `__Host-` prefix decision — every write
+    (set/clear) and read site must go through here so the names can never
+    drift from the Secure flag.
+    """
+    prefix = "__Host-" if _host_cookie_secure() else ""
+    return f"{prefix}access_token", f"{prefix}refresh_token"
 
 
 def set_token_cookies(
@@ -162,9 +168,10 @@ def set_token_cookies(
         access_token (str): Access token value.
         refresh_token (str): Refresh token value.
     """
+    access_name, refresh_name = get_auth_cookie_names()
     _host_secure = _host_cookie_secure()
     response.set_cookie(
-        key="__Host-access_token",
+        key=access_name,
         value=access_token,
         httponly=True,
         secure=_host_secure,
@@ -173,7 +180,7 @@ def set_token_cookies(
         max_age=settings.access_token_expire_minutes * 60,
     )
     response.set_cookie(
-        key="__Host-refresh_token",
+        key=refresh_name,
         value=refresh_token,
         httponly=True,
         secure=_host_secure,
@@ -185,6 +192,7 @@ def set_token_cookies(
 
 def clear_token_cookies(response: "Response") -> None:
     """Delete the access and refresh token cookies from the root path."""
+    access_name, refresh_name = get_auth_cookie_names()
     _host_secure = _host_cookie_secure()
-    response.delete_cookie(key="__Host-access_token", path="/", secure=_host_secure)
-    response.delete_cookie(key="__Host-refresh_token", path="/", secure=_host_secure)
+    response.delete_cookie(key=access_name, path="/", secure=_host_secure)
+    response.delete_cookie(key=refresh_name, path="/", secure=_host_secure)

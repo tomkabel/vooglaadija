@@ -102,9 +102,9 @@ src/
 
 # Node.js artifacts at root
 package-lock.json
-package.json
-pnpm-lock.yaml
-pnpm-workspace.yaml
+# NOTE: package.json, pnpm-lock.yaml + pnpm-workspace.yaml are NOT ignored —
+# the browser-downloader image (packages/browser-downloader/Dockerfile) copies
+# them into the build context for a workspace-aware frozen install.
 
 # Node (if any frontend)
 node_modules/

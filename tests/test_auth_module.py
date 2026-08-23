@@ -88,7 +88,8 @@ class TestSetTokenCookies:
 
         access_token_call = None
         for call in response.set_cookie.call_args_list:
-            if call.kwargs.get("key") == "__Host-access_token":
+            # TESTING defaults set cookie_secure=False → unprefixed names.
+            if call.kwargs.get("key") == "access_token":
                 access_token_call = call
                 break
 
@@ -108,7 +109,7 @@ class TestSetTokenCookies:
 
         refresh_token_call = None
         for call in response.set_cookie.call_args_list:
-            if call.kwargs.get("key") == "__Host-refresh_token":
+            if call.kwargs.get("key") == "refresh_token":
                 refresh_token_call = call
                 break
 
@@ -121,6 +122,26 @@ class TestSetTokenCookies:
 class TestClearTokenCookies:
     """Tests for clear_token_cookies function."""
 
+    def test_secure_config_uses_host_prefix(self, monkeypatch):
+        """cookie_secure=True must select the __Host- cookie names.
+
+        Regression (finding): the prefix was forced off only in TESTING;
+        with COOKIE_SECURE=false (plain-HTTP dev) the Secure flag was still
+        forced on while the __Host- name made browsers drop the cookie.
+        """
+        from core.config import settings
+
+        monkeypatch.setattr(settings, "cookie_secure", True)
+        response = MagicMock()
+
+        set_token_cookies(response, "a", "r")
+
+        keys = [call.kwargs.get("key") for call in response.set_cookie.call_args_list]
+        assert "__Host-access_token" in keys
+        assert "__Host-refresh_token" in keys
+        for call in response.set_cookie.call_args_list:
+            assert call.kwargs["secure"] is True
+
     def test_clear_token_cookies_deletes_access_token(self):
         """Test that clear_token_cookies deletes the access token cookie."""
         response = MagicMock()
@@ -129,7 +150,7 @@ class TestClearTokenCookies:
 
         delete_call = None
         for call in response.delete_cookie.call_args_list:
-            if call.kwargs.get("key") == "__Host-access_token":
+            if call.kwargs.get("key") == "access_token":
                 delete_call = call
                 break
 
@@ -143,7 +164,7 @@ class TestClearTokenCookies:
 
         delete_call = None
         for call in response.delete_cookie.call_args_list:
-            if call.kwargs.get("key") == "__Host-refresh_token":
+            if call.kwargs.get("key") == "refresh_token":
                 delete_call = call
                 break
 
