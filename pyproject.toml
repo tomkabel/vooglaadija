@@ -28,6 +28,10 @@ dependencies = [
     "prometheus-client>=0.19.0",
     "slowapi>=0.1.9",
     "yt-dlp>=2026.7.4",
+    # yt-dlp impersonation target (curl_cffi) — required by extractors that
+    # impersonate browser TLS fingerprints; without it they get HTTP 403
+    # (e.g. PornHub blocks non-impersonated clients).
+    "curl-cffi>=0.5.10",
     "httpx>=0.27.0",
 
     # HIGH PRIORITY - Observability & Performance Enhancements
