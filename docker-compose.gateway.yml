@@ -1,0 +1,76 @@
+# ============================================
+# Vooglaadija — API Gateway (Traefik)
+# ============================================
+# Deploy Traefik as an API gateway in front of the FastAPI application.
+# Provides: rate limiting, TLS termination, circuit breaking, security headers.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d
+#
+# The gateway listens on ports 80/443 and routes to the API service.
+# ============================================
+
+services:
+  gateway:
+    image: traefik:v3.1
+    container_name: ytprocessor-gateway
+    restart: unless-stopped
+    command:
+      - --api.dashboard=false
+      - --ping=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=ytprocessor-network
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --log.level=INFO
+      - --accesslog=true
+      - --accesslog.format=json
+      - --metrics.prometheus=true
+      - --metrics.prometheus.addEntryPointsLabels=true
+      - --metrics.prometheus.addServicesLabels=true
+      - --entrypoints.websecure.http.tls=true
+      - --entrypoints.websecure.http.tls.options=default
+      - --entrypoints.websecure.http.middlewares=gateway-ratelimit@file,gateway-security-headers@file
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
+      - traefik-certs:/letsencrypt
+    networks:
+      - ytprocessor-network
+    healthcheck:
+      test: ['CMD', 'traefik', 'healthcheck', '--ping']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges=true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ping.rule=Path(`/ping`)
+      - traefik.http.routers.ping.service=ping@internal
+      - traefik.http.routers.ping.entrypoints=websecure
+
+networks:
+  ytprocessor-network:
+    external: true
+
+volumes:
+  traefik-certs:
+    name: ytprocessor-traefik-certs

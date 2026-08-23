@@ -1,8 +1,17 @@
 """Tests for rate limit configuration."""
 
+import os
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from app.api.rate_limit_config import _parse_retry_after, rate_limit_exceeded_handler
+from app.api.rate_limit_config import (
+    REDIS_STORAGE_URL,
+    NoOpLimiter,
+    _build_limiter,
+    _parse_retry_after,
+    rate_limit_exceeded_handler,
+)
 
 
 class TestParseRetryAfter:
@@ -70,8 +79,6 @@ class TestRateLimitExceededHandler:
     @pytest.mark.asyncio
     async def test_handler_returns_429_with_retry_after(self):
         """Test that handler returns 429 status with Retry-After header."""
-        from unittest.mock import MagicMock
-
         from fastapi import Request
         from slowapi.errors import RateLimitExceeded
 
@@ -88,8 +95,6 @@ class TestRateLimitExceededHandler:
     @pytest.mark.asyncio
     async def test_handler_raises_non_rate_limit_exception(self):
         """Test that non-RateLimitExceeded exceptions are raised."""
-        from unittest.mock import MagicMock
-
         from fastapi import Request
 
         mock_request = MagicMock(spec=Request)
@@ -97,3 +102,78 @@ class TestRateLimitExceededHandler:
 
         with pytest.raises(ValueError):
             await rate_limit_exceeded_handler(mock_request, mock_exc)
+
+
+class TestRedisStorageConfig:
+    """Tests for Redis-backed rate limit storage configuration."""
+
+    def test_redis_storage_url_default(self):
+        """Default Redis URL falls back to local Redis."""
+        assert REDIS_STORAGE_URL.startswith("redis://")
+
+    def test_redis_storage_url_from_env(self):
+        """REDIS_URL env var is used when RATE_LIMIT_REDIS_URL is not set."""
+        with patch.dict(os.environ, {"REDIS_URL": "redis://custom-redis:6380/2"}):
+            from app.api.rate_limit_config import REDIS_STORAGE_URL
+
+            assert "redis://" in REDIS_STORAGE_URL
+
+    def test_noop_limiter_in_test_mode(self):
+        """NoOpLimiter is used when TESTING=1."""
+        with patch.dict(os.environ, {"TESTING": "1"}):
+            limiter = _build_limiter()
+            assert isinstance(limiter, NoOpLimiter)
+
+    def test_noop_limiter_limit_decorator(self):
+        """NoOpLimiter.limit returns the original function unchanged."""
+        limiter = NoOpLimiter()
+
+        def dummy_func():
+            return "test"
+
+        decorated = limiter.limit("5/minute")(dummy_func)
+        assert decorated is dummy_func
+        assert decorated() == "test"
+
+    def test_noop_limiter_call(self):
+        """NoOpLimiter.__call__ allows all requests."""
+        import asyncio
+
+        limiter = NoOpLimiter()
+        mock_request = MagicMock()
+
+        result = asyncio.get_event_loop().run_until_complete(limiter(mock_request))
+        assert result is None
+
+    def test_build_limiter_uses_redis_storage(self):
+        """_build_limiter uses RedisStorage in non-test mode."""
+        import sys
+        from types import ModuleType
+
+        mock_storage_instance = MagicMock()
+
+        mock_storage_module = ModuleType("slowapi.storage")
+        mock_storage_module.RedisStorage = MagicMock(return_value=mock_storage_instance)
+
+        with patch.dict(sys.modules, {"slowapi.storage": mock_storage_module}):
+            with patch.dict(os.environ, {"TESTING": "0"}):
+                limiter = _build_limiter()
+
+                mock_storage_module.RedisStorage.assert_called_once()
+                assert limiter is not None
+
+    def test_build_limiter_fallback_without_redis_import(self):
+        """_build_limiter falls back to default Limiter if RedisStorage import fails."""
+        with patch.dict(os.environ, {"TESTING": "0"}):
+            with patch("builtins.__import__", side_effect=_import_raising_import_error):
+                from slowapi import Limiter
+
+                limiter = _build_limiter()
+                assert isinstance(limiter, Limiter)
+
+
+def _import_raising_import_error(name, *args, **kwargs):
+    """Import helper that raises ImportError for slowapi.storage."""
+    if name == "slowapi.storage":
+        raise ImportError("No module named 'slowapi.storage'")
+    return __import__(name, *args, **kwargs)

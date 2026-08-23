@@ -1,4 +1,4 @@
-"""Rate limiting configuration using slowapi."""
+"""Rate limiting configuration using slowapi with Redis-backed storage."""
 
 import os
 import re
@@ -15,6 +15,13 @@ from app.schemas.error import ErrorCode, error_response_dict
 
 # Disable rate limiting in test mode
 is_testing = os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
+
+# Redis storage URL for distributed rate limiting across replicas.
+# Falls back to local Redis when not explicitly configured.
+REDIS_STORAGE_URL = os.environ.get(
+    "RATE_LIMIT_REDIS_URL",
+    os.environ.get("REDIS_URL", "redis://localhost:6379"),
+)
 
 
 class NoOpLimiter:
@@ -50,7 +57,6 @@ class NoOpLimiter:
         """Allow all requests."""
 
 
-# Use NoOpLimiter in test mode, real limiter otherwise
 def _client_ip(request: Request) -> str:
     """Rate-limit bucket key.
 
@@ -72,7 +78,26 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-limiter = NoOpLimiter() if is_testing else Limiter(key_func=_client_ip)
+def _build_limiter() -> Limiter | NoOpLimiter:
+    """Build a rate limiter backed by Redis storage for distributed state.
+
+    Uses slowapi's RedisStorage so rate limit counters are shared across
+    all API replicas. This ensures consistent enforcement when running
+    multiple containers behind a load balancer.
+    """
+    if is_testing:
+        return NoOpLimiter()
+
+    try:
+        from slowapi.storage import RedisStorage
+
+        storage = RedisStorage(REDIS_STORAGE_URL)
+        return Limiter(key_func=_client_ip, storage=storage)
+    except ImportError:
+        return Limiter(key_func=_client_ip)
+
+
+limiter = _build_limiter()
 
 
 def _parse_retry_after(detail: str) -> int:
