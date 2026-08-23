@@ -18,7 +18,7 @@ dependencies = [
     "redis",
     "python-jose[cryptography]",
     "passlib[bcrypt]",
-    "bcrypt>=4.0",
+    "bcrypt>=4.0,<4.1",  # passlib 1.7.4 cannot load bcrypt >=4.1 (removed __about__); fresh envs otherwise get 5.x
     "pydantic",
     "pydantic-settings>=2.14.2",
     "email-validator>=2.3.0",
@@ -110,7 +110,7 @@ test = [
     "pytest-xdist>=3.0.0",
     "httpx>=0.24.0",
     "aiosqlite>=0.19.0",
-    "bcrypt>=4.0",
+    "bcrypt>=4.0,<4.1",
 ]
 lint = [
     "ruff==0.16.3",  # pinned: matches uv.lock; lint gates must be deterministic
