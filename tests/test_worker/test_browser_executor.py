@@ -343,6 +343,40 @@ class TestExtractMediaCircuitBreaker:
         # The exception must be BrowserExecutorError, not httpx.HTTPError
         # (defensive — the type annotation in extract_media's docstring).
 
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_terminal_verdicts_do_not_count_as_breaker_failures(self) -> None:
+        """BLOCKED/NOT_FOUND are request-specific — the circuit stays closed."""
+        breaker = get_browser_downloader_circuit_breaker()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(502, json={"status": "failed", "error": "drm_detected"})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        for _ in range(breaker.failure_threshold):
+            with pytest.raises(BrowserExecutorError) as exc:
+                await extract_media("https://tiktok.com/@u/v/1", "/storage", client=client)
+            assert exc.value.category == ErrorCategory.BLOCKED
+
+        assert breaker.state == CircuitState.CLOSED
+        assert breaker._failure_count == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.unit
+    async def test_transient_verdicts_still_count_as_breaker_failures(self) -> None:
+        """TRANSIENT verdicts reflect downstream health and must open the circuit."""
+        breaker = get_browser_downloader_circuit_breaker()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, json={"status": "failed", "error": "concurrency_limit"})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        for _ in range(breaker.failure_threshold):
+            with pytest.raises(BrowserExecutorError):
+                await extract_media("https://tiktok.com/@u/v/1", "/storage", client=client)
+
+        assert breaker.state == CircuitState.OPEN
+
 
 # -- Circuit breaker singleton -------------------------------------------
 

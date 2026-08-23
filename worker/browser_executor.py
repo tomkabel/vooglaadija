@@ -220,12 +220,14 @@ async def extract_media(
     endpoint = settings.browser_downloader_endpoint.rstrip("/") + "/download"
 
     try:
-        return cast(
-            tuple[str, str, str | None],
-            await breaker.execute(
-                _call_service, http_client, endpoint, request_body, downloads_dir
-            ),
+        result = await breaker.execute(
+            _call_service_terminal_safe, http_client, endpoint, request_body, downloads_dir
         )
+        if isinstance(result, BrowserExecutorError):
+            # Terminal verdict — re-raise after breaker execution (returned as
+            # a value so it was never counted as a downstream failure).
+            raise result
+        return cast(tuple[str, str, str | None], result)
     except CircuitBreakerOpenError:
         # Let CircuitBreakerOpenError propagate so the processor's dedicated
         # deferred-job path can handle it (worker/processor.py:_handle_circuit_open).
@@ -240,6 +242,30 @@ async def extract_media(
 
 
 # -- Internal helpers ------------------------------------------------------
+
+
+# Terminal verdicts describe THIS request (blocked content, missing media),
+# not downstream health — they must not count as circuit-breaker failures.
+_TERMINAL_CATEGORIES = frozenset({ErrorCategory.BLOCKED, ErrorCategory.NOT_FOUND})
+
+
+async def _call_service_terminal_safe(
+    *args: Any, **kwargs: Any
+) -> tuple[str, str, str | None] | BrowserExecutorError:
+    """Run ``_call_service``, returning terminal verdicts as values.
+
+    The breaker records every exception raised through ``execute`` as a
+    downstream failure. BLOCKED / NOT_FOUND verdicts are request-specific
+    (a geo-blocked or missing video) and would eventually open the circuit
+    for ALL downloads, so they are returned as values here and re-raised by
+    the caller after breaker execution instead.
+    """
+    try:
+        return await _call_service(*args, **kwargs)
+    except BrowserExecutorError as exc:
+        if exc.category in _TERMINAL_CATEGORIES:
+            return exc
+        raise
 
 
 async def _call_service(
@@ -343,11 +369,12 @@ def _validate_file_path(file_path: str, downloads_dir: str) -> str:
     which would then be served via ``FileResponse`` and passed to ``os.remove``.
     Mirror ``app.services.download_service._validate_download_path`` (whose base
     is ``_downloads_base_path`` → ``storage_path/downloads``): the resolved path
-    must be ``downloads_dir`` or live beneath it.
+    must live strictly beneath ``downloads_dir`` — the root directory itself is
+    never a valid file path.
     """
     root = Path(downloads_dir).resolve()
     resolved = Path(file_path).resolve()
-    if resolved != root and root not in resolved.parents:
+    if root not in resolved.parents:
         logger.warning(
             "browser_downloader_path_traversal",
             file_path=file_path,
