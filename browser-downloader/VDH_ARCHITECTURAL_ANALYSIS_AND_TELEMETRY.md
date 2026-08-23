@@ -540,18 +540,25 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
     return false;
   }
 
+  // Redact signed URLs before they enter telemetry: keep scheme+host+path,
+  // strip the query string and fragment (which carry signatures / short-lived
+  // tokens).
+  function redactUrl(value) {
+    try {
+      const u = new URL(value, location.origin);
+      u.search = "";
+      u.hash = "";
+      return u.href;
+    } catch {
+      return String(value).split(/[?#]/)[0];
+    }
+  }
+
   // --- fetch() hook ---
   const nativeFetch = window.fetch;
   window.fetch = function hookedFetch(input, init) {
     const requestUrl =
       input instanceof Request ? input.url : String(input || "");
-    const requestHeaders = new Headers(
-      input instanceof Request
-        ? input.headers
-        : init && init.headers
-        ? init.headers
-        : void 0
-    );
 
     const startTime = performance.now();
     const resultPromise = nativeFetch.call(this, input, init);
@@ -566,19 +573,16 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
           cloned
             .text()
             .then((body) => {
-              const trimmed =
-                body.length > 8192 ? body.slice(0, 8192) + "..." : body;
               bus.publish("fetch:manifest", {
-                url: requestUrl,
+                // Signed URLs, headers and bodies are NOT published — only
+                // redacted metadata (see sanitizeEvent in Module F as well).
+                url: redactUrl(requestUrl),
                 method: init?.method || "GET",
                 status: response.status,
                 contentType,
                 contentLength: contentLength
                   ? parseInt(contentLength, 10)
                   : null,
-                headers: Object.fromEntries(response.headers.entries()),
-                requestHeaders: Object.fromEntries(requestHeaders.entries()),
-                bodyPreview: trimmed,
                 bodyLength: body.length,
                 durationMs: duration,
                 type: contentType.includes("dash") ? "dash" : "hls",
@@ -586,7 +590,7 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
             })
             .catch((readErr) => {
               bus.publish("fetch:manifest:error", {
-                url: requestUrl,
+                url: redactUrl(requestUrl),
                 error: readErr.message || String(readErr),
                 contentType,
                 status: response.status,
@@ -598,14 +602,13 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
           /audio\//i.test(contentType)
         ) {
           bus.publish("fetch:media_stream", {
-            url: requestUrl,
+            url: redactUrl(requestUrl),
             type: contentType.startsWith("video") ? "video" : "audio",
             contentType,
             contentLength: contentLength
               ? parseInt(contentLength, 10)
               : null,
             status: response.status,
-            requestHeaders: Object.fromEntries(requestHeaders.entries()),
             durationMs: duration,
           });
         }
@@ -614,7 +617,7 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
         const duration = Math.round(performance.now() - startTime);
         if (isLikelyManifest(requestUrl, "")) {
           bus.publish("fetch:manifest:error", {
-            url: requestUrl,
+            url: redactUrl(requestUrl),
             error: fetchErr.message || String(fetchErr),
             durationMs: duration,
           });
@@ -628,7 +631,6 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
   // --- XMLHttpRequest hook ---
   const NativeXHR = window.XMLHttpRequest;
   const originalOpen = NativeXHR.prototype.open;
-  const originalSetRequestHeader = NativeXHR.prototype.setRequestHeader;
 
   NativeXHR.prototype.open = function hookedXHROpen(
     method,
@@ -639,18 +641,7 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
   ) {
     this.__telemetry_url = String(url || "");
     this.__telemetry_method = String(method || "GET");
-    this.__telemetry_requestHeaders = {};
     return originalOpen.call(this, method, url, async, user, password);
-  };
-
-  NativeXHR.prototype.setRequestHeader = function hookedSetRequestHeader(
-    name,
-    value
-  ) {
-    if (this.__telemetry_requestHeaders) {
-      this.__telemetry_requestHeaders[name] = String(value);
-    }
-    return originalSetRequestHeader.call(this, name, value);
   };
 
   const originalSend = NativeXHR.prototype.send;
@@ -658,7 +649,6 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
     const xhr = this;
     const url = xhr.__telemetry_url || "";
     const method = xhr.__telemetry_method || "GET";
-    const requestHeaders = xhr.__telemetry_requestHeaders || {};
     const startTime = performance.now();
 
     const onReadyState = function () {
@@ -672,29 +662,14 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
         xhr.getResponseHeader("content-length") || "";
 
       if (isLikelyManifest(url, contentType)) {
-        const body =
-          xhr.responseText.length > 8192
-            ? xhr.responseText.slice(0, 8192) + "..."
-            : xhr.responseText;
         bus.publish("xhr:manifest", {
-          url,
+          url: redactUrl(url),
           method,
           status: xhr.status,
           contentType,
           contentLength: contentLength
             ? parseInt(contentLength, 10)
             : null,
-          requestHeaders,
-          responseHeaders: xhr
-            .getAllResponseHeaders()
-            .split("\r\n")
-            .filter((line) => line.includes(":"))
-            .reduce((acc, line) => {
-              const [k, ...v] = line.split(":");
-              acc[k.trim().toLowerCase()] = v.join(":").trim();
-              return acc;
-            }, {}),
-          bodyPreview: body,
           bodyLength: xhr.responseText.length,
           durationMs: duration,
           type: contentType.includes("dash") ? "dash" : "hls",
@@ -704,7 +679,7 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
         /audio\//i.test(contentType)
       ) {
         bus.publish("xhr:media_stream", {
-          url,
+          url: redactUrl(url),
           method,
           type: contentType.startsWith("video") ? "video" : "audio",
           contentType,
@@ -712,7 +687,6 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
             ? parseInt(contentLength, 10)
             : null,
           status: xhr.status,
-          requestHeaders,
           durationMs: duration,
         });
       }
@@ -1115,34 +1089,8 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
                       initDataType,
                       initData
                     ) {
-                      let initDataHex = "";
-                      let initDataB64 = "";
-                      let psshBoxes = [];
-
-                      try {
-                        if (initData instanceof ArrayBuffer) {
-                          initDataB64 = arrayBufferToBase64(initData);
-                          initDataHex = arrayBufferToHex(initData);
-                          psshBoxes = parsePSSHBoxes(
-                            new Uint8Array(initData)
-                          );
-                        } else if (ArrayBuffer.isView(initData)) {
-                          const sliced = new Uint8Array(
-                            initData.buffer,
-                            initData.byteOffset,
-                            initData.byteLength
-                          );
-                          initDataB64 = uint8ArrayToBase64(sliced);
-                          initDataHex = uint8ArrayToHex(sliced);
-                          psshBoxes = parsePSSHBoxes(sliced);
-                        }
-                      } catch (parseErr) {
-                        console.warn(
-                          "[Telemetry:E] initData parsing error:",
-                          parseErr
-                        );
-                      }
-
+                      // Only redacted metadata is published: initData bytes,
+                      // PSSH boxes and any derived key material are NOT.
                       bus.publish("eme:license_request", {
                         keySystem,
                         sessionType: sessionType || "temporary",
@@ -1153,9 +1101,6 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
                             : ArrayBuffer.isView(initData)
                             ? initData.byteLength
                             : 0,
-                        initDataHex,
-                        initDataB64,
-                        psshBoxes,
                       });
 
                       return nativeGenerateRequest(
@@ -1172,36 +1117,8 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
                 ) {
                   const nativeUpdate = session.update.bind(session);
                   session.update = function hookedUpdate(response) {
-                    let responseHex = "";
-                    let responseB64 = "";
-                    let clearkeyMatrix = [];
-
-                    try {
-                      if (response instanceof ArrayBuffer) {
-                        responseB64 = arrayBufferToBase64(response);
-                        responseHex = arrayBufferToHex(response);
-                        clearkeyMatrix =
-                          extractClearKeyMatrixFromLicense(
-                            new Uint8Array(response)
-                          );
-                      } else if (ArrayBuffer.isView(response)) {
-                        const sliced = new Uint8Array(
-                          response.buffer,
-                          response.byteOffset,
-                          response.byteLength
-                        );
-                        responseB64 = uint8ArrayToBase64(sliced);
-                        responseHex = uint8ArrayToHex(sliced);
-                        clearkeyMatrix =
-                          extractClearKeyMatrixFromLicense(sliced);
-                      }
-                    } catch (parseErr) {
-                      console.warn(
-                        "[Telemetry:E] License response parsing error:",
-                        parseErr
-                      );
-                    }
-
+                    // License bodies and any extracted kid:key material are
+                    // never published — only the response length is.
                     bus.publish("eme:license_response", {
                       keySystem,
                       responseLength:
@@ -1210,9 +1127,6 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
                           : ArrayBuffer.isView(response)
                           ? response.byteLength
                           : 0,
-                      responseHex,
-                      responseB64,
-                      clearkeyMatrix,
                     });
 
                     return nativeUpdate(response);
@@ -1401,8 +1315,53 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
   const collectedEvents = [];
   const MAX_COLLECTED = 2000;
 
+  // Redact signed URLs (keep scheme+host+path; strip query/fragment).
+  function redactUrl(value) {
+    try {
+      const u = new URL(value, location.origin);
+      u.search = "";
+      u.hash = "";
+      return u.href;
+    } catch {
+      return String(value).split(/[?#]/)[0];
+    }
+  }
+
+  // Sanitization boundary: fields that can carry credentials, license data,
+  // keys, or raw bodies are stripped from every stored envelope, so
+  // `window.__telemetryReport.rawEvents` can never expose them — even if a
+  // future publisher forgets to redact at the source.
+  const SENSITIVE_PAYLOAD_KEYS = new Set([
+    "headers",
+    "requestHeaders",
+    "bodyPreview",
+    "initDataHex",
+    "initDataB64",
+    "psshBoxes",
+    "responseHex",
+    "responseB64",
+    "clearkeyMatrix",
+    "license",
+    "licenseData",
+    "kid",
+    "key",
+  ]);
+
+  function sanitizeEvent(envelope) {
+    const payload = { ...envelope.payload };
+    for (const key of Object.keys(payload)) {
+      if (SENSITIVE_PAYLOAD_KEYS.has(key)) {
+        delete payload[key];
+      }
+    }
+    if (typeof payload.url === "string") {
+      payload.url = redactUrl(payload.url);
+    }
+    return { ...envelope, payload };
+  }
+
   function pushCollected(envelope) {
-    collectedEvents.push(envelope);
+    collectedEvents.push(sanitizeEvent(envelope));
     if (collectedEvents.length > MAX_COLLECTED) {
       collectedEvents.shift();
     }
@@ -1426,16 +1385,7 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
     );
     console.log("Content-Length:", env.payload.contentLength);
     console.log("Body Length:", env.payload.bodyLength);
-    console.log(
-      "Body Preview:",
-      env.payload.bodyPreview
-    );
     console.log("Duration:", env.payload.durationMs + "ms");
-    console.log(
-      "Request Headers:",
-      env.payload.requestHeaders
-    );
-    console.log("Response Headers:", env.payload.headers);
     console.groupEnd();
   });
 
@@ -1579,62 +1529,18 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
     console.log("Key System:", env.payload.keySystem);
     console.log("Init Data Type:", env.payload.initDataType);
     console.log("Init Data Length:", env.payload.initDataLength);
-    console.log(
-      "Init Data (Base64):",
-      env.payload.initDataB64
-    );
-    console.log(
-      "Init Data (Hex):",
-      env.payload.initDataHex
-    );
-    if (env.payload.psshBoxes.length > 0) {
-      console.table(
-        env.payload.psshBoxes.map((b) => ({
-          SystemID: b.systemId,
-          DataSize: b.dataSize,
-        }))
-      );
-      console.log(
-        "PSSH Data (B64):",
-        env.payload.psshBoxes.map((b) => b.dataB64)
-      );
-    }
     console.groupEnd();
   });
 
   bus.subscribe("eme:license_response", (env) => {
     pushCollected(env);
-    const hasClearKey =
-      env.payload.clearkeyMatrix &&
-      env.payload.clearkeyMatrix.length > 0;
     console.groupCollapsed(
-      `%c[EME:LICENSE_RES] %c${env.payload.keySystem} %c${hasClearKey ? "ClearKey:" + env.payload.clearkeyMatrix.length + " keys" : "No ClearKey"} %c${formatBytes(env.payload.responseLength)}`,
+      `%c[EME:LICENSE_RES] %c${env.payload.keySystem} %c${formatBytes(env.payload.responseLength)}`,
       "color: #ff7043; font-weight: bold",
       "color: #ffb74d",
-      hasClearKey ? "color: #66bb6a" : "color: #90a4ae",
       "color: #90a4ae"
     );
     console.log("Response Length:", env.payload.responseLength);
-    console.log(
-      "Response (Base64):",
-      env.payload.responseB64
-    );
-    console.log(
-      "Response (Hex):",
-      env.payload.responseHex
-    );
-    if (hasClearKey) {
-      console.group("ClearKey Matrix (kid:key pairs)");
-      for (let i = 0; i < env.payload.clearkeyMatrix.length; i++) {
-        const entry = env.payload.clearkeyMatrix[i];
-        console.log(
-          `  [${i}] kid: ${entry.kid}`,
-          `\n      key: ${entry.key}`,
-          `\n      type: ${entry.type}`
-        );
-      }
-      console.groupEnd();
-    }
     console.groupEnd();
   });
 
@@ -1735,6 +1641,9 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
         sessionId: bus.sessionId,
         totalEvents: collectedEvents.length,
         byCategory: categories,
+        // rawEvents are the SANITIZED envelopes: pushCollected strips
+        // headers, bodies, signed URLs, license/init data and keys before
+        // storage, so this list cannot expose them.
         rawEvents: collectedEvents,
       };
     },
