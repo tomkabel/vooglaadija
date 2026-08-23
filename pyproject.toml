@@ -24,7 +24,7 @@ dependencies = [
     "email-validator>=2.3.0",
     "sse-starlette>=1.6.0",
     "jinja2",
-    "python-multipart",
+    "python-multipart>=0.0.31",  # Fixes DoS (quadratic querystring parse), parameter smuggling, negative Content-Length buffering
     "prometheus-client>=0.19.0",
     "slowapi>=0.1.9",
     "yt-dlp>=2025.3.0",
