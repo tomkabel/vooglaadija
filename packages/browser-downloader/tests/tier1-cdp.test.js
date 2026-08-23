@@ -82,6 +82,24 @@ describe('tier1-cdp — interception', () => {
     expect(client.detach).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects promptly when the AbortSignal fires before any media is found', async () => {
+    const ac = new AbortController();
+    const { page, client } = makePage({});
+    const p = interceptMedia(page, 'https://x/v.mp4', { timeout: 1000, signal: ac.signal });
+    ac.abort();
+    await expect(p).rejects.toMatchObject({ code: 'timeout' });
+    expect(client.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects immediately when the signal is already aborted', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const { page, client } = makePage({});
+    const p = interceptMedia(page, 'https://x/v.mp4', { timeout: 1000, signal: ac.signal });
+    await expect(p).rejects.toMatchObject({ code: 'timeout' });
+    expect(client.detach).toHaveBeenCalledTimes(1);
+  });
+
   it('returns a manifest descriptor for HLS/DASH URLs (routes to streamlink, DRM-free)', async () => {
     const { page, emit } = makePage({
       getResponseBody: () => ({

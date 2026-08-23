@@ -203,6 +203,9 @@ export async function interceptMedia(page, url, opts = {}) {
         clearInterval(drmTimer);
         drmTimer = null;
       }
+      if (opts.signal) {
+        opts.signal.removeEventListener('abort', onAbort);
+      }
     };
 
     const settle = (fn) => {
@@ -215,6 +218,19 @@ export async function interceptMedia(page, url, opts = {}) {
     };
     const onFound = (result) => settle(() => resolve(result));
     const onTerminal = (err) => settle(() => reject(err));
+
+    // Abort cancellation: settle promptly (reject) so the caller's browser
+    // teardown is not held hostage by the fallthrough timer.
+    const onAbort = () => {
+      onTerminal(new DownloaderError('timeout', 'interception aborted'));
+    };
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        onAbort();
+      } else {
+        opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
 
     // Internal fallthrough timer — resolves null (NEVER a terminal rejection).
     fallthroughTimer = setTimeout(() => onFound(null), timeout);
