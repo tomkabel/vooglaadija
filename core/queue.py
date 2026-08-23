@@ -5,10 +5,16 @@ Provides convenience wrappers for queue operations, metrics, and
 deduplication to prevent duplicate job entries.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from core.logging_config import get_logger
-from core.redis_client import get_redis_client
+from core.redis_client import close_redis_client, get_redis_client
+
+if TYPE_CHECKING:
+    import redis.asyncio as aioredis
 
 logger = get_logger(__name__)
 
@@ -21,19 +27,35 @@ class _LazyRedisClient:
     """
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: aioredis.Redis | None = None
 
-    def _ensure(self):
+    def _ensure(self) -> aioredis.Redis:
+        """
+        Ensure the Redis client is initialized and return it.
+
+        Returns:
+            aioredis.Redis: The shared Redis client.
+        """
         if self._client is None:
             self._client = get_redis_client()
+        assert self._client is not None
         return self._client
 
-    async def close(self):
+    async def close(self) -> None:
+        """Close the cached Redis client and clear the local client reference."""
         if self._client is not None:
-            await self._client.close()
+            await close_redis_client()
             self._client = None
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
+        """Forward attribute access to the lazily initialized Redis client.
+
+        Parameters:
+            name (str): Name of the attribute to retrieve.
+
+        Returns:
+            Any: Value of the requested attribute on the Redis client.
+        """
         return getattr(self._ensure(), name)
 
 

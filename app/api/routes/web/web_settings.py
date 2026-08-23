@@ -38,8 +38,16 @@ async def settings_page(
     request: Request,
     current_user: CurrentUserFromCookie,
     error: Annotated[str | None, Query(max_length=100)] = None,
-):
-    """Render settings page for the current user."""
+) -> HTMLResponse:
+    """
+    Render the settings page for the current user.
+
+    Parameters:
+        error (str | None): Optional error code used to display validation feedback.
+
+    Returns:
+        HTMLResponse: The rendered settings page.
+    """
     token = get_csrf_token(request)
     username = current_user.username or _default_username_from_email(current_user.email)
     error_message, field_errors = _resolve_settings_errors(error)
@@ -59,18 +67,29 @@ async def settings_page(
     return response
 
 
-@router.post("/settings/username")
+@router.post("/settings/username", response_model=None)
 @limiter.limit("10/minute")
 async def update_username(
     request: Request,
     username: Annotated[str, Form(max_length=64)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """Update current user's username."""
+) -> HTMLResponse | RedirectResponse:
+    """
+    Update the current user's username.
+
+    Parameters:
+        username (str): The new username.
+
+    Returns:
+        HTMLResponse | RedirectResponse: A success response, or an error response for an invalid CSRF token or username.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
+            request,
+            403,
+            _error_html("Invalid CSRF token"),
+            "/web/settings?error=csrf",
         )
 
     try:
@@ -91,7 +110,7 @@ async def update_username(
     )
 
 
-@router.post("/settings/delete-account")
+@router.post("/settings/delete-account", response_model=None)
 @limiter.limit("3/minute")
 async def delete_account(
     request: Request,
@@ -99,11 +118,22 @@ async def delete_account(
     confirm_text: Annotated[str, Form(max_length=16)],
     current_user: CurrentUserFromCookie,
     db: DbSession,
-):
-    """Delete current user's account and associated downloads."""
+) -> HTMLResponse | RedirectResponse:
+    """
+    Delete the current user's account and associated downloads after validating the deletion request.
+
+    Parameters:
+        confirm_text (str): Confirmation text required to authorize account deletion.
+
+    Returns:
+        HTMLResponse | RedirectResponse: An empty HTMX response with a login redirect header, or a redirect to the login page.
+    """
     if not await validate_csrf_token(request):
         return _htmx_or_redirect(
-            request, 403, _error_html("Invalid CSRF token"), "/web/settings?error=csrf"
+            request,
+            403,
+            _error_html("Invalid CSRF token"),
+            "/web/settings?error=csrf",
         )
 
     try:
@@ -131,7 +161,7 @@ async def delete_account(
             500,
             _error_html(
                 "Could not remove all downloaded files. Your account was not deleted. "
-                "Please try again or contact support."
+                "Please try again or contact support.",
             ),
             "/web/settings?error=file_cleanup",
         )

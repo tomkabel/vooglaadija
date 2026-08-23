@@ -1,19 +1,39 @@
-"""Transactional outbox relay for Redis queue recovery."""
+"""Transactional outbox relay for Redis queue recovery.
+
+Lifecycle: outbox rows are written with status='pending' inside the same DB
+transaction that mutates the domain entity (DownloadJob). The relay claims
+pending rows, pushes the corresponding Redis message, and transitions the row
+to status='processed' (with processed_at). Rows are retained for observability
+and reaped by ``cleanup_stale_outbox_entries`` after the retention window.
+
+This module is also the single source of truth for the
+``OUTBOX_OLDEST_PENDING_SECONDS`` and ``OUTBOX_PENDING`` gauges so the
+metrics reflect relay reality even if the relay is the only thing running.
+"""
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
+from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_async_session_factory
 from core.logging_config import get_logger
+from core.metrics import OUTBOX_OLDEST_PENDING_SECONDS, OUTBOX_PENDING
 from core.models.outbox import Outbox
 from core.queue import push_to_download_queue, push_to_retry_queue
 
 logger = get_logger(__name__)
 
+_PROCESSED_STATUS = "processed"
+_FAILED_STATUS = "failed"
+_PENDING_STATUS = "pending"
 
-async def _retry_job_is_already_enqueued(job_id) -> bool:
+
+async def _retry_job_is_already_enqueued(job_id: UUID) -> bool:
     """Return whether a retry job already exists in Redis after a deduplicated push."""
     try:
         from core.queue import redis_client
@@ -24,22 +44,53 @@ async def _retry_job_is_already_enqueued(job_id) -> bool:
         return False
 
 
+async def _update_staleness_metrics(db: AsyncSession) -> None:
+    """Refresh OUTBOX_PENDING and OUTBOX_OLDEST_PENDING_SECONDS for observability.
+
+    Reads are best-effort. A failure here must not abort the relay cycle.
+    """
+    try:
+        pending_count = await db.scalar(
+            select(func.count()).where(Outbox.status == _PENDING_STATUS)
+        )
+        OUTBOX_PENDING.set(float(pending_count or 0))
+
+        oldest_dt = await db.scalar(
+            select(func.min(Outbox.created_at)).where(Outbox.status == _PENDING_STATUS)
+        )
+        age_seconds = (
+            (datetime.now(UTC) - oldest_dt).total_seconds() if oldest_dt is not None else 0.0
+        )
+        OUTBOX_OLDEST_PENDING_SECONDS.set(float(age_seconds))
+    except Exception as exc:
+        logger.warning("outbox_staleness_metric_update_failed", error=str(exc))
+
+
 async def sync_outbox_to_queue(batch_size: int = 100) -> int:
-    """Sync pending outbox entries to Redis queue."""
+    """
+    Deliver pending outbox entries to Redis and mark successfully delivered entries as processed.
+
+    Parameters:
+        batch_size (int): Maximum number of pending entries to process.
+
+    Returns:
+        int: Number of entries successfully delivered to Redis.
+    """
     session_factory = get_async_session_factory()
     synced = 0
 
     async with session_factory() as db:
         claim_result = await db.execute(
             select(Outbox)
-            .where(Outbox.status == "pending")
+            .where(Outbox.status == _PENDING_STATUS)
             .order_by(Outbox.created_at)
             .limit(batch_size)
-            .with_for_update(skip_locked=True)
+            .with_for_update(skip_locked=True),
         )
         entries = claim_result.scalars().all()
 
         if not entries:
+            await _update_staleness_metrics(db)
             return 0
 
         processed_entry_ids = []
@@ -68,15 +119,28 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
                     synced += 1
             except Exception as e:
                 logger.error(
-                    "failed_to_enqueue_job_from_outbox", job_id=str(entry.job_id), error=str(e)
+                    "failed_to_enqueue_job_from_outbox",
+                    job_id=str(entry.job_id),
+                    error=str(e),
                 )
 
         if processed_entry_ids:
+            now = datetime.now(UTC)
+            await db.execute(
+                update(Outbox)
+                .where(Outbox.id.in_(processed_entry_ids))
+                .values(status=_PROCESSED_STATUS, processed_at=now),
+            )
             try:
-                await db.execute(delete(Outbox).where(Outbox.id.in_(processed_entry_ids)))
                 await db.commit()
             except Exception:
                 await db.rollback()
+                logger.error(
+                    "outbox_processed_status_update_failed",
+                    count=len(processed_entry_ids),
+                )
+
+        await _update_staleness_metrics(db)
 
     if synced > 0:
         logger.info("synced_outbox_entries_to_queue", count=synced)
@@ -85,15 +149,25 @@ async def sync_outbox_to_queue(batch_size: int = 100) -> int:
 
 
 async def cleanup_stale_outbox_entries(hours: int = 24) -> int:
-    """Delete old terminal outbox entries while retaining pending crash-recovery rows."""
+    """Delete terminal outbox rows older than ``hours`` (default 24).
+
+    Terminal rows are those whose status is ``processed`` or ``failed`` (the
+    latter is reserved for relay-level delivery failures). ``pending`` rows
+    are never reaped here — they are the crash-recovery set and must survive
+    until the relay delivers them.
+    """
     session_factory = get_async_session_factory()
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
     async with session_factory() as db:
-        result = await db.execute(
-            delete(Outbox).where(
-                Outbox.created_at < cutoff,
-                Outbox.status.in_(["completed", "failed"]),
-            )
+        result = cast(
+            CursorResult[Any],
+            await db.execute(
+                delete(Outbox).where(
+                    Outbox.processed_at.is_not(None),
+                    Outbox.processed_at < cutoff,
+                    Outbox.status.in_([_PROCESSED_STATUS, _FAILED_STATUS]),
+                ),
+            ),
         )
         await db.commit()
         count = int(result.rowcount or 0)

@@ -1,9 +1,11 @@
 """Prometheus metrics collection middleware."""
 
 import time
+from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import Response
 from starlette.routing import BaseRoute
 
 from core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
@@ -12,7 +14,21 @@ from core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS
 class PrometheusMiddleware(BaseHTTPMiddleware):
     """Middleware to collect HTTP metrics."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        """
+        Collect Prometheus metrics for an HTTP request and its response.
+
+        Parameters:
+            request (Request): The incoming HTTP request.
+            call_next (Callable): The next middleware or request handler.
+
+        Returns:
+            Response: The response produced by the next middleware or request handler.
+        """
         if request.url.path == "/metrics":
             return await call_next(request)
 

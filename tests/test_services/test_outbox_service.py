@@ -96,3 +96,69 @@ async def test_write_job_to_outbox_with_none_payload(db_session):
 
     assert result is not None
     assert result.payload is None
+
+
+@pytest.mark.asyncio
+async def test_write_job_to_outbox_concurrent_writers_keep_one_pending_row():
+    """Two sessions racing on the same job_id: the partial unique index wins.
+
+    Covers the concurrency path that the pre-flight SELECT cannot see. Both
+    writers pass their existence check, then the second flush violates
+    ``uq_outbox_pending_job_id``. The savepoint in ``write_job_to_outbox`` must
+    absorb that IntegrityError so:
+      * exactly one pending row survives, and
+      * the losing session's transaction is still usable (it can commit and
+        query), rather than being poisoned by the failed flush.
+    """
+    from app.services import outbox_service
+    from tests.conftest import TestingSessionLocal
+
+    job_id = uuid.uuid4()
+
+    async with TestingSessionLocal() as session_a, TestingSessionLocal() as session_b:
+        # session_a wins the race and commits its pending row.
+        first = await write_job_to_outbox(session_a, job_id=job_id)
+        assert first is not None
+        await session_a.commit()
+
+        # Reproduce the race the pre-flight SELECT cannot see: force session_b's
+        # "no pending row yet" check to miss (e.g. because a concurrent writer
+        # committed in the gap), so its insert hits the partial unique index.
+        real_execute = session_b.execute
+        calls = {"n": 0}
+
+        async def _intercept_execute(statement, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                # First call is the existence check: pretend it found nothing.
+                class _Stub:
+                    def scalars(self):
+                        class _S:
+                            def one_or_none(self):
+                                return None
+
+                        return _S()
+
+                return _Stub()
+            return await real_execute(statement, *args, **kwargs)
+
+        session_b.execute = _intercept_execute  # type: ignore[assignment]
+
+        # session_b's flush now trips the index; the savepoint must absorb it.
+        second = await write_job_to_outbox(session_b, job_id=job_id)
+        assert second is None, "the losing writer must report an idempotent no-op"
+
+        # The enclosing transaction survived the absorbed IntegrityError.
+        await session_b.commit()
+
+        remaining = await session_b.execute(
+            select(Outbox).where(Outbox.job_id == job_id, Outbox.status == "pending"),
+        )
+        assert len(remaining.scalars().all()) == 1
+
+        # Both sessions remain usable afterwards.
+        for session in (session_a, session_b):
+            probe = await session.execute(select(Outbox).where(Outbox.job_id == job_id))
+            assert len(probe.scalars().all()) == 1
+
+    assert outbox_service is not None  # keep import referenced

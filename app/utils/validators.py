@@ -3,6 +3,7 @@ import ipaddress
 import socket
 import urllib.error
 import urllib.request
+from typing import Any
 from urllib.parse import urlparse
 
 from core.logging_config import get_logger
@@ -138,20 +139,42 @@ async def _validate_hostname_not_private(hostname: str) -> bool:
 
 
 async def _check_redirect_target(url: str) -> bool:
-    """Follow one level of HTTP redirects and validate each target hostname.
+    """
+    Inspect one HTTP redirect target for private or reserved IP addresses.
 
-    Makes a HEAD request with redirect-following DISABLED, then inspects
-    any Location header to validate the redirect target's IP before ever
-    connecting to it. Returns True if safe, False if any redirect target
-    resolves to a private IP.
+    Parameters:
+        url (str): URL whose redirect target should be checked.
+
+    Returns:
+        bool: `True` if the URL has no redirect or its target resolves only to public addresses, `False` if a target resolves to a private or reserved address.
     """
 
     class _NoFollowRedirects(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: PLR0917
-            req._redirect_target = newurl  # stash for inspection
+        def redirect_request(  # noqa: PLR0917
+            self,
+            req: urllib.request.Request,
+            fp: Any,
+            code: int,
+            msg: str,
+            headers: Any,
+            newurl: str,
+        ) -> urllib.request.Request | None:
+            """
+            Prevent automatic redirect following while recording the redirect target.
+
+            Raises:
+                urllib.error.HTTPError: Always, to stop the redirect from being followed.
+            """
+            req._redirect_target = newurl  # type: ignore[attr-defined]
             raise urllib.error.HTTPError(url, code, "SSRF redirect check", headers, fp)
 
-    def _check():
+    def _check() -> bool:
+        """
+        Check whether the URL's immediate redirect target resolves to a private address.
+
+        Returns:
+                bool: `False` if the redirect target resolves to a private or reserved address; `True` otherwise.
+        """
         opener = urllib.request.build_opener(_NoFollowRedirects)
         req = urllib.request.Request(url, method="HEAD")
         req.add_header("User-Agent", "Mozilla/5.0")
@@ -228,7 +251,7 @@ _COMMON_PASSWORDS = frozenset(
         "admin123",
         "test1234",
         "changeme",
-    }
+    },
 )
 
 

@@ -51,8 +51,6 @@
       hx-swap="afterbegin"
       hx-indicator="#submit-spinner"
       hx-sync="this:drop"
-      hx-on:htmx:after-request="if(event.detail.successful) { document.querySelector('#download-error').innerHTML = ''; document.getElementById('new-download-url').value = ''; }"
-      hx-on:htmx:response-error="document.querySelector('#download-error').innerHTML = ''; document.querySelector('#download-error').insertAdjacentHTML('beforeend', event.detail.xhr.response)"
       class="flex flex-col sm:flex-row gap-3"
     >
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
@@ -165,5 +163,28 @@
 
 {% block extra_scripts %}
 <script id="status-badge-templates" type="application/json">{{ status_badge_templates_json() | safe }}</script>
+<script nonce="{{ nonce }}">
+  (function () {
+    var form = document.getElementById('download-form');
+    if (!form) return;
+
+    form.addEventListener('htmx:afterRequest', function (event) {
+      if (event.detail.successful) {
+        var errorEl = document.getElementById('download-error');
+        if (errorEl) errorEl.innerHTML = '';
+        var urlInput = document.getElementById('new-download-url');
+        if (urlInput) urlInput.value = '';
+      }
+    });
+
+    form.addEventListener('htmx:responseError', function (event) {
+      var errorEl = document.getElementById('download-error');
+      if (errorEl) {
+        errorEl.innerHTML = '';
+        errorEl.insertAdjacentHTML('beforeend', event.detail.xhr.response);
+      }
+    });
+  })();
+</script>
 <script src="/static/js/dashboard.js" defer></script>
 {% endblock %}

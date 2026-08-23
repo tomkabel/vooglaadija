@@ -3,6 +3,7 @@
 import os
 import posixpath
 import re
+import secrets
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,14 +46,17 @@ _SETTINGS_ERRORS: _ErrorMap = {
     "bad_current_password": _field_error("Current password is incorrect", "current_password"),
     "password_mismatch": _field_error("New passwords do not match", "new_password_confirm"),
     "password_too_short": _field_error(
-        "New password must be at least 8 characters", "new_password"
+        "New password must be at least 8 characters",
+        "new_password",
     ),
     "password_too_long": _field_error(
-        "New password must be at most 128 characters", "new_password"
+        "New password must be at most 128 characters",
+        "new_password",
     ),
     "bad_password": _field_error("Password is incorrect", "delete_password"),
     "delete_confirmation": _field_error(
-        "Please type DELETE to confirm account deletion", "confirm_text"
+        "Please type DELETE to confirm account deletion",
+        "confirm_text",
     ),
     "file_cleanup": ("Unable to remove all downloaded files. Account was not deleted.", {}),
     "csrf": ("Invalid CSRF token", {}),
@@ -82,10 +86,19 @@ def _new_csrf_token() -> str:
 
 
 def _validated_csrf_token(token: str | None) -> str | None:
+    """Return a safe, locally-reconstructed CSRF token, or None if invalid.
+
+    The token format is a UUID4 hex string (32 hex chars). Rather than echoing
+    the caller-supplied string back after a regex check, the value is
+    re-derived from the parsed integer. The result is byte-identical for every
+    accepted input but is a string this function constructed, so a
+    request-controlled value can never reach `Set-Cookie` verbatim (CodeQL
+    py/cookie-injection) even if the pattern is ever loosened by mistake.
+    """
     candidate = str(token or "")
-    if _CSRF_TOKEN_PATTERN.fullmatch(candidate):
-        return candidate
-    return None
+    if not _CSRF_TOKEN_PATTERN.fullmatch(candidate):
+        return None
+    return format(int(candidate, 16), "032x")
 
 
 def _validate_redirect_url(url: str | None, default: str) -> str:
@@ -135,8 +148,21 @@ def rotate_csrf_token(response: Response) -> str:
 
 
 def get_template_context(
-    request: Request, csrf_token: str | None = None, **extra_context
+    request: Request,
+    csrf_token: str | None = None,
+    **extra_context: object,
 ) -> dict[str, object]:
+    """
+    Build the common context values used to render a web template.
+
+    Parameters:
+        request (Request): The current web request.
+        csrf_token (str | None): An optional CSRF token to include in the context.
+        **extra_context (object): Additional values to include in the template context.
+
+    Returns:
+        dict[str, object]: The template context containing request metadata and extra values.
+    """
     context: dict[str, object] = {
         "request": request,
         "current_year": datetime.now(UTC).year,
@@ -152,13 +178,22 @@ def is_htmx_request(request: Request) -> bool:
 
 
 async def validate_csrf_token(request: Request) -> bool:
+    """
+    Validate the CSRF token for a request.
+
+    Parameters:
+        request (Request): The incoming HTTP request.
+
+    Returns:
+        bool: `true` for safe HTTP methods or a matching CSRF token, `false` otherwise.
+    """
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return True
     cookie_token = request.cookies.get("csrf_token")
     if not cookie_token:
         return False
     header_token = request.headers.get("X-CSRF-Token")
-    if header_token == cookie_token:
+    if header_token and secrets.compare_digest(header_token, cookie_token):
         return True
     if header_token:
         return False
@@ -166,10 +201,19 @@ async def validate_csrf_token(request: Request) -> bool:
         form_token = (await request.form()).get("csrf_token")
     except Exception:
         return False
-    return bool(form_token and str(form_token) == cookie_token)
+    return bool(form_token and secrets.compare_digest(str(form_token), cookie_token))
 
 
 def _resolve_error(error_code: str | None, mapping: _ErrorMap) -> tuple[str | None, dict[str, str]]:
+    """Resolve an error code to its message and field-level errors.
+
+    Parameters:
+        error_code (str | None): The error code to resolve.
+        mapping (_ErrorMap): The mapping of error codes to error details.
+
+    Returns:
+        tuple[str | None, dict[str, str]]: The associated message and field-level errors, or empty error details when the code is absent or unmapped.
+    """
     return mapping.get(error_code, (None, {})) if error_code is not None else (None, {})
 
 
@@ -198,8 +242,23 @@ def _htmx_or_redirect(
 
 
 def _error_response(
-    request: Request, status_code: int, message: str, redirect_url: str
+    request: Request,
+    status_code: int,
+    message: str,
+    redirect_url: str,
 ) -> HTMLResponse | RedirectResponse:
+    """
+    Create an error response for an HTMX request or redirect the client otherwise.
+
+    Parameters:
+        request (Request): The incoming web request.
+        status_code (int): The HTTP status code for the response.
+        message (str): The error message to display.
+        redirect_url (str): The URL to use for non-HTMX requests.
+
+    Returns:
+        HTMLResponse | RedirectResponse: An HTML error response for HTMX requests or a redirect response otherwise.
+    """
     return _htmx_or_redirect(request, status_code, _error_html(message), redirect_url)
 
 
@@ -215,7 +274,7 @@ def _auth_success_response(
         response.headers["HX-Redirect"] = redirect_url
     else:
         response = RedirectResponse(url=redirect_url, status_code=303)
-    set_token_cookies(response, access_token, refresh_token, secure=settings.cookie_secure)
+    set_token_cookies(response, access_token, refresh_token)
     rotate_csrf_token(response)
     return response
 
@@ -231,8 +290,11 @@ def _login_success_response(
 
 
 def _register_success_response(
-    request: Request, access_token: str, refresh_token: str
+    request: Request,
+    access_token: str,
+    refresh_token: str,
 ) -> HTMLResponse | RedirectResponse:
+    """Complete registration by establishing the authenticated session and directing the user to the downloads page."""
     return _auth_success_response(request, access_token, refresh_token, "/web/downloads")
 
 

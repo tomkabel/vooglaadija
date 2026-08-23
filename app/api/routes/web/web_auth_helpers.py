@@ -34,7 +34,7 @@ from core.redis_client import get_redis_client
 async def _prime_demo_jobs(user_id: uuid.UUID, db: DbSession) -> None:
     """Prime pending demo jobs for processing."""
     pending_result = await db.execute(
-        select(DownloadJob).where(DownloadJob.user_id == user_id, DownloadJob.status == "pending")
+        select(DownloadJob).where(DownloadJob.user_id == user_id, DownloadJob.status == "pending"),
     )
     pending_jobs = pending_result.scalars().all()
     if not pending_jobs:
@@ -75,13 +75,28 @@ async def _change_password_response(
     current_user: CurrentUserFromCookie,
     db: DbSession,
 ) -> HTMLResponse | RedirectResponse:
+    """
+    Change the authenticated user's password and return the corresponding settings response.
+
+    Parameters:
+        current_password (str): The user's existing password.
+        new_password (str): The desired new password.
+        new_password_confirm (str): Confirmation of the desired new password.
+
+    Returns:
+        HTMLResponse | RedirectResponse: A success response or an error response describing
+        CSRF, current-password, password-mismatch, or password-requirement failures.
+    """
     error: tuple[int, str, str] | None = None
     if not await validate_csrf_token(request):
         error = (403, "Invalid CSRF token", "csrf")
     if error is not None:
         status_code, error_message, error_code = error
         return _error_response(
-            request, status_code, error_message, f"/web/settings?error={error_code}"
+            request,
+            status_code,
+            error_message,
+            f"/web/settings?error={error_code}",
         )
 
     try:
@@ -130,6 +145,17 @@ async def _register_user_or_error_response(
     password_confirm: str,
     db: DbSession,
 ) -> tuple[User | None, HTMLResponse | RedirectResponse | None]:
+    """
+    Register a user or create an appropriate registration error response.
+
+    Parameters:
+        email (str): Email address for the new user.
+        password (str): Password for the new user.
+        password_confirm (str): Confirmation of the new user's password.
+
+    Returns:
+        tuple[User | None, HTMLResponse | RedirectResponse | None]: The registered user and no response on success, or no user and an error response on failure.
+    """
     error: tuple[int, str, str] | None = None
     if not await validate_csrf_token(request):
         error = (403, "Invalid CSRF token", "csrf")
@@ -138,14 +164,20 @@ async def _register_user_or_error_response(
     if error is not None:
         status_code, error_message, error_code = error
         return None, _error_response(
-            request, status_code, error_message, f"/web/register?error={error_code}"
+            request,
+            status_code,
+            error_message,
+            f"/web/register?error={error_code}",
         )
 
     try:
         user = await UserService(db=db).register(email, password)
     except DuplicateEmailError:
         return None, _error_response(
-            request, 409, "Email already registered", "/web/register?error=email_exists"
+            request,
+            409,
+            "Email already registered",
+            "/web/register?error=email_exists",
         )
     except InvalidPasswordError as exc:
         resolved_message, _ = _resolve_register_errors(exc.code)

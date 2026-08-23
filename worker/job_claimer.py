@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.logging_config import get_logger
 from core.models.download_job import DownloadJob
@@ -54,7 +54,7 @@ async def claim_next(db: AsyncSession, job_id: UUID | str | bytes) -> DownloadJo
         .where(DownloadJob.id == normalized_job_id, DownloadJob.status == "pending")
         .values(status="processing", updated_at=datetime.now(UTC))
         .returning(DownloadJob)
-        .execution_options(synchronize_session=False)
+        .execution_options(synchronize_session=False),
     )
     job = result.scalar_one_or_none()
     await db.commit()
@@ -62,19 +62,25 @@ async def claim_next(db: AsyncSession, job_id: UUID | str | bytes) -> DownloadJo
 
 
 async def heartbeat(db: AsyncSession, job_id: UUID) -> None:
-    """Update a processing job heartbeat timestamp."""
+    """Update a job's heartbeat timestamp and commit the change."""
     await db.execute(
-        update(DownloadJob).where(DownloadJob.id == job_id).values(updated_at=datetime.now(UTC))
+        update(DownloadJob).where(DownloadJob.id == job_id).values(updated_at=datetime.now(UTC)),
     )
     await db.commit()
 
 
 async def periodic_heartbeat(
-    db_factory,
+    db_factory: async_sessionmaker[AsyncSession],
     job_id: UUID,
     stop_event: asyncio.Event,
 ) -> None:
-    """Send heartbeats every 30 seconds until the stop event is set."""
+    """
+    Update the specified job's heartbeat every 30 seconds until the stop event is set.
+
+    Parameters:
+        job_id (UUID): Identifier of the job whose heartbeat is updated.
+        stop_event (asyncio.Event): Event that stops the heartbeat loop.
+    """
     try:
         async with db_factory() as hb_db:
             while not stop_event.is_set():
@@ -89,7 +95,7 @@ async def periodic_heartbeat(
                     await hb_db.execute(
                         update(DownloadJob)
                         .where(DownloadJob.id == job_id)
-                        .values(updated_at=datetime.now(UTC))
+                        .values(updated_at=datetime.now(UTC)),
                     )
                     await hb_db.commit()
     except asyncio.CancelledError:

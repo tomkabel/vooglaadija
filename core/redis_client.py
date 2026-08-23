@@ -8,6 +8,13 @@ redis-py's from_url() manages an internal connection pool internally,
 so connections are reused rather than created per call.
 """
 
+from __future__ import annotations
+
+import asyncio
+from typing import cast
+
+import redis.asyncio as aioredis
+
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -40,20 +47,15 @@ KEY_TO_SCENARIO_FIELD: dict[str, str] = {
 }
 
 
-def get_redis_client():
-    """Get or create the shared Redis client singleton.
+def get_redis_client() -> aioredis.Redis:
+    """
+    Get the shared asynchronous Redis client, creating it when needed.
 
-    Returns the same client instance on every call. The client manages
-    its own connection pool internally (TCP connections are reused).
-
-    Used by both API server and worker process — each process gets its own
-    singleton (one per OS process), which is the correct behavior since
-    redis-py's connection pool is not fork/process-safe.
+    Returns:
+        aioredis.Redis: The shared Redis client for the current process.
     """
     if _redis_state["client"] is not None:
-        return _redis_state["client"]
-
-    import redis.asyncio as aioredis
+        return cast("aioredis.Redis", _redis_state["client"])
 
     from core.config import settings
 
@@ -64,32 +66,63 @@ def get_redis_client():
         socket_timeout=5,
         retry_on_timeout=False,
     )
-    return _redis_state["client"]
+    return cast("aioredis.Redis", _redis_state["client"])
 
 
-def reset_redis_client():
-    """Reset the singleton (for testing only)."""
+def reset_redis_client() -> None:
+    """Reset the singleton (for testing only).
+
+    Closes any live client first so its connection pool is not leaked across
+    repeated test/setup cycles, then clears the cached reference.
+    """
+    client = _redis_state["client"]
     _redis_state["client"] = None
+    if client is None:
+        return
+
+    close = getattr(client, "close", None)
+    if not callable(close):
+        return
+
+    async def _close() -> None:
+        try:
+            await close()
+        except Exception:
+            logger.warning("redis_reset_close_failed", exc_info=True)
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return
+    if loop.is_running():
+        task = loop.create_task(_close())
+        # Retain a reference so the task is not garbage-collected before it runs.
+        _pending_closes.add(task)
+        task.add_done_callback(_pending_closes.discard)
+    else:
+        try:
+            loop.run_until_complete(_close())
+        except RuntimeError:
+            pass
 
 
-async def close_redis_client():
+_pending_closes: set[object] = set()
+
+
+async def close_redis_client() -> None:
     """Close the shared Redis client connection pool."""
     if _redis_state["client"] is not None:
-        await _redis_state["client"].close()
+        await cast("aioredis.Redis", _redis_state["client"]).close()
         _redis_state["client"] = None
 
 
 async def check_worker_health() -> bool:
-    """Check if any worker has a fresh heartbeat in Redis.
-
-    Workers write ``worker:health:<worker_id>`` keys with a 30-second TTL
-    (set via SETEX) every ~20 seconds in their main loop. This function
-    scans for any matching key — if one exists with remaining TTL, at
-    least one worker is alive.
+    """
+    Determine whether any worker has a current heartbeat in Redis.
 
     Returns:
-        True if at least one worker health key exists (worker is alive).
-        False if no health keys found or Redis is unreachable.
+        bool: `True` if at least one worker heartbeat has a positive TTL,
+        `False` if no current heartbeat exists or Redis access fails.
     """
     try:
         client = get_redis_client()

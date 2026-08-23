@@ -62,7 +62,7 @@ jobs:
         run: hatch run lint:dead-code
 
       - name: Install pnpm
-        uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9
+        uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9 # v4.0.0
 
       - name: Install Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -89,7 +89,8 @@ jobs:
         run: yamllint --config-file .yamllint .github/ infra/ docker-compose*.yml
 
       - name: Run ShellCheck
-        run: shellcheck --severity=warning scripts/*.sh entrypoint.sh migrate.sh
+        run: |
+          shellcheck --severity=warning scripts/*.sh entrypoint.sh migrate.sh worker/entrypoint-worker.sh
 
   # ============================================
   # TYPE CHECK - Static type analysis
@@ -177,7 +178,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
+          POSTGRES_PASSWORD: test_pw
           POSTGRES_DB: test_db
         options: >-
           --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
@@ -213,20 +214,24 @@ jobs:
 
       - name: Create test environment
         run: |
+          SK="$(openssl rand -hex 32)"
           cp .env.example .env
-          sed -i 's|^DB_PASSWORD=.*|DB_PASSWORD=test_pass|' .env
-          sed -i 's|^SECRET_KEY=.*|SECRET_KEY=test-secret-key-for-ci-at-least-32-chars-long|' .env
+          sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=test_pw|" .env
+          sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${SK}|" .env
+          echo "PGPASSWORD=test_pw" >> "$GITHUB_ENV"
 
       - name: Create database schema
         run: |
           uv run python -c "
           import asyncio
+          import os
           from sqlalchemy.ext.asyncio import create_async_engine
           from core.database import Base
           from core.models import User, DownloadJob
 
           async def init_db():
-              engine = create_async_engine('postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db')
+              db_pass = os.environ['PGPASSWORD']
+              engine = create_async_engine(f'postgresql+asyncpg://test_user:{db_pass}@localhost:5432/test_db')
               async with engine.begin() as conn:
                   await conn.run_sync(Base.metadata.create_all)
               await engine.dispose()

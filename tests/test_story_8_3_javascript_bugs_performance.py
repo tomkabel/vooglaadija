@@ -165,7 +165,7 @@ async def test_dashboard_route_still_loads_dashboard_assets():
     """The rendered dashboard keeps dashboard JS and owns the SSE extension."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         access_token = await create_test_user_and_login(client)
-        response = await client.get("/web/downloads", cookies={"access_token": access_token})
+        response = await client.get("/web/downloads", cookies={"__Host-access_token": access_token})
 
     assert response.status_code == 200
     assert '<script src="/static/js/sse.js"></script>' in response.text
@@ -178,7 +178,7 @@ async def test_dashboard_route_renders_scoped_download_form_contract():
     """The rendered dashboard exposes the scoped HTMX download form contract."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         access_token = await create_test_user_and_login(client)
-        response = await client.get("/web/downloads", cookies={"access_token": access_token})
+        response = await client.get("/web/downloads", cookies={"__Host-access_token": access_token})
 
     assert response.status_code == 200
     assert 'id="download-form"' in response.text
@@ -198,7 +198,7 @@ async def test_non_dashboard_pages_do_not_render_sse_extension():
         register_response = await client.get("/web/register")
         access_token = await create_test_user_and_login(client)
         settings_response = await client.get(
-            "/web/settings", cookies={"access_token": access_token}
+            "/web/settings", cookies={"__Host-access_token": access_token}
         )
 
     for response in (login_response, register_response, settings_response):

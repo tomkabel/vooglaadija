@@ -46,10 +46,10 @@ close_health_redis_client = close_redis_client
 reset_health_redis_client = reset_redis_client
 
 
-def update_worker_state(**kwargs):
+def update_worker_state(**kwargs: object) -> None:
     """Update worker state for health reporting (thread-safe)."""
     with _state_lock:
-        _worker_state.update(kwargs)
+        _worker_state.update(kwargs)  # type: ignore[arg-type]  # ponytail: values are runtime-validated; typed dict if states grow
         _worker_state["last_heartbeat"] = datetime.now(UTC).isoformat()
 
 
@@ -218,12 +218,17 @@ async def metrics() -> Response:
 
 
 def start_health_server(port: int | None = None) -> uvicorn.Server | None:
-    """Start the health check FastAPI server in a background thread.
+    """
+    Start the health check server in a daemon background thread.
 
-    Port is read from WORKER_HEALTH_PORT env var (default: 8082).
-    Set WORKER_HEALTH_PORT=0 to disable.
+    The port defaults to `WORKER_HEALTH_PORT` or 8082, and the host defaults to
+    `WORKER_HEALTH_HOST` or `0.0.0.0`. A port of 0 disables the server.
 
-    Returns the uvicorn server instance for truthiness/lifecycle compatibility.
+    Parameters:
+        port (int | None): Port to bind, or `None` to use `WORKER_HEALTH_PORT`.
+
+    Returns:
+        uvicorn.Server | None: The running server instance, or `None` when disabled.
     """
     global _health_server, _health_server_thread, _worker_loop
     if _health_server is not None:
@@ -232,6 +237,8 @@ def start_health_server(port: int | None = None) -> uvicorn.Server | None:
     env_port = os.environ.get("WORKER_HEALTH_PORT", "8082")
     if port is None:
         port = int(env_port)
+
+    health_host = os.environ.get("WORKER_HEALTH_HOST", "0.0.0.0")
 
     if port == 0:
         logger.info("worker_health_http_disabled")
@@ -244,7 +251,7 @@ def start_health_server(port: int | None = None) -> uvicorn.Server | None:
 
     config = uvicorn.Config(
         health_app,
-        host="0.0.0.0",
+        host=health_host,
         port=port,
         log_level=os.environ.get("LOG_LEVEL", "info").lower(),
         access_log=False,
@@ -256,7 +263,7 @@ def start_health_server(port: int | None = None) -> uvicorn.Server | None:
     return _health_server
 
 
-def stop_health_server():
+def stop_health_server() -> None:
     """Stop the health check HTTP server."""
     global _health_server, _health_server_thread, _worker_loop
     if _health_server:

@@ -73,11 +73,22 @@ async def get_current_user_from_cookie(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)] = None,
 ) -> User:
+    """
+    Retrieve the authenticated user from bearer credentials or an access-token cookie.
+
+    Parameters:
+        db (DbSession): Database session used to load the user.
+        request (Request): Request containing the access-token cookie when bearer credentials are unavailable.
+        credentials (HTTPAuthorizationCredentials | None): Optional bearer credentials.
+
+    Returns:
+        User: The authenticated user.
+    """
     token = None
     if credentials is not None:
         token = credentials.credentials
     else:
-        token = request.cookies.get("access_token")
+        token = request.cookies.get("__Host-access_token")
     return await _resolve_user_from_token(db, token, expected_type=ACCESS_TOKEN_TYPE)
 
 

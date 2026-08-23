@@ -37,6 +37,7 @@ class PubSubService:
 
         Returns:
             Redis client instance.
+
         """
         return get_redis_client()
 
@@ -51,6 +52,7 @@ class PubSubService:
 
         Returns:
             Channel name in format 'job_status:{user_id}'.
+
         """
         return f"{CHANNEL_PREFIX}:{user_id}"
 
@@ -62,18 +64,20 @@ class PubSubService:
 
         Returns:
             Channel name in format 'job_progress:{user_id}'.
+
         """
         return f"{PROGRESS_CHANNEL_PREFIX}:{user_id}"
 
     async def publish_job_status(self, user_id: uuid.UUID, job_data: dict) -> int:
-        """Publish a job status update to a user's channel.
+        """
+        Publish a job status update to the user's status channel.
 
-        Args:
-            user_id: The user's UUID to publish to.
-            job_data: Dictionary containing job information (job_id, status, url, etc.)
+        Parameters:
+            user_id (uuid.UUID): The user whose channel receives the update.
+            job_data (dict): Job status data to publish.
 
         Returns:
-            Number of subscribers that received the message.
+            int: The number of subscribers that received the update.
         """
         client = await self.get_client()
         channel = self.get_channel_for_user(user_id)
@@ -99,6 +103,7 @@ class PubSubService:
 
         Returns:
             Number of subscribers that received the message.
+
         """
         client = await self.get_client()
         channel = self.get_progress_channel_for_user(user_id)
@@ -148,15 +153,18 @@ class PubSubService:
         log_name: str,
         yield_raw: bool = False,
     ) -> AsyncGenerator[dict, None]:
-        """Shared listener loop for any pub/sub channel.
+        """
+        Listen for messages on a Redis Pub/Sub channel and decode their JSON payloads.
 
         Args:
-            channel: The Redis pub/sub channel to subscribe to.
-            log_name: Short label used in log messages (e.g. "status", "progress").
-            yield_raw: If True, yield a fallback dict when the payload is not a dict.
+            channel: The Redis Pub/Sub channel to subscribe to.
+            log_name: Label used to identify the subscription in logs.
+            yield_raw: Whether to yield non-dictionary JSON payloads in a fallback dictionary.
 
         Yields:
-            Parsed JSON dict from each pub/sub message.
+            Decoded dictionary payloads, or fallback dictionaries for non-dictionary
+            payloads when `yield_raw` is `True`. Invalid JSON and skipped payloads
+            produce no yielded value.
         """
         client = await self.get_client()
         if not await self._check_pool_health():
@@ -213,7 +221,10 @@ class PubSubService:
                 await pubsub.unsubscribe(channel)
             except Exception as e:
                 logger.exception(
-                    "pubsub_unsubscribe_failed", channel=channel, name=log_name, error=str(e)
+                    "pubsub_unsubscribe_failed",
+                    channel=channel,
+                    name=log_name,
+                    error=str(e),
                 )
             await pubsub.close()
             logger.debug("pubsub_subscription_ended", channel=channel, name=log_name)
@@ -233,6 +244,7 @@ class PubSubService:
 
         Returns:
             True if Redis is reachable, False otherwise.
+
         """
         try:
             client = await self.get_client()
@@ -251,6 +263,7 @@ def get_pubsub_service() -> PubSubService:
 
     Returns:
         The global PubSubService instance.
+
     """
     global _pubsub_service
     if _pubsub_service is None:

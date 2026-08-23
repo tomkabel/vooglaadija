@@ -46,6 +46,7 @@ EXPECTED_HEAD_INDEXES = {
         "ix_outbox_job_id",
         "ix_outbox_status",
         "ix_outbox_status_created_at",
+        "uq_outbox_pending_job_id",
     },
 }
 
@@ -108,12 +109,25 @@ def test_download_job_metadata_keeps_only_single_column_model_index() -> None:
 
 
 def test_outbox_metadata_matches_database_indexes() -> None:
-    """Outbox metadata should represent its single-column and composite indexes."""
-    outbox_indexes = _index_names("outbox")
+    """Outbox metadata should represent its single-column, composite, and partial unique indexes."""
+    outbox_table = Base.metadata.tables["outbox"]
+    outbox_indexes = {index.name for index in outbox_table.indexes}
 
     assert "ix_outbox_job_id" in outbox_indexes
     assert "ix_outbox_status" in outbox_indexes
     assert "ix_outbox_status_created_at" in outbox_indexes
+    assert "uq_outbox_pending_job_id" in outbox_indexes
+
+    # The name alone does not prove the contract: it must be a *unique partial*
+    # index that only covers pending rows, for every supported dialect.
+    pending_idx = next(i for i in outbox_table.indexes if i.name == "uq_outbox_pending_job_id")
+    assert pending_idx.unique is True
+    engine = create_engine("sqlite://")
+    for dialect in ("sqlite", "postgresql"):
+        where_clause = pending_idx.dialect_options.get(dialect, {}).get("where")
+        assert where_clause is not None, f"missing {dialect} partial-index predicate"
+        rendered = str(where_clause.compile(engine, compile_kwargs={"literal_binds": True})).lower()
+        assert "status" in rendered and "pending" in rendered
 
 
 def test_story_5_1_composites_are_documented_as_migration_only() -> None:

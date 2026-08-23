@@ -1,6 +1,7 @@
 """Authentication endpoints (REST API)."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -22,7 +23,6 @@ from app.schemas.token import Token, TokenRefresh
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import verify_password
 from app.services.user_service import DuplicateEmailError, UserService
-from core.config import settings
 from core.models.user import User, not_deleted
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -40,7 +40,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
             {"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "email": "user@example.com"},
         ),
         409: error_response_doc(
-            "Email already registered", ErrorCode.RESOURCE_CONFLICT, "Email already registered"
+            "Email already registered",
+            ErrorCode.RESOURCE_CONFLICT,
+            "Email already registered",
         ),
         422: error_response_doc(
             "Validation error",
@@ -127,6 +129,18 @@ async def login(
     user_data: UserCreate,
     db: DbSession,
 ) -> Token:
+    """
+    Authenticate a user and issue access and refresh tokens.
+
+    Parameters:
+        user_data (UserCreate): User email and password used for authentication.
+
+    Returns:
+        Token: The access token, refresh token, and bearer token type.
+
+    Raises:
+        HTTPException: If the credentials are invalid or the user account is inactive.
+    """
     result = await db.execute(select(User).where(User.email == user_data.email, not_deleted()))
     user = result.scalar_one_or_none()
 
@@ -144,15 +158,15 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    access_token = create_access_token(user.id, token_version=user.token_version)
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
-    set_token_cookies(response, access_token, refresh_token, secure=settings.cookie_secure)
+    set_token_cookies(response, access_token, refresh_token)
 
     return Token(
         access_token=access_token,
         refresh_token=refresh_token,
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106
     )
 
 
@@ -201,9 +215,21 @@ async def refresh(
 ) -> Token:
     # Accept refresh token from body or from HttpOnly cookie
     # This allows JS-free refresh via credentials: 'include' sending the cookie
+    """
+    Issue replacement access and refresh tokens using a valid refresh token supplied in the request body or cookie.
+
+    Parameters:
+        token_refresh (TokenRefresh | None): Optional request-body refresh token; the refresh-token cookie is used when omitted.
+
+    Returns:
+        Token: Newly issued access and refresh tokens.
+
+    Raises:
+        HTTPException: If the refresh token is missing, invalid, expired, revoked, malformed, or belongs to an inactive or nonexistent user.
+    """
     refresh_token_str = token_refresh.refresh_token if token_refresh else None
     if not refresh_token_str:
-        refresh_token_str = request.cookies.get("refresh_token")
+        refresh_token_str = request.cookies.get("__Host-refresh_token")
 
     if not refresh_token_str:
         raise HTTPException(
@@ -256,16 +282,24 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, email=user.email, token_version=user.token_version)
+    access_token = create_access_token(user.id, token_version=user.token_version)
     new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
+    # Blacklist the consumed refresh token's jti to prevent reuse
+    from app.services.token_blacklist import blacklist_token
+
+    old_jti = payload.get("jti")
+    if old_jti:
+        remaining = max(int(payload.get("exp", 0)) - int(datetime.now(UTC).timestamp()), 60)
+        await blacklist_token(old_jti, ttl_seconds=remaining)
+
     # Set JWT tokens as HttpOnly cookies for HTMX/browser auth
-    set_token_cookies(response, access_token, new_refresh_token, secure=settings.cookie_secure)
+    set_token_cookies(response, access_token, new_refresh_token)
 
     return Token(
         access_token=access_token,
         refresh_token=new_refresh_token,
-        token_type="bearer",
+        token_type="bearer",  # noqa: S106
     )
 
 
@@ -280,7 +314,9 @@ async def refresh(
             {"id": "f47ac10b-58cc-4372-a567-0e02b2c3d479", "email": "user@example.com"},
         ),
         401: error_response_doc(
-            "Unauthorized", ErrorCode.UNAUTHORIZED, "Could not validate credentials"
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
         ),
     },
 )
@@ -290,10 +326,14 @@ async def me(current_user: CurrentUser) -> UserResponse:
 
 async def _blacklist_token_cookie(
     token_str: str | None,
-    verify_fn,
-    blacklist_fn,
+    verify_fn: Any,
+    blacklist_fn: Any,
 ) -> None:
-    """Extract jti from a token cookie and blacklist it if valid."""
+    """
+    Blacklist the token identified by a valid cookie value.
+
+    The token's remaining lifetime determines the blacklist duration, with a minimum of 60 seconds.
+    """
     if not token_str:
         return
     payload = verify_fn(token_str)
@@ -307,7 +347,7 @@ async def _blacklist_token_cookie(
 
 
 @router.post("/logout")
-async def logout(request: Request):
+async def logout(request: Request) -> RedirectResponse:
     """Clear auth cookies and redirect to login.
 
     Logout is a POST action to prevent CSRF from logout links.
@@ -317,12 +357,12 @@ async def logout(request: Request):
     from app.services.token_blacklist import blacklist_token
 
     await _blacklist_token_cookie(
-        request.cookies.get("access_token"),
+        request.cookies.get("__Host-access_token"),
         verify_token,
         blacklist_token,
     )
     await _blacklist_token_cookie(
-        request.cookies.get("refresh_token"),
+        request.cookies.get("__Host-refresh_token"),
         verify_token,
         blacklist_token,
     )

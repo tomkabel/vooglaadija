@@ -1,6 +1,6 @@
 """Token schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Token(BaseModel):
@@ -10,4 +10,6 @@ class Token(BaseModel):
 
 
 class TokenRefresh(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     refresh_token: str
