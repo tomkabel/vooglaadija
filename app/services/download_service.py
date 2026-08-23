@@ -435,8 +435,6 @@ class DownloadService:
         """
         cleanup_started = False
         try:
-            await enqueue_job(job_id)
-            cleanup_started = True
             from sqlalchemy import select as sqlalchemy_select
             from sqlalchemy import update as sqlalchemy_update
 
@@ -451,6 +449,9 @@ class DownloadService:
                 )
             )
             outbox_id = outbox_result.scalar_one_or_none()
+
+            await enqueue_job(job_id)
+            cleanup_started = True
             if outbox_id is not None:
                 await self.db.execute(
                     sqlalchemy_update(Outbox)
@@ -474,7 +475,7 @@ class DownloadService:
             FailedJob: The matching failed job.
 
         Raises:
-            InvalidIDError: If the identifier has an invalid format.
+            InvalidDownloadIdError: If the identifier has an invalid format.
             FailedJobNotFoundError: If no matching failed job exists for the authenticated user.
         """
         failed_uuid = self._parse_uuid(failed_job_id, message="Invalid failed job ID format")
