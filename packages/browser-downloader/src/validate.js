@@ -11,7 +11,7 @@
 
 import { lookup as defaultLookup } from 'node:dns/promises';
 import { realpath as defaultRealpath } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 
 export const VIDEO_EXTS = ['mp4', 'webm', 'ts', 'm4v', 'm4s'];
 
@@ -211,13 +211,14 @@ export async function validateOutputDir(dir, { base, realpath = defaultRealpath 
   // base. This keeps the request-controlled string away from the filesystem
   // sink (CodeQL js/path-injection) and is a genuine defence-in-depth layer:
   // the post-realpath check below alone would still stat/resolve arbitrary
-  // attacker paths before rejecting them. The guard is inlined (rather than
-  // hidden in the isUnder helper) so CodeQL sees the containment check as a
-  // barrier guarding the realpath sink below.
-  const candidate = resolve(dir);
-  if (!(candidate === resolvedBase || candidate.startsWith(`${resolvedBase}${sep}`))) {
+  // attacker paths before rejecting them. The guard tests the base-relative
+  // form with positive polarity, which CodeQL's RelativePathStartsWithSanitizer
+  // recognises as a barrier before the realpath sink.
+  const rel = relative(resolvedBase, resolve(dir));
+  if (rel.startsWith('..')) {
     throw new Error(`output_dir must be under ${resolvedBase}`);
   }
+  const candidate = join(resolvedBase, rel);
   let resolved;
   try {
     // codeql[js/path-injection]
