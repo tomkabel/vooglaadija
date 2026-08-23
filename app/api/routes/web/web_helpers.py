@@ -91,9 +91,11 @@ def _validated_csrf_token(token: str | None) -> str | None:
     The token format is a UUID4 hex string (32 hex chars). Rather than echoing
     the caller-supplied string back after a regex check, the value is
     re-derived from the parsed integer. The result is byte-identical for every
-    accepted input but is a string this function constructed, so a
-    request-controlled value can never reach `Set-Cookie` verbatim (CodeQL
-    py/cookie-injection) even if the pattern is ever loosened by mistake.
+    accepted input but is a string this function constructed, so no
+    request-controlled bytes can reach `Set-Cookie` verbatim. The residual
+    taint path (valid token echoed from the request cookie) is covered by an
+    inline CodeQL suppression at the `set_cookie` call in
+    `set_csrf_token_cookie`.
     """
     candidate = str(token or "")
     if not _CSRF_TOKEN_PATTERN.fullmatch(candidate):
@@ -131,6 +133,12 @@ def set_csrf_token_cookie(response: Response, token: str) -> str:
     safe_token = _validated_csrf_token(token) or _new_csrf_token()
     response.set_cookie(
         key="csrf_token",
+        # codeql[py/cookie-injection] — safe by construction: `safe_token` is
+        # either a fresh uuid4 hex value or a request token re-derived through
+        # `_validated_csrf_token`, which requires an exact 32-hex-char match
+        # and rebuilds the value from the parsed integer (see its docstring).
+        # The client already holds this exact token in its own cookie, so no
+        # attacker-controlled bytes can be introduced into Set-Cookie.
         value=quote(safe_token, safe=""),
         httponly=True,
         secure=settings.cookie_secure,
@@ -145,6 +153,27 @@ def rotate_csrf_token(response: Response) -> str:
     new_token = _new_csrf_token()
     set_csrf_token_cookie(response, new_token)
     return new_token
+
+
+def render_csrf_page(
+    request: Request,
+    template_name: str,
+    **extra_context: object,
+) -> HTMLResponse:
+    """Render a page with a CSRF form token and a matching cookie.
+
+    A valid token from the request cookie is reused (stable across page
+    views); otherwise a fresh server-generated token is minted. The rendered
+    token always matches the cookie written to the response.
+    """
+    token = get_csrf_token(request)
+    response = templates.TemplateResponse(
+        request,
+        template_name,
+        get_template_context(request, csrf_token=token, **extra_context),
+    )
+    set_csrf_token_cookie(response, token)
+    return response
 
 
 def get_template_context(
