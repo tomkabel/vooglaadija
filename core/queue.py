@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from core.logging_config import get_logger
-from core.redis_client import close_redis_client, get_redis_client
+from core.redis_client import get_redis_client
 
 if TYPE_CHECKING:
     import redis.asyncio as aioredis
@@ -44,7 +44,15 @@ class _LazyRedisClient:
     async def close(self) -> None:
         """Close the cached Redis client and clear the local client reference."""
         if self._client is not None:
-            await close_redis_client()
+            client = self._client
+            await client.close()
+            # Clear the global reference only when it still points to the
+            # instance this proxy captured — a newer client may have replaced
+            # it, and closing that one would be wrong.
+            from core.redis_client import _redis_state
+
+            if _redis_state.get("client") is client:
+                _redis_state["client"] = None
             self._client = None
 
     def __getattr__(self, name: str) -> Any:
