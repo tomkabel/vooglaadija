@@ -282,16 +282,24 @@ async def refresh(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(user.id, token_version=user.token_version)
-    new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
-
-    # Blacklist the consumed refresh token's jti to prevent reuse
-    from app.services.token_blacklist import blacklist_token
+    # Atomically reserve the consumed refresh token's jti BEFORE minting new
+    # tokens: only one parallel request can reserve a jti, so a replayed or
+    # concurrently-used refresh token is rejected here instead of racing the
+    # blacklist write that used to happen after issuance.
+    from app.services.token_blacklist import reserve_token_jti
 
     old_jti = payload.get("jti")
     if old_jti:
         remaining = max(int(payload.get("exp", 0)) - int(datetime.now(UTC).timestamp()), 60)
-        await blacklist_token(old_jti, ttl_seconds=remaining)
+        if not await reserve_token_jti(old_jti, ttl_seconds=remaining):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has already been used",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    access_token = create_access_token(user.id, token_version=user.token_version)
+    new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
     # Set JWT tokens as HttpOnly cookies for HTMX/browser auth
     set_token_cookies(response, access_token, new_refresh_token)

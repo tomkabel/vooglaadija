@@ -111,7 +111,11 @@ def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _not_blacklisted(_token_jti: str) -> bool:
         return False
 
+    async def _reserve_ok(_token_jti: str, ttl_seconds: int = 0) -> bool:
+        return True
+
     monkeypatch.setattr("app.api.dependencies.is_token_blacklisted", _not_blacklisted)
+    monkeypatch.setattr("app.services.token_blacklist.reserve_token_jti", _reserve_ok)
 
 
 @pytest.fixture
