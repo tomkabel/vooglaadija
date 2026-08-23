@@ -113,8 +113,9 @@ npm-debug.log*
 node_modules/
 # PR-review temp artifacts
 .prtmp/
-# Only ignore root package-lock.json, not frontend/package-lock.json
+# Stale npm-era lockfiles — the repo installs with pnpm only (root + frontend)
 /package-lock.json
+/frontend/package-lock.json
 
 # =============================================
 # Test/Coverage artifacts
