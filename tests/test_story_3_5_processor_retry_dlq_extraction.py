@@ -102,7 +102,7 @@ def test_retry_evaluate_uses_retry_after_for_rate_limited_errors() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_schedule_retry_updates_db_outbox_and_redis(db_session) -> None:
-    """Retry scheduling updates the job, writes outbox, queues Redis, and deletes synced outbox."""
+    """Retry scheduling updates the job, writes outbox, queues Redis, and retains the synced outbox row as processed."""
     from worker.retry_scheduler import evaluate, schedule_retry
 
     job_id = uuid4()
