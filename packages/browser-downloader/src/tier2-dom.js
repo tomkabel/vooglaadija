@@ -138,6 +138,7 @@ function sleep(ms) {
 export async function detectBlob(page, opts = {}) {
   const timeout = opts.timeout ?? 30_000;
   const bodyCap = opts.bodyCap ?? DEFAULT_BODY_CAP;
+  const signal = opts.signal;
 
   // Live-patch createObjectURL + EME on the already-loaded page. The cap is
   // passed into the page context so HOOK_SRC is the single source of truth.
@@ -175,6 +176,11 @@ export async function detectBlob(page, opts = {}) {
 
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
+    // Exit promptly on cancellation instead of polling a closed page for the
+    // rest of the timeout (page.evaluate errors are swallowed below).
+    if (signal?.aborted) {
+      throw new DownloaderError('timeout', 'aborted during blob detection');
+    }
     let blobUrl = null;
     try {
       blobUrl = await page.evaluate(() => {
