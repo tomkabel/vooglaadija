@@ -96,11 +96,13 @@ Create `packages/browser-downloader/`:
 3. Register interceptors for:
    - `Content-Type: video/*` responses
    - URLs matching `*.m3u8` (HLS playlist), `*.mpd` (DASH manifest), `*.mp4`, `*.webm`, `*.ts`
-4. On match: download the response body via `Network.getResponseBody`, write to output dir
-5. For HLS: download all `.ts` segment URLs from the `.m3u8` manifest, then `ffmpeg concat`
-6. For DASH: parse the `.mpd` manifest (XML), download video+audio segments, `ffmpeg` mux
-7. For direct MP4/WebM: single download, no post-processing
-8. Audio: capture audio streams directly via network interception (same as video)
+4. On match: enforce per-kind size caps BEFORE materializing the body (manifest 8 MiB, key 64 KiB, segment/media 256 MiB) — reject candidates whose `Content-Length` or CDP `encodedDataLength` already exceeds the cap, so oversized responses never enter `Network.getResponseBody`
+5. Fetch the response body via `Network.getResponseBody` only for responses within the cap (CDP buffers the whole body in the browser's memory — a post-read size check remains as a backstop for compressed responses)
+6. For HLS: download all `.ts` segment URLs from the `.m3u8` manifest, then `ffmpeg concat`
+7. For DASH: parse the `.mpd` manifest (XML), download video+audio segments, `ffmpeg` mux
+8. For direct MP4/WebM: single download, no post-processing
+9. Audio: capture audio streams directly via network interception (same as video)
+10. Oversized media beyond the cap: do NOT buffer through CDP — stream the validated URL directly to disk in a controlled manner (bounded concurrency, per-segment caps, abortable), or fail with a clear `network_error` when the URL cannot be streamed directly
 
 ### 0.3 Implement DOM-based blob detection (Tier 2 — for TikTok/Instagram)
 
