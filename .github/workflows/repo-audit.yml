@@ -127,7 +127,9 @@ jobs:
         uses: pnpm/action-setup@008330803749db0355799c700092d9a85fd074e9
         with:
           version: 10.33.2
-          run_install:
+          # run_install is a STRING input (YAML block scalar); a native mapping
+          # fails schema validation ("Expected a scalar got mapping").
+          run_install: |
             args: [--frozen-lockfile]
 
       - name: Add node_modules/.bin to PATH (jscpd)
@@ -155,7 +157,7 @@ jobs:
       - name: Update repo-audit issue
         # Keep advisory: never fail the workflow on a reporting error.
         continue-on-error: true
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c379cacfc
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           script: |
             const fs = require('fs');
