@@ -20,7 +20,7 @@ FlowPick automatically detects video content on webpages by monitoring browser n
 
 FlowPick's video detection is based on the Chrome extension's `webRequest` API, intercepting requests at the browser network layer:
 
-1. **Network Interception**: Extension listens to all network requests via `webRequest.onBeforeRequest`, identifying video and streaming resources based on response `Content-Type` headers
+1. **Network Interception**: Extension listens to all network requests via `webRequest.onResponseStarted`, identifying video and streaming resources from the response headers (the response `Content-Type` and related resource detection happen when headers are available, not at request time)
 2. **Manifest Parsing**: For HLS (`.m3u8`) and DASH (`.mpd`), automatically downloads and parses manifest files to extract available stream information
 3. **Quality Analysis**: Parses all available resolution and bitrate options from Master Playlist
 4. **Encryption Detection**: Checks for presence of `EXT-X-KEY` (HLS) or `ContentProtection` (DASH) tags to determine if decryption is needed
@@ -255,24 +255,12 @@ If above methods don't resolve issue, please check [Common Issues Troubleshootin
 ## Related Documentation
 
 - [Usage Guide](https://flowpick.net/docs/getting-started/usage) — Operation guide for video detection and download
-- [Audio Capture](https://flowpick.net/docs/features/audio-capture) — Detection and download of audio files
+- [Audio Capture](https://flowpick.net/docs/features/audio-capture) — Complete technical documentation for FlowPick audio detection and download, covering audio formats, podcast detection, metadata extraction, batch download, and troubleshooting.
 - [Image Download](https://flowpick.net/docs/features/image-download) — Detection and batch download of image resources
 - [Format Conversion](https://flowpick.net/docs/features/format-conversion) — Detailed technical explanation of TS/MP4 remuxing
 - [Download Engine Architecture](https://flowpick.net/docs/advanced/download-engine) — Fragment download, concurrency control, retry mechanism
 - [Online Tools](https://flowpick.net/docs/advanced/online-tools) — Feature comparison between extension and online tools
-- [Configuration Reference](https://flowpick.net/docs/getting-started/configuration) — Concurrent threads, output format and other settings
+- [Configuration Reference](https://flowpick.net/docs/getting-started/configuration) — Complete configuration options for FlowPick, including download settings, filtering rules, save strategies, advanced parameters, and scenario-based configurations.
 - [Common Issues Troubleshooting](https://flowpick.net/docs/troubleshooting/common-issues) — Diagnostic methods for download issues
 - [Known Limitations](https://flowpick.net/docs/troubleshooting/known-issues) — DRM protection, Manifest V3 and other technical limitations
-- [Privacy & Security](https://flowpick.net/docs/features/privacy-security) — Network monitoring and privacy protection notes[Configuration Reference](https://flowpick.net/docs/getting-started/configuration)
-
-[
-
-Complete configuration options for FlowPick, including download settings, filtering rules, save strategies, advanced parameters, and scenario-based configurations.
-
-](https://flowpick.net/docs/getting-started/configuration)[
-
-Audio Capture
-
-Complete technical documentation for FlowPick audio detection and download, covering audio formats, podcast detection, metadata extraction, batch download, and troubleshooting.
-
-](https://flowpick.net/docs/features/audio-capture)
+- [Privacy & Security](https://flowpick.net/docs/features/privacy-security) — Network monitoring and privacy protection notes
