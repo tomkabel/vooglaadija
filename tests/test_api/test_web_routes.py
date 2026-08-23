@@ -477,13 +477,21 @@ class TestLoginForm:
     """Tests for POST /web/login."""
 
     @pytest.mark.asyncio
-    async def test_login_success_sets_cookies(self):
+    async def test_login_success_sets_cookies(self, monkeypatch):
         """Test successful login via non-HTMX form sets auth cookies."""
+        from core.config import settings
+
         email = f"logintest_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
 
+        # __Host-* cookies are only valid with Secure; the raw Set-Cookie
+        # headers must carry it (the test-suite default omits it so httpx's
+        # cookie jar keeps working over plain http). Over https the jar also
+        # retains the Secure cookies, so the name checks below still pass.
+        monkeypatch.setattr(settings, "cookie_secure", True)
+
         async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+            transport=ASGITransport(app=app), base_url="https://test", follow_redirects=False
         ) as client:
             await do_register(client, email, password)
             csrf_token = await do_login(client, email, password)
@@ -497,6 +505,15 @@ class TestLoginForm:
         assert login_response.status_code == 303
         assert "__Host-access_token" in login_response.cookies
         assert "__Host-refresh_token" in login_response.cookies
+        # Validate the raw Set-Cookie attributes: Secure, Path=/, no Domain —
+        # the properties that make a cookie a valid __Host- cookie.
+        raw_cookies = login_response.headers.get_list("set-cookie")
+        for name in ("__Host-access_token", "__Host-refresh_token"):
+            raw = next((h for h in raw_cookies if h.startswith(f"{name}=")), None)
+            assert raw is not None, f"missing Set-Cookie header for {name}"
+            assert "Secure" in raw
+            assert "Path=/" in raw
+            assert "Domain=" not in raw
 
     @pytest.mark.asyncio
     async def test_login_invalid_csrf(self):
