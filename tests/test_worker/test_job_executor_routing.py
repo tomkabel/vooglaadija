@@ -9,7 +9,7 @@ The I/O matrix in spec-gh-140-p2-worker-integration.md:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -126,7 +126,7 @@ class TestExecuteRoutesToBrowserExecutor:
             # calls re-select. We return a fake result with rowcount=1.
             update_result = AsyncMock()
             update_result.rowcount = 1
-            update_result.scalar_one_or_none = AsyncMock(return_value=job)
+            update_result.scalar_one_or_none = MagicMock(return_value=job)
             db.execute.return_value = update_result
 
             await execute(db, job, start_time=0.0)
@@ -169,7 +169,7 @@ class TestExecuteRoutesToBrowserExecutor:
             db = AsyncMock()
             update_result = AsyncMock()
             update_result.rowcount = 1
-            update_result.scalar_one_or_none = AsyncMock(return_value=job)
+            update_result.scalar_one_or_none = MagicMock(return_value=job)
             db.execute = AsyncMock(return_value=update_result)
             db.commit = AsyncMock()
 
@@ -213,7 +213,7 @@ class TestExecuteRoutesToBrowserExecutor:
             db = AsyncMock()
             update_result = AsyncMock()
             update_result.rowcount = 1
-            update_result.scalar_one_or_none = AsyncMock(return_value=job)
+            update_result.scalar_one_or_none = MagicMock(return_value=job)
             db.execute = AsyncMock(return_value=update_result)
             db.commit = AsyncMock()
 
