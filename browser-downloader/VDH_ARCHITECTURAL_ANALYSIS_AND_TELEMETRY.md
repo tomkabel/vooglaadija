@@ -1389,7 +1389,11 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
     return;
   }
 
-  if (bus.__telemetry_logger_installed) {
+  // The bus object is frozen (`Object.freeze(bus)` in Module A), so
+  // installation state is tracked in a WeakSet instead of a property on it.
+  const installedLoggers = new WeakSet();
+
+  if (installedLoggers.has(bus)) {
     console.info("[Telemetry:F] Logger already installed — skipping");
     return;
   }
@@ -1750,12 +1754,8 @@ Command: ffmpeg -analyzeduration 1M -f dash -i jsfetch:{URL} \
     ""
   );
 
-  // Mark logger as installed on the bus object
-  Object.defineProperty(bus, "__telemetry_logger_installed", {
-    value: true,
-    writable: false,
-    configurable: false,
-    enumerable: false,
-  });
+  // Mark the logger as installed — tracked in a WeakSet because the bus is
+  // frozen and cannot accept new properties.
+  installedLoggers.add(bus);
 })();
 ```
