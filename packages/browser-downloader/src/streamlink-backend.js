@@ -96,8 +96,17 @@ function classifyResource(url) {
 export function parseHlsKeyTag(line) {
   const method = /METHOD=([^,\s]+)/.exec(line)?.[1]?.trim().toUpperCase();
   if (method !== 'AES-128') return null;
+  // Non-identity KEYFORMAT means DRM, not plain AES-128 — reject rather than
+  // decrypt as AES-128 and write corrupt output. The unquoted form here
+  // bypasses the manifest-level HLS_DRM_KEYFORMAT_RE gate.
+  const keyformat = /KEYFORMAT="?([^",\s]+)/.exec(line)?.[1];
+  if (keyformat && keyformat.toUpperCase() !== 'IDENTITY') {
+    throw new DownloaderError('drm_detected', 'non-identity KEYFORMAT in #EXT-X-KEY');
+  }
   const uri = /URI="([^"]+)"/.exec(line)?.[1];
-  if (!uri) return null;
+  // A METHOD=AES-128 tag without a URI would silently leave segments
+  // cleartext — reject instead of producing corrupt output.
+  if (!uri) throw new DownloaderError('drm_detected', 'AES-128 #EXT-X-KEY missing URI');
   const ivMatch = /IV=0x([0-9a-fA-F]{32})/.exec(line);
   return { uri, ivHex: ivMatch ? ivMatch[1] : null };
 }
@@ -161,7 +170,18 @@ async function fetchHlsKey(keyTag, playlistUrl, opts) {
     bodyCap: maxBodyBytes('key'),
     authHeaders: opts.authHeaders,
   });
-  return Buffer.from(await res.arrayBuffer());
+  const keyBuf = Buffer.from(await res.arrayBuffer());
+  // Post-fetch guard: fetchResOne only caps via Content-Length, which a
+  // chunked/no-CL response bypasses — the attacker-influenced key URI could
+  // otherwise exhaust worker memory before the cap is checked.
+  const keyCap = maxBodyBytes('key');
+  if (keyBuf.length > keyCap) {
+    throw new DownloaderError(
+      'network_error',
+      `AES-128 key exceeds size cap (${keyBuf.length} > ${keyCap})`,
+    );
+  }
+  return keyBuf;
 }
 
 // -- Progress helper --------------------------------------------------------
@@ -585,24 +605,25 @@ async function pickVariantUrl(manifestText, baseUrl, { lookup } = {}) {
     if (!lines[i].startsWith('#EXT-X-STREAM-INF')) continue;
     const bwMatch = /BANDWIDTH=(\d+)/.exec(lines[i]);
     const bandwidth = bwMatch ? Number.parseInt(bwMatch[1], 10) : 0;
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const line = lines[j];
-      if (!line || line.startsWith('#')) continue;
-      let href;
-      try {
-        href = new URL(line, baseUrl).href;
-      } catch {
-        continue;
-      }
-      try {
-        await validateUrl(href, { lookup });
-      } catch {
-        continue;
-      }
-      if (!best || bandwidth > best.bandwidth) {
-        best = { url: href, bandwidth };
-      }
-      break;
+    // Per the HLS spec the variant URI must be the immediate next line.
+    // Scanning further would risk binding the FOLLOWING variant's URI to
+    // this bandwidth on a malformed playlist, so only line i+1 is checked
+    // and a variant with no valid URI of its own is skipped entirely.
+    const uriLine = lines[i + 1];
+    if (!uriLine || uriLine.startsWith('#')) continue;
+    let href;
+    try {
+      href = new URL(uriLine, baseUrl).href;
+    } catch {
+      continue;
+    }
+    try {
+      await validateUrl(href, { lookup });
+    } catch {
+      continue;
+    }
+    if (!best || bandwidth > best.bandwidth) {
+      best = { url: href, bandwidth };
     }
   }
   return best ? best.url : null;

@@ -432,3 +432,44 @@ class TestOutboxCrashRecoveryScenarios:
 
             synced2 = await sync_outbox_to_queue(batch_size=10)
             assert synced2 == 0
+
+    @pytest.mark.unit
+    async def test_staleness_metric_handles_naive_sqlite_datetime(
+        self, db_session, job_id, user_id
+    ):
+        """SQLite returns naive `created_at` despite DateTime(timezone=True).
+
+        `_update_staleness_metrics` must normalize before subtracting, or the
+        TypeError is swallowed and OUTBOX_OLDEST_PENDING_SECONDS stays stale.
+        """
+        from core.metrics import OUTBOX_OLDEST_PENDING_SECONDS
+
+        job = DownloadJob(
+            id=job_id,
+            user_id=user_id,
+            url="https://www.youtube.com/watch?v=tz_test",
+            status="pending",
+        )
+        db_session.add(job)
+
+        outbox_entry = Outbox(
+            id=uuid4(),
+            job_id=job_id,
+            event_type="enqueue_download",
+            payload=None,
+            status="pending",
+            # Simulate what SQLite returns on read: naive, no tzinfo.
+            created_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+        db_session.add(outbox_entry)
+        await db_session.commit()
+
+        from worker.outbox_relay import _update_staleness_metrics
+
+        # Sentinel: if the naive datetime raises and the except path swallows
+        # it, the gauge keeps this value and the assertion below fails.
+        OUTBOX_OLDEST_PENDING_SECONDS.set(-1)
+        await _update_staleness_metrics(db_session)
+
+        value = OUTBOX_OLDEST_PENDING_SECONDS._value.get()
+        assert value is not None and value >= 0
