@@ -19,7 +19,36 @@ from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-_redis_state: dict[str, object] = {"client": None}
+_redis_state: dict[str, object] = {"client": None, "pubsub_client": None}
+
+
+def get_pubsub_redis_client() -> aioredis.Redis:
+    """Get a Redis client dedicated to pub/sub subscriptions.
+
+    Long-lived subscriptions call ``pubsub.listen()`` and block reading from a
+    connection for unbounded time. The shared client is configured with
+    ``socket_timeout=5`` so that short command round-trips fail fast on a dead
+    connection — but that same timeout also kills a healthy idle subscription
+    every 5 seconds, raising ``Timeout reading from redis`` and forcing the SSE
+    layer into reconnect/fallback. Pub/sub therefore gets its own client with
+    no socket timeout: an idle subscription is a normal state, not a stall.
+    ``None`` (NOT ``0``) means "no timeout" — redis-py treats ``socket_timeout=0``
+    as an *immediate* timeout, which made every connect/publish/subscribe fail
+    with ``TimeoutError: Timeout reading from redis``.
+    """
+    if _redis_state["pubsub_client"] is not None:
+        return cast("aioredis.Redis", _redis_state["pubsub_client"])
+
+    from core.config import settings
+
+    _redis_state["pubsub_client"] = aioredis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=None,
+        retry_on_timeout=False,
+    )
+    return cast("aioredis.Redis", _redis_state["pubsub_client"])
 
 # Chaos Engineering Redis key constants — single source of truth
 CHAOS_CIRCUIT_BREAKER_KEY = "chaos:circuit_breaker_override"
@@ -70,61 +99,67 @@ def get_redis_client() -> aioredis.Redis:
 
 
 def reset_redis_client() -> None:
-    """Reset the singleton (for testing only).
+    """Reset the singletons (for testing only).
 
-    Closes any live client first so its connection pool is not leaked across
-    repeated test/setup cycles, then clears the cached reference.
+    Closes any live clients first so their connection pools are not leaked across
+    repeated test/setup cycles, then clears the cached references.
     """
     client = _redis_state["client"]
     _redis_state["client"] = None
-    if client is None:
-        return
+    pubsub_client = _redis_state["pubsub_client"]
+    _redis_state["pubsub_client"] = None
+    for live in (client, pubsub_client):
+        if live is None:
+            continue
 
-    close = getattr(client, "close", None)
-    if not callable(close):
-        return
+        close = getattr(live, "close", None)
+        if not callable(close):
+            continue
 
-    async def _close() -> None:
-        try:
-            await close()
-        except Exception:
-            logger.warning("redis_reset_close_failed", exc_info=True)
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        # No current event loop (e.g. called from a non-main thread): run the
-        # close on a controlled throwaway loop so the pool is still released
-        # instead of silently leaking it.
-        try:
-            new_loop = asyncio.new_event_loop()
+        async def _close() -> None:
             try:
-                new_loop.run_until_complete(_close())
-            finally:
-                new_loop.close()
-        except Exception:
-            logger.warning("redis_reset_close_failed", exc_info=True)
-        return
-    if loop.is_running():
-        task = loop.create_task(_close())
-        # Retain a reference so the task is not garbage-collected before it runs.
-        _pending_closes.add(task)
-        task.add_done_callback(_pending_closes.discard)
-    else:
+                await close()
+            except Exception:
+                logger.warning("redis_reset_close_failed", exc_info=True)
+
         try:
-            loop.run_until_complete(_close())
+            loop = asyncio.get_event_loop()
         except RuntimeError:
-            pass
+            # No current event loop (e.g. called from a non-main thread): run the
+            # close on a controlled throwaway loop so the pool is still released
+            # instead of silently leaking it.
+            try:
+                new_loop = asyncio.new_event_loop()
+                try:
+                    new_loop.run_until_complete(_close())
+                finally:
+                    new_loop.close()
+            except Exception:
+                logger.warning("redis_reset_close_failed", exc_info=True)
+            return
+        if loop.is_running():
+            task = loop.create_task(_close())
+            # Retain a reference so the task is not garbage-collected before it runs.
+            _pending_closes.add(task)
+            task.add_done_callback(_pending_closes.discard)
+        else:
+            try:
+                loop.run_until_complete(_close())
+            except RuntimeError:
+                pass
 
 
 _pending_closes: set[object] = set()
 
 
 async def close_redis_client() -> None:
-    """Close the shared Redis client connection pool."""
+    """Close both shared Redis client connection pools."""
     if _redis_state["client"] is not None:
         await cast("aioredis.Redis", _redis_state["client"]).close()
         _redis_state["client"] = None
+    if _redis_state["pubsub_client"] is not None:
+        await cast("aioredis.Redis", _redis_state["pubsub_client"]).close()
+        _redis_state["pubsub_client"] = None
 
 
 async def check_worker_health() -> bool:

@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from core.logging_config import get_logger
-from core.redis_client import get_redis_client
+from core.redis_client import get_pubsub_redis_client
 
 logger = get_logger(__name__)
 
@@ -33,13 +33,16 @@ class PubSubService:
     """
 
     async def get_client(self) -> Any:
-        """Get the shared Redis client.
+        """Get the Redis client dedicated to pub/sub.
+
+        A dedicated, timeout-free client is used so that idle subscriptions are
+        not killed by the shared client's short socket timeout.
 
         Returns:
             Redis client instance.
 
         """
-        return get_redis_client()
+        return get_pubsub_redis_client()
 
     async def close(self) -> None:
         """Clear PubSubService wrapper state without closing the shared client."""
