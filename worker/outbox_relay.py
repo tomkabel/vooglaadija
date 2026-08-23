@@ -58,6 +58,11 @@ async def _update_staleness_metrics(db: AsyncSession) -> None:
         oldest_dt = await db.scalar(
             select(func.min(Outbox.created_at)).where(Outbox.status == _PENDING_STATUS)
         )
+        # SQLite ignores DateTime(timezone=True) and returns naive datetimes;
+        # treat them as UTC per the app convention so the subtraction never
+        # raises TypeError (which would leave the gauge stale).
+        if oldest_dt is not None and oldest_dt.tzinfo is None:
+            oldest_dt = oldest_dt.replace(tzinfo=UTC)
         age_seconds = (
             (datetime.now(UTC) - oldest_dt).total_seconds() if oldest_dt is not None else 0.0
         )

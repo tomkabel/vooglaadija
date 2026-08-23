@@ -134,7 +134,7 @@ describe('downloader — orchestration', () => {
     expect(result).toMatchObject({
       status: 'failed',
       error: 'drm_detected',
-      tier_used: null,
+      tier_used: 1,
     });
     expect(mocks.detectBlob).not.toHaveBeenCalled();
     expect(mocks.browserClose).toHaveBeenCalledTimes(1);
@@ -293,16 +293,19 @@ describe('downloader — cancellation (opts.signal)', () => {
 
   it('closes the browser as soon as the signal aborts mid-download', async () => {
     const ac = new AbortController();
+    let closedDuringFlight = false;
     // Abort while Tier 1 is still in flight; the browser must be torn down at
     // that moment, not only when download() finally returns.
     mocks.interceptMedia.mockImplementation(async () => {
       ac.abort();
       await new Promise((r) => setTimeout(r, 10));
-      expect(mocks.browserClose).toHaveBeenCalled();
+      // Assert AFTER the call: an assertion thrown inside the mock would be
+      // swallowed by download()'s catch and the test would pass regardless.
+      closedDuringFlight = mocks.browserClose.mock.calls.length > 0;
       return { kind: 'bytes', buffer: Buffer.from('x'), ext: 'mp4' };
     });
     await download('https://example.com/v', base, { signal: ac.signal });
-    expect(mocks.browserClose).toHaveBeenCalled();
+    expect(closedDuringFlight).toBe(true);
   });
 
   it('forwards the signal to the tier functions and to downloadStream', async () => {

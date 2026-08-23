@@ -57,8 +57,13 @@ export function createApp() {
   });
 
   app.get('/metrics', async (_req, res) => {
-    res.set('content-type', registry.contentType);
-    res.send(await registry.metrics());
+    try {
+      res.set('content-type', registry.contentType);
+      res.send(await registry.metrics());
+    } catch (err) {
+      console.error('[metrics] registry error:', err);
+      res.status(500).json({ status: 'failed', error: 'metrics_error' });
+    }
   });
 
   app.post('/download', async (req, res) => {
@@ -174,6 +179,9 @@ export function createApp() {
     } catch (err) {
       console.error('[download] unexpected error:', err);
       const code = safeClassify(err);
+      // Unexpected errors (timeout race, genuine bugs) have no tier
+      // attribution — `download()` returns failed results with `tier_used`
+      // set, which the normal path records above.
       recordDownload('failed', null, code, startMs);
       if (wantsNdjson) {
         writeEvent({ status: 'failed', error: code, tier_used: null });

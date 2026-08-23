@@ -487,6 +487,22 @@ describe('streamlink backend — AES-128 key handling (phase 3)', () => {
     expect(parseHlsKeyTag('#EXT-X-KEY:URI="https://k/key"')).toBeNull();
   });
 
+  it('parseHlsKeyTag rejects malformed AES-128 tags instead of degrading to cleartext', () => {
+    // METHOD=AES-128 without a URI would silently write segments as cleartext.
+    expect(() => parseHlsKeyTag('#EXT-X-KEY:METHOD=AES-128')).toThrow(
+      /AES-128 #EXT-X-KEY missing URI/,
+    );
+    // Unquoted non-identity KEYFORMAT bypasses the manifest-level DRM gate;
+    // it must be rejected, not decrypted as plain AES-128.
+    expect(() =>
+      parseHlsKeyTag('#EXT-X-KEY:METHOD=AES-128,URI="https://k/key",KEYFORMAT=com.widevine.alpha'),
+    ).toThrow(/non-identity KEYFORMAT/);
+    // Quoted identity KEYFORMAT still parses.
+    expect(
+      parseHlsKeyTag('#EXT-X-KEY:METHOD=AES-128,URI="https://k/key",KEYFORMAT="identity"'),
+    ).toEqual({ uri: 'https://k/key', ivHex: null });
+  });
+
   it('decryptHlsSegment round-trips with an explicit IV and the media-sequence default', () => {
     const key = Buffer.alloc(16, 0x22);
     const plain = Buffer.from('round trip works!'); // 16 bytes
@@ -546,5 +562,30 @@ describe('streamlink backend — AES-128 key handling (phase 3)', () => {
         lookup: publicLookup,
       }),
     ).rejects.toThrow(/invalid length 8/);
+  });
+
+  it('rejects an oversized AES-128 key body (chunked/no Content-Length)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url).includes('key.bin')) {
+          // No content-length header: fetchResOne's header cap is skipped, so
+          // the post-fetch byte guard must reject the oversized key.
+          return okRes({ arrayBuffer: new ArrayBuffer(70 * 1024) }); // > 64 KiB cap
+        }
+        if (String(url).endsWith('.m3u8')) {
+          return okRes({
+            text: '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://k.example/key.bin"\n#EXT-X-ENDLIST\nseg0.ts\n',
+          });
+        }
+        return okRes({ arrayBuffer: new ArrayBuffer(16) });
+      }),
+    );
+    await expect(
+      downloadManifestFallback('https://x/m.m3u8', '/tmp/out.mp4', {
+        timeout: 5000,
+        lookup: publicLookup,
+      }),
+    ).rejects.toThrow(/key exceeds size cap/);
   });
 });

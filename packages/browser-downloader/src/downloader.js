@@ -172,13 +172,16 @@ export async function download(rawUrl, rawOutputDir, opts = {}) {
     if (outPath) {
       await rm(outPath, { force: true }).catch(() => {});
     }
-    if (err instanceof DownloaderError) {
-      return { status: 'failed', error: err.code, tier_used: null };
-    }
     // classifyError rethrows genuine code bugs (TypeError/ReferenceError/...)
     // so the server logs the real stack instead of masking it.
+    // `tierUsed` is attached so the server can attribute the failure to the
+    // tier that was active when it occurred (defaults to the first tier when
+    // the error happened before any tier completed).
+    if (err instanceof DownloaderError) {
+      return { status: 'failed', error: err.code, tier_used: tierUsed };
+    }
     const code = classifyError(err);
-    return { status: 'failed', error: code, tier_used: null };
+    return { status: 'failed', error: code, tier_used: tierUsed };
   } finally {
     if (signal && onAbort) {
       signal.removeEventListener('abort', onAbort);
