@@ -450,6 +450,27 @@
     @apply text-xs text-gray-400;
   }
 
+  .progress-percent {
+    @apply text-xs text-gray-400 tabular-nums;
+  }
+
+  /* Indeterminate state shown while a job is processing but no granular
+     percentage is yet available (e.g. before the first yt-dlp progress tick). */
+  .progress-bar--indeterminate {
+    width: 40% !important;
+    transition: none;
+    animation: progress-indeterminate 1.4s ease-in-out infinite;
+  }
+
+  @keyframes progress-indeterminate {
+    0% {
+      margin-left: -40%;
+    }
+    100% {
+      margin-left: 100%;
+    }
+  }
+
   /* === Toast Component === */
   .toast-container {
     @apply fixed bottom-4 right-4 z-[9999] flex flex-col gap-2;
