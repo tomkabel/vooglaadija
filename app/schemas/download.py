@@ -49,6 +49,18 @@ class DownloadListResponse(BaseModel):
     pagination: PaginationInfo
 
 
+class BulkDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted: list[UUID]
+    skipped: list[UUID]
+    requested: int
+
+
 class FailedJobResponse(BaseModel):
     model_config = {"from_attributes": True}
 

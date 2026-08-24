@@ -1,11 +1,15 @@
 """Download job CRUD endpoints with DLQ replay capabilities."""
 
+import uuid
+
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import CurrentUser, DbSession
 from app.api.rate_limit_config import limiter
 from app.schemas.download import (
+    BulkDeleteRequest,
+    BulkDeleteResponse,
     DownloadCreate,
     DownloadListResponse,
     DownloadResponse,
@@ -331,6 +335,73 @@ async def delete_download(
         await DownloadService(db, current_user.id).delete(job_id)
     except Exception as exc:
         raise _map_download_service_error(exc) from exc
+
+
+@router.post(
+    "/bulk-delete",
+    response_model=BulkDeleteResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk delete download jobs",
+    description=(
+        "Delete multiple download jobs belonging to the authenticated user in a single "
+        "request. Jobs that are missing, not owned by the user, or in a status that is not "
+        "completed, failed, or cancelled are skipped instead of failing the whole batch."
+    ),
+    responses={
+        200: success_response_doc(
+            "Download jobs deleted",
+            {
+                "deleted": ["550e8400-e29b-41d4-a716-446655440000"],
+                "skipped": [],
+                "requested": 1,
+            },
+        ),
+        401: error_response_doc(
+            "Unauthorized",
+            ErrorCode.UNAUTHORIZED,
+            "Could not validate credentials",
+        ),
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/ErrorResponse"},
+                    "example": build_error_example(
+                        ErrorCode.VALIDATION_ERROR,
+                        "Request validation failed",
+                        details={
+                            "validation_errors": [
+                                {
+                                    "field": "job_ids",
+                                    "message": "List should have at least 1 item",
+                                    "type": "too_short",
+                                },
+                            ],
+                        },
+                    ),
+                },
+            },
+        },
+    },
+)
+@limiter.limit("20/minute")
+async def bulk_delete_downloads(
+    request: Request,
+    data: BulkDeleteRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> BulkDeleteResponse:
+    """Delete multiple download jobs for the authenticated user in one batch."""
+    result = await DownloadService(db, current_user.id).bulk_delete(
+        [str(job_id) for job_id in data.job_ids],
+        allowed_statuses={"completed", "failed", "cancelled"},
+        fail_on_file_delete=False,
+    )
+    return BulkDeleteResponse(
+        deleted=[uuid.UUID(id_) for id_ in result.deleted_ids],
+        skipped=[uuid.UUID(id_) for id_ in result.skipped_ids],
+        requested=result.requested,
+    )
 
 
 @router.get(

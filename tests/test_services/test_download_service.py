@@ -338,6 +338,38 @@ async def test_delete_supports_rest_and_web_file_policies(db_session, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_bulk_delete_removes_deletable_and_skips_blocked(db_session):
+    """Bulk delete removes completed jobs and skips in-progress/unknown ids."""
+    from app.services.download_service import DownloadService
+
+    user = await _user(db_session)
+    done = _job(user.id, status="completed")
+    failed = _job(user.id, status="failed")
+    in_progress = _job(user.id, status="processing")
+    db_session.add_all([done, failed, in_progress])
+    await db_session.commit()
+
+    unknown_id = str(uuid.uuid4())
+    service = DownloadService(db_session, user.id)
+    result = await service.bulk_delete(
+        [str(done.id), str(failed.id), str(in_progress.id), unknown_id],
+        allowed_statuses={"completed", "failed", "cancelled"},
+        fail_on_file_delete=False,
+    )
+
+    assert set(result.deleted_ids) == {str(done.id), str(failed.id)}
+    assert str(in_progress.id) in result.skipped_ids
+    assert unknown_id in result.skipped_ids
+    assert result.requested == 4
+
+    remaining = await db_session.execute(select(DownloadJob).where(DownloadJob.user_id == user.id))
+    remaining_ids = {str(job.id) for job in remaining.scalars().all()}
+    assert str(done.id) not in remaining_ids
+    assert str(failed.id) not in remaining_ids
+    assert str(in_progress.id) in remaining_ids
+
+
+@pytest.mark.asyncio
 async def test_single_dlq_replay_handles_original_and_orphan_rows(db_session):
     """Single DLQ replay resets originals and creates jobs for orphan rows."""
     from app.services.download_service import DownloadService

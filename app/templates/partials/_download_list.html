@@ -25,6 +25,36 @@
   aria-atomic="true"
 ></div>
 
+{% if jobs %}
+<div class="bulk-toolbar flex flex-wrap items-center gap-3 mb-4" data-bulk-toolbar>
+  <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none">
+    <input
+      type="checkbox"
+      data-select-all
+      class="form-checkbox h-4 w-4 rounded border-white/20 bg-white/5 text-amber-500 focus:ring-amber-500/40"
+      aria-label="Select all downloads"
+    />
+    <span>Select all</span>
+  </label>
+  <span class="text-sm text-gray-400" data-bulk-count aria-live="polite">0 selected</span>
+  <button
+    type="button"
+    class="btn-danger text-xs inline-flex items-center gap-1.5"
+    data-bulk-delete
+    hx-post="/web/downloads/bulk-delete"
+    hx-include="[data-bulk-checkbox]:checked, [data-csrf-token]"
+    hx-swap="none"
+    hx-confirm="Delete the selected downloads? This action cannot be undone."
+    disabled
+    aria-label="Delete selected downloads"
+  >
+    <svg class="h-4 w-4" aria-hidden="true"><use href="/static/icons/sprite.svg#icon-trash" /></svg>
+    Delete selected
+  </button>
+  <input type="hidden" data-csrf-token name="csrf_token" value="{{ csrf_token }}" />
+</div>
+{% endif %}
+
 <div
   id="download-rows"
   role="feed"
