@@ -74,10 +74,11 @@
 
 Use the v2 plugin syntax (`docker compose`, not `docker-compose`).
 
-**Production** is deployed through Coolify (see
-[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)): `./deploy/bootstrap.sh` provisions Docker +
-Coolify, assigns the domain, issues the wildcard TLS certificate (Cloudflare DNS-01, auto-renewed by
-Caddy) and deploys `docker-compose.yml` — the single source of truth for the stack.
+**Production** is deployed as a standalone Caddy stack (see
+[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)): `./deploy/bootstrap.sh` provisions Docker,
+generates secrets into `./.env`, sets up the Caddy reverse proxy (TLS origin cert) and deploys
+`docker-compose.yml` + `docker-compose.local.yml` + `docker-compose.caddy.yml` — the single source
+of truth for the stack. No Coolify.
 
 **Local development / standalone:**
 
@@ -119,7 +120,8 @@ no host plugin required. Application logs are one JSON object per line in produc
 | `grafana`        | `grafana/grafana:11.3.0` (profile `monitoring`)   | `127.0.0.1:3000`  | Dashboards               |
 | `backup`         | `postgres:15-alpine` (profile `backup`)           | —                 | Daily `pg_dump`          |
 
-In production, Coolify's Caddy proxy (ports 80/443) is the only public entry point; the local
+In production, the standalone Caddy reverse proxy (ports 80/443, see
+`docker-compose.caddy.yml`) is the only public entry point; the local
 override binds debug ports to loopback.
 
 ---

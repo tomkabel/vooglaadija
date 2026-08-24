@@ -17,7 +17,12 @@ services:
       # Local dev runs over plain HTTP, so cookies must not require HTTPS.
       COOKIE_SECURE: 'False'
     ports:
-      - '127.0.0.1:8000:8000'
+      # Public ingress is handled by Caddy, which reverse-proxies to
+      # `api:8000` over the internal compose network (see Caddyfile).
+      # Do NOT bind host :8000 here — the API is only reachable through Caddy
+      # (docker-compose.caddy.yml) on 80/443 in production. Expose the API
+      # loopback debug port on 18000 instead.
+      - '127.0.0.1:18000:8000'
 
   worker:
     image: vooglaadija-worker:local

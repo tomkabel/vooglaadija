@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
 # ============================================
-# Vooglaadija — Plug-n-Play VPS Bootstrap
+# Vooglaadija — Plug-n-Play VPS Bootstrap (standalone, no Coolify)
 # ============================================
 # Provisions ANY VPS (Ubuntu/Debian or any systemd Linux with Docker support):
 #   1. Installs Docker Engine + Compose plugin (if missing)
-#   2. Installs Coolify (self-hosted PaaS) (if missing)
-#   3. Switches Coolify's proxy to Caddy with Cloudflare DNS-01 so a wildcard
-#      TLS certificate (*.your-domain.com) is issued and auto-renewed
-#   4. Creates the Vooglaadija application from the public GitHub repo
-#      (Docker Compose build pack, auto-deploy on push to main)
-#   5. Injects generated secrets as environment variables
-#   6. Assigns the domain and triggers the first deployment
-#   7. Verifies https://<domain>/health
+#   2. Verifies/creates the Cloudflare DNS records pointing at this server
+#   3. Generates a local .env with random secrets (preserved on re-runs so the
+#      already-initialized PostgreSQL/Redis volumes stay in sync)
+#   4. Generates the Caddyfile + a self-signed origin certificate for the domain
+#   5. Brings up the full stack with the standalone Caddy reverse proxy
+#      (docker-compose.yml + docker-compose.local.yml + docker-compose.caddy.yml)
+#   6. Verifies https://<domain>/health
+#
+# Caddy is the ONLY public entry point (ports 80/443) and reverse-proxies to
+# the api service. Cloudflare's orange-cloud proxy forwards visitor traffic to
+# this origin, so this is a zero-Coolify, zero-PaaS deployment.
 #
 # It asks only two things:
 #   - DEPLOY_DOMAIN          (e.g. app.example.com)
-#   - CLOUDFLARE_API_TOKEN   (scoped token with Zone:DNS:Edit for the zone)
+#   - CLOUDFLARE_API_TOKEN   (scoped token with Zone:DNS:Edit for the zone; can
+#                            be skipped with SKIP_DNS=1 if DNS is managed manually)
 #
 # Usage:
 #   sudo ./deploy/bootstrap.sh                          # interactive
 #   sudo DEPLOY_DOMAIN=app.example.com \
 #        CLOUDFLARE_API_TOKEN=xxxx \
-#        CLOUDFLARE_EMAIL=you@example.com \
 #        ./deploy/bootstrap.sh --non-interactive
 #
 # Optional overrides:
-#   GIT_REPOSITORY    public repo URL (default: this project's GitHub repo)
+#   GIT_REPOSITORY    repo URL to clone when the script is run outside a checkout
 #   GIT_BRANCH        branch to track (default: main)
-#   COOLIFY_API_TOKEN reuse an existing Coolify API token (skips auto-creation)
-#   COOLIFY_UI_URL    Coolify dashboard URL (default: http://<server-ip>:8000)
+#   SKIP_DNS=1        skip the Cloudflare DNS phase (records already exist)
 # ============================================
 
 set -euo pipefail
@@ -37,18 +39,19 @@ set -euo pipefail
 REPO_URL="${GIT_REPOSITORY:-https://github.com/tomkabel/vooglaadija.git}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 APP_NAME="vooglaadija"
-ENVIRONMENT_NAME="production"
-COOLIFY_PROXY_DIR="/data/coolify/proxy/caddy"
-PROXY_COMPOSE="$COOLIFY_PROXY_DIR/docker-compose.yml"
 NON_INTERACTIVE=false
 FORCE=false
+SKIP_DNS="${SKIP_DNS:-false}"
+
+# Repo root = parent of the deploy/ directory this script lives in.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEPLOY_TARGET="/opt/vooglaadija"
 
 # ── Pinned installer checksums (CWE-494 hardening) ────────
-# Regenerate when the official installers change:
+# Regenerate when the official installer changes:
 #   curl -fsSL https://get.docker.com | sha256sum
-#   curl -fsSL https://cdn.coollabs.io/coolify/install.sh | sha256sum
 DOCKER_INSTALL_SHA256="e57f086075dd69dc7057c61d67a029acfbff649f6e394ac96e2123819516cd28"
-COOLIFY_INSTALL_SHA256="8ef02dce49339208f5abc247bff0277c73d04538d7a36dcfd21331e314e0f2cd"
 
 # ── Colors ────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -72,7 +75,7 @@ for arg in "$@"; do
     --non-interactive) NON_INTERACTIVE=true ;;
     --force) FORCE=true ;;
     --help|-h)
-      sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) die "Unknown option: $arg" ;;
@@ -159,7 +162,7 @@ preflight() {
 
 # ── Phase 1: Gather inputs ────────────────────────────────
 gather_inputs() {
-  log_step "Phase 1: Domain and Cloudflare credentials"
+  log_step "Phase 1: Domain (and optional Cloudflare token)"
 
   if [[ -z "${DEPLOY_DOMAIN:-}" ]]; then
     if $NON_INTERACTIVE; then die "DEPLOY_DOMAIN is required in --non-interactive mode."; fi
@@ -169,15 +172,19 @@ gather_inputs() {
   [[ "$DEPLOY_DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "Invalid domain: $DEPLOY_DOMAIN"
   log_info "Domain: $DEPLOY_DOMAIN"
 
-  if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-    if $NON_INTERACTIVE; then die "CLOUDFLARE_API_TOKEN is required in --non-interactive mode."; fi
-    read -r -s -p "Cloudflare API token (Zone.DNS:Edit for $DEPLOY_DOMAIN): " CLOUDFLARE_API_TOKEN
-    echo ""
-  fi
-  [[ -n "$CLOUDFLARE_API_TOKEN" ]] || die "Cloudflare API token must not be empty."
-
-  if [[ -z "${CLOUDFLARE_EMAIL:-}" ]] && ! $NON_INTERACTIVE; then
-    read -r -p "Optional: admin/ACME email for Coolify and certificate expiry notices: " CLOUDFLARE_EMAIL
+  # The Cloudflare token is only needed for automatic DNS provisioning.
+  # SKIP_DNS=1 or an interactive 'no' allows a fully manual DNS setup.
+  if ! $SKIP_DNS; then
+    if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+      if $NON_INTERACTIVE; then
+        log_warn "CLOUDFLARE_API_TOKEN not set — skipping automatic DNS provisioning (set SKIP_DNS=1 to silence)."
+        SKIP_DNS=true
+      else
+        read -r -s -p "Cloudflare API token (Zone.DNS:Edit for $DEPLOY_DOMAIN; empty to skip DNS): " CLOUDFLARE_API_TOKEN
+        echo ""
+        [[ -n "$CLOUDFLARE_API_TOKEN" ]] || { log_warn "No token — skipping automatic DNS provisioning."; SKIP_DNS=true; }
+      fi
+    fi
   fi
 }
 
@@ -191,6 +198,7 @@ cloudflare_api() { # method path [data]
 }
 
 dns_setup() {
+  $SKIP_DNS && { log_info "Skipping DNS provisioning (SKIP_DNS). Ensure A records for $DEPLOY_DOMAIN and *.$DEPLOY_DOMAIN point to $PUBLIC_IP."; return 0; }
   log_step "Phase 2: DNS verification (Cloudflare)"
 
   # Resolve the Cloudflare zone for DEPLOY_DOMAIN. The domain is often a
@@ -220,7 +228,6 @@ except Exception:
 
   if [[ -z "$zone_id" ]]; then
     log_warn "No Cloudflare zone found for '$DEPLOY_DOMAIN' (or the token lacks Zone:Read)."
-    log_warn "The DNS-01 challenge requires the zone to be managed by Cloudflare."
     log_warn "Add the domain to Cloudflare (dash.cloudflare.com → Add a site), set your A records, then re-run."
     confirm "Continue anyway?" || exit 1
     return 0
@@ -291,461 +298,213 @@ install_docker() {
   log_info "Compose plugin: $(docker compose version 2>/dev/null | tr -d '\n')"
 }
 
-# ── Phase 4: Install Coolify ──────────────────────────────
-install_coolify() {
-  log_step "Phase 4: Coolify installation"
-  if docker inspect coolify >/dev/null 2>&1; then
-    log_info "Coolify already installed"
-  else
-    local installer="$SCRATCH_DIR/coolify-install.sh"
-    log_info "Downloading the official Coolify installer (CDN)..."
-    curl -fsSL --max-time 120 -o "$installer" https://cdn.coollabs.io/coolify/install.sh
-    echo "$COOLIFY_INSTALL_SHA256  $installer" | sha256sum -c - \
-      || die "Coolify installer checksum mismatch. Update COOLIFY_INSTALL_SHA256 in deploy/bootstrap.sh after reviewing the script."
-    log_info "Checksum verified — installing Coolify (this takes a few minutes)..."
-    # Pre-provision the admin account so the first-run browser step is skipped.
-    if [[ -n "${CLOUDFLARE_EMAIL:-}" ]]; then
-      COOLIFY_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)
-      export ROOT_USERNAME="admin"
-      export ROOT_USER_EMAIL="$CLOUDFLARE_EMAIL"
-      export ROOT_USER_PASSWORD="$COOLIFY_ADMIN_PASSWORD"
-      log_info "Coolify admin will be created automatically (see summary for the password)"
+# ── Phase 4: Repository checkout ──────────────────────────
+# Run from a checkout (default) or clone the public repo into /opt/vooglaadija
+# when the script is executed from elsewhere (e.g. a downloaded copy).
+setup_repo() {
+  log_step "Phase 4: Repository checkout"
+
+  if git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    log_info "Using existing checkout: $REPO_DIR"
+    # Keep the deployed branch current when invoked from a git checkout.
+    if [[ -z "${GIT_REPOSITORY:-}" && -n "${GIT_BRANCH:-}" ]] && $FORCE; then
+      git -C "$REPO_DIR" fetch origin "$GIT_BRANCH" >/dev/null 2>&1 && \
+        git -C "$REPO_DIR" reset --hard "origin/$GIT_BRANCH" && \
+        log_info "Updated to origin/$GIT_BRANCH" || log_warn "Could not update checkout (re-run with --force to retry)."
     fi
-    bash "$installer"
+    return 0
   fi
-  wait_coolify_ready
-}
 
-wait_coolify_ready() {
-  log_info "Waiting for Coolify to become healthy..."
-  local i
-  for i in $(seq 1 60); do
-    if docker inspect coolify >/dev/null 2>&1; then
-      local status
-      status=$(docker inspect --format '{{.State.Health.Status}}' coolify 2>/dev/null || echo "starting")
-      if [[ "$status" == "healthy" ]]; then
-        log_info "Coolify is healthy"
-        return 0
-      fi
-    fi
-    [[ $((i % 10)) -eq 0 ]] && log_info "  still starting (${i}/60)..."
-    sleep 5
-  done
-  log_warn "Coolify container is not reporting healthy yet. Check: docker logs coolify"
-  return 0
-}
-
-# ── Phase 5: Caddy proxy + Cloudflare DNS-01 (wildcard TLS) ──
-ensure_root_user_exists() {
-  log_step "Phase 5a: Coolify first-run setup"
-  local users
-  users=$(docker exec coolify php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -n1 || echo "ERR")
-  if [[ "$users" =~ ^[0-9]+$ ]] && [[ "$users" -ge 1 ]]; then
-    log_info "Coolify admin user exists"
+  # Not a git checkout — clone the repo into a stable location.
+  if [[ -d "$DEPLOY_TARGET/.git" ]]; then
+    log_info "Using existing clone: $DEPLOY_TARGET"
+    REPO_DIR="$DEPLOY_TARGET"
     return 0
   fi
   if $NON_INTERACTIVE; then
-    die "Coolify has no admin user yet. Re-run with CLOUDFLARE_EMAIL set (auto-creates the admin), or open ${COOLIFY_UI_URL:-http://$PUBLIC_IP:8000} once in a browser to complete setup."
+    log_info "Cloning $REPO_URL (branch $GIT_BRANCH) into $DEPLOY_TARGET..."
+  else
+    log_info "This script is running outside a git checkout."
+    confirm "Clone $REPO_URL into $DEPLOY_TARGET?" || die "Aborted. Run the script from a checkout of the repository."
   fi
-  log_warn "Coolify is freshly installed and has no admin user yet."
-  prompt _ "Open ${COOLIFY_UI_URL:-http://$PUBLIC_IP:8000} in your browser, complete the first-run setup (create the admin account), then press Enter"
+  mkdir -p "$(dirname "$DEPLOY_TARGET")"
+  git clone --branch "$GIT_BRANCH" --depth 1 "$REPO_URL" "$DEPLOY_TARGET" \
+    || die "Clone failed. Check GIT_REPOSITORY / network access."
+  REPO_DIR="$DEPLOY_TARGET"
+  log_info "Cloned to $DEPLOY_TARGET"
 }
 
-switch_proxy_to_caddy() {
-  log_step "Phase 5b: Switch Coolify proxy to Caddy (Cloudflare DNS-01)"
+# ── Phase 5: Environment (.env) ───────────────────────────
+# Generates a production .env from .env.example with random secrets. On
+# re-runs the existing values are PRESERVED so the already-initialized
+# PostgreSQL volume (which only honors its password at first init) and the
+# Redis instance stay in sync.
+setup_environment() {
+  log_step "Phase 5: Environment variables (.env)"
+  local env_file="$REPO_DIR/.env"
 
-  # Programmatic switch via Laravel tinker; falls back to UI instructions.
-  if ! docker inspect coolify-proxy >/dev/null 2>&1 || $FORCE; then
-    local switch_result
-    switch_result=$(docker exec coolify php artisan tinker --execute="\$s = \App\Models\Server::find(0); if (\$s) { \$s->changeProxy('CADDY', false); echo 'OK'; }" 2>&1 | tail -n1 || true)
-    if [[ "$switch_result" == *OK* ]]; then
-      log_info "Proxy switched to Caddy"
+  if [[ -f "$env_file" ]]; then
+    log_info "Existing .env found — preserving secrets (DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY)."
+    # Ensure the domain is current for CORS / Caddy regardless of re-runs.
+    if grep -q '^DEPLOY_DOMAIN=' "$env_file"; then
+      sed -i "s|^DEPLOY_DOMAIN=.*|DEPLOY_DOMAIN=${DEPLOY_DOMAIN}|" "$env_file"
     else
-      log_warn "Could not switch the proxy programmatically (Coolify internals changed or tinker unavailable)."
-      if ! $NON_INTERACTIVE; then
-        prompt _ "In the Coolify UI (Servers → localhost → Proxy), change the proxy type to 'Caddy', wait for it to start, then press Enter"
-      fi
+      echo "DEPLOY_DOMAIN=${DEPLOY_DOMAIN}" >> "$env_file"
     fi
-  fi
-
-  local i
-  for i in $(seq 1 30); do
-    if docker inspect coolify-proxy >/dev/null 2>&1; then
-      break
+    if grep -q '^CORS_ORIGINS=' "$env_file"; then
+      sed -i "s|^CORS_ORIGINS=.*|CORS_ORIGINS=https://${DEPLOY_DOMAIN}|" "$env_file"
+    else
+      echo "CORS_ORIGINS=https://${DEPLOY_DOMAIN}" >> "$env_file"
     fi
-    [[ $((i % 6)) -eq 0 ]] && log_warn "  waiting for coolify-proxy container (${i}/30)..."
-    sleep 5
-  done
-  docker inspect coolify-proxy >/dev/null 2>&1 || die "coolify-proxy container not found after proxy switch."
-
-  # Overwrite the generated Caddy proxy compose with the DNS-01 build
-  # (official Coolify docs: https://coolify.io/docs/knowledge-base/proxy/caddy/dns-challenge)
-  mkdir -p "$COOLIFY_PROXY_DIR"
-  # Create the file with 0600 BEFORE the Cloudflare token is written (CWE-732).
-  install -m 600 /dev/null "$PROXY_COMPOSE"
-  cat > "$PROXY_COMPOSE" <<EOF
-name: coolify-proxy
-networks:
-  coolify:
-    external: true
-services:
-  caddy:
-    container_name: coolify-proxy
-    image: 'lucaslorentz/caddy-docker-proxy:2.8-alpine'
-    build:
-      dockerfile_inline: |
-        FROM caddy:2.11-builder AS builder
-        RUN xcaddy build --with github.com/lucaslorentz/caddy-docker-proxy/v2@v2.8.0 --with github.com/caddy-dns/cloudflare@v0.4.0
-        FROM caddy:2.11-alpine
-        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
-        CMD ["caddy", "docker-proxy"]
-    restart: unless-stopped
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
-    environment:
-      - CADDY_DOCKER_POLLING_INTERVAL=5s
-      - CADDY_DOCKER_CADDYFILE_PATH=/dynamic/Caddyfile
-      - CF_API_TOKEN=${CLOUDFLARE_API_TOKEN}
-    networks:
-      - coolify
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
-    labels:
-      - coolify.managed=true
-      - coolify.proxy=true
-      - caddy.acme_dns=cloudflare {env.CF_API_TOKEN}
-    volumes:
-      - '/var/run/docker.sock:/var/run/docker.sock:ro'
-      - '/data/coolify/proxy/caddy/dynamic:/dynamic'
-      - '/data/coolify/proxy/caddy/config:/config'
-      - '/data/coolify/proxy/caddy/data:/data'
-EOF
-  log_info "Caddy proxy compose written (Cloudflare DNS-01 enabled, file mode 600)"
-
-  # --build ensures the inline Dockerfile (with the Cloudflare DNS module) is
-  # built even when a stale image of the same name exists.
-  (cd "$COOLIFY_PROXY_DIR" && docker compose up -d --build --force-recreate 2>&1 | tail -n 3 || true)
-
-  local module_ok=false
-  for i in $(seq 1 42); do
-    local status
-    status=$(docker inspect --format '{{.State.Health.Status}}' coolify-proxy 2>/dev/null || echo "starting")
-    if [[ "$status" == "healthy" ]]; then
-      if docker exec coolify-proxy caddy list-modules 2>/dev/null | grep -q 'dns.providers.cloudflare'; then
-        log_info "Caddy proxy is healthy with the Cloudflare DNS-01 module"
-        module_ok=true
-        break
-      fi
-      log_warn "Caddy is healthy but missing the Cloudflare DNS module — rebuilding the image..."
-      (cd "$COOLIFY_PROXY_DIR" && docker compose build 2>&1 | tail -n 2 || true)
-      (cd "$COOLIFY_PROXY_DIR" && docker compose up -d --force-recreate 2>&1 | tail -n 2 || true)
-    fi
-    [[ $((i % 6)) -eq 0 ]] && log_info "  waiting for Caddy proxy build/start (${i}/42)..."
-    sleep 5
-  done
-
-  if ! $module_ok; then
-    log_error "Caddy proxy did not become healthy with the Cloudflare DNS module."
-    log_error "Check: docker logs coolify-proxy"
-    die "Wildcard TLS cannot be provisioned without the Cloudflare DNS-01 module. Fix the proxy and re-run."
-  fi
-}
-
-# ── Phase 6: Coolify API token ────────────────────────────
-ensure_api_token() {
-  log_step "Phase 6: Coolify API token"
-  if [[ -n "${COOLIFY_API_TOKEN:-}" ]]; then
-    log_info "Using provided COOLIFY_API_TOKEN"
     return 0
   fi
 
-  local token
-  token=$(docker exec coolify php artisan tinker --execute="
-    \App\Models\InstanceSettings::first()->update(['is_api_enabled' => true]);
-    \$user = \App\Models\User::first();
-    if (!\$user) { echo 'NO_USER'; }
-    else {
-      \$t = \$user->createToken('bootstrap-' . date('Ymd'), ['read', 'write', 'deploy'], now()->addDays(365));
-      echo \$t->plainTextToken;
-    }
-  " 2>/dev/null | grep -oE '[0-9]+\|[A-Za-z0-9]{40,}' | tail -n1 || true)
-
-  if [[ -n "$token" ]]; then
-    COOLIFY_API_TOKEN="$token"
-    log_info "API token created automatically"
-    return 0
-  fi
-
-  if $NON_INTERACTIVE; then
-    die "Could not create a Coolify API token automatically. Set COOLIFY_API_TOKEN and re-run."
-  fi
-  prompt COOLIFY_API_TOKEN "Create an API token in the Coolify UI (Settings → Keys & Tokens → Create API token, permissions: read + write + deploy) and paste it here"
-}
-
-# ── Phase 7: Application creation ─────────────────────────
-# Status-aware Coolify API helper: prints the response body and leaves the
-# HTTP status in COOLIFY_API_HTTP_CODE (e.g. "201").
-coolify_api() { # method path [data]
-  local method="$1" path="$2" data="${3:-}"
-  # Keep the token out of curl's argv (visible via ps): pass the
-  # Authorization header through a 0600 header file instead.
-  local header_file
-  header_file=$(mktemp)
-  chmod 600 "$header_file"
-  printf 'Authorization: Bearer %s\n' "$COOLIFY_API_TOKEN" > "$header_file"
-
-  local args=(-sS --max-time 30 -X "$method" "http://127.0.0.1:8000/api/v1${path}")
-  args+=(-H @"$header_file" -H "Content-Type: application/json")
-  [[ -n "$data" ]] && args+=(-d "$data")
-  local resp
-  resp=$(curl "${args[@]}" -w $'\n%{http_code}' 2>/dev/null || true)
-  rm -f "$header_file"
-  COOLIFY_API_HTTP_CODE=$(printf '%s' "$resp" | tail -n1)
-  [[ "$COOLIFY_API_HTTP_CODE" =~ ^[0-9]+$ ]] || COOLIFY_API_HTTP_CODE="000"
-  printf '%s' "$resp" | sed '$d'
-}
-
-http_ok() { # status -> true/false (2xx)
-  [[ "$1" =~ ^[0-9]+$ ]] || return 1
-  [[ "$1" -ge 200 && "$1" -lt 300 ]]
-}
-
-create_application() {
-  log_step "Phase 7: Application creation in Coolify"
-
-  local server_resp
-  server_resp=$(coolify_api GET "/servers")
-  local server_uuid=""
-  if http_ok "$COOLIFY_API_HTTP_CODE"; then
-    server_uuid=$(printf '%s' "$server_resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    servers = d.get('servers', d.get('data', d.get('result', [])))
-    print(servers[0]['uuid'] if servers else '')
-except Exception:
-    print('')
-")
-  fi
-  [[ -n "$server_uuid" ]] || die "Could not determine the Coolify server UUID (HTTP ${COOLIFY_API_HTTP_CODE}). Check the API token permissions."
-
-  # Project (reuse if it already exists)
-  local project_resp project_uuid=""
-  project_resp=$(coolify_api GET "/projects")
-  if http_ok "$COOLIFY_API_HTTP_CODE"; then
-    project_uuid=$(printf '%s' "$project_resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    projects = d.get('projects', d.get('data', d.get('result', [])))
-    for p in projects:
-        if p.get('name') == '${APP_NAME}':
-            print(p['uuid'])
-            break
-except Exception:
-    print('')
-")
-  fi
-  if [[ -z "$project_uuid" ]]; then
-    project_resp=$(coolify_api POST "/projects" "{\"name\":\"${APP_NAME}\",\"description\":\"Vooglaadija media link processor\"}")
-    if http_ok "$COOLIFY_API_HTTP_CODE"; then
-      project_uuid=$(printf '%s' "$project_resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get('uuid', d.get('project_uuid', '')))
-except Exception:
-    print('')
-")
-    fi
-    if [[ -z "$project_uuid" ]]; then
-      die "Failed to create the Coolify project (HTTP ${COOLIFY_API_HTTP_CODE}): $(printf '%s' "$project_resp" | head -c 300)"
-    fi
-  fi
-  log_info "Project: ${APP_NAME} (${project_uuid})"
-
-  # Environment (Coolify auto-creates 'production'; tolerate conflicts)
-  coolify_api POST "/projects/${project_uuid}/environments" "{\"name\":\"${ENVIRONMENT_NAME}\"}" >/dev/null 2>&1 || true
-
-  # Existing application?
-  local app_uuid=""
-  app_resp=$(coolify_api GET "/applications")
-  if http_ok "$COOLIFY_API_HTTP_CODE"; then
-    app_uuid=$(printf '%s' "$app_resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    apps = d.get('applications', d.get('data', d.get('result', [])))
-    for a in apps:
-        if a.get('git_repository', '').rstrip('/').endswith('${REPO_URL}'.rstrip('/').rsplit('/', 1)[-1]):
-            print(a['uuid'])
-            break
-except Exception:
-    print('')
-")
-  fi
-
-  APP_EXISTED=false
-  if [[ -n "$app_uuid" ]] && ! $FORCE; then
-    APP_EXISTED=true
-    log_info "Application already exists (${app_uuid}) — reusing it."
-  else
-    local payload
-    payload=$(python3 - "$REPO_URL" "$GIT_BRANCH" "$server_uuid" "$project_uuid" "$ENVIRONMENT_NAME" "$DEPLOY_DOMAIN" <<'PY'
-import json, sys
-repo, branch, server, project, env_name, domain = sys.argv[1:7]
-body = {
-    "name": "vooglaadija",
-    "project_uuid": project,
-    "server_uuid": server,
-    "environment_name": env_name,
-    "git_repository": repo,
-    "git_branch": branch,
-    "build_pack": "dockercompose",
-    "ports_exposes": "8000",
-    "docker_compose_location": "docker-compose.yml",
-    "docker_compose_domains": [
-        {"name": "api", "domain": f"https://{domain},https://*.{domain}"}
-    ],
-    "docker_compose_custom_start_command": "up -d --pull always --remove-orphans",
-    "is_auto_deploy_enabled": True,
-    "instant_deploy": False,
-    "health_check_enabled": True,
-    "health_check_path": "/health",
-    "health_check_port": "8000",
-    "health_check_return_code": 200,
-    "is_force_https_enabled": True,
-}
-print(json.dumps(body))
-PY
-)
-    local resp
-    resp=$(coolify_api POST "/applications/public" "$payload")
-    app_uuid=""
-    if http_ok "$COOLIFY_API_HTTP_CODE"; then
-      app_uuid=$(printf '%s' "$resp" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get('uuid', ''))
-except Exception:
-    print('')
-")
-    fi
-    if [[ -z "$app_uuid" ]]; then
-      die "Failed to create the application (HTTP ${COOLIFY_API_HTTP_CODE}): $(printf '%s' "$resp" | head -c 500)"
-    fi
-    log_info "Application created: ${app_uuid}"
-  fi
-  APP_UUID="$app_uuid"
-}
-
-# ── Phase 8: Environment variables ────────────────────────
-set_environment() {
-  log_step "Phase 8: Environment variables (generated secrets)"
+  log_info "Generating .env with random secrets..."
+  [[ -f "$REPO_DIR/.env.example" ]] || die ".env.example not found in $REPO_DIR."
+  cp "$REPO_DIR/.env.example" "$env_file"
 
   local db_password redis_password secret_key grafana_password
-  if [[ "${APP_EXISTED:-false}" == "true" ]]; then
-    # Re-run over an existing deployment: keep the stored credentials so the
-    # already-initialized PostgreSQL volume and Redis instance stay in sync.
-    log_info "Preserving existing deployment secrets (re-run)..."
-    local values
-    values=$(coolify_api GET "/applications/${APP_UUID}/envs" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    envs = d if isinstance(d, list) else d.get('envs', d.get('data', []))
-    vals = {e['key']: e.get('value', '') for e in envs}
-    print('|'.join(vals.get(k, '') for k in
-                   ('DB_PASSWORD', 'REDIS_PASSWORD', 'SECRET_KEY', 'GF_SECURITY_ADMIN_PASSWORD')))
-except Exception:
-    print('||||')
-" || true)
-    db_password=$(printf '%s' "$values" | cut -d'|' -f1)
-    redis_password=$(printf '%s' "$values" | cut -d'|' -f2)
-    secret_key=$(printf '%s' "$values" | cut -d'|' -f3)
-    grafana_password=$(printf '%s' "$values" | cut -d'|' -f4)
-  fi
-  # Generate secrets for fresh deployments (or for any key missing above).
-  [[ -n "${db_password:-}" ]] || db_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
-  [[ -n "${redis_password:-}" ]] || redis_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
-  [[ -n "${secret_key:-}" ]] || secret_key=$(openssl rand -hex 32)
-  [[ -n "${grafana_password:-}" ]] || grafana_password=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)
+  db_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
+  redis_password=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
+  secret_key=$(openssl rand -hex 32)
+  grafana_password=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c 24)
 
-  local payload
-  payload=$(python3 - "$db_password" "$redis_password" "$secret_key" "$grafana_password" "$DEPLOY_DOMAIN" <<'PY'
-import json, sys
-db_pw, redis_pw, secret, gf_pw, domain = sys.argv[1:6]
-envs = {
-    "DB_USER": "postgres",
-    "DB_PASSWORD": db_pw,
-    "DB_NAME": "ytprocessor",
-    "REDIS_PASSWORD": redis_pw,
-    "SECRET_KEY": secret,
-    "SECRET_KEY_PREVIOUS": "",
-    "CORS_ORIGINS": f"https://{domain}",
-    "COOKIE_SECURE": "True",
-    "ENVIRONMENT": "production",
-    "ACCESS_TOKEN_EXPIRE_MINUTES": "15",
-    "REFRESH_TOKEN_EXPIRE_DAYS": "7",
-    "FILE_EXPIRE_HOURS": "24",
-    "FEATURE_METRICS_ENABLED": "true",
-    "FEATURE_TRACING_ENABLED": "true",
-    "IMAGE_TAG": "latest",
-    "GF_SECURITY_ADMIN_USER": "admin",
-    "GF_SECURITY_ADMIN_PASSWORD": gf_pw,
-}
-print(json.dumps({"data": [{"key": k, "value": v} for k, v in envs.items()]}))
-PY
-)
-  local resp
-  resp=$(coolify_api PATCH "/applications/${APP_UUID}/envs/bulk" "$payload")
-  if http_ok "$COOLIFY_API_HTTP_CODE"; then
-    log_info "Environment variables set (HTTP ${COOLIFY_API_HTTP_CODE}): DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY, CORS, Grafana admin, ..."
+  sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${db_password}|" "$env_file"
+  sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${redis_password}|" "$env_file"
+  sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${secret_key}|" "$env_file"
+  sed -i "s|^GF_SECURITY_ADMIN_PASSWORD=.*|GF_SECURITY_ADMIN_PASSWORD=${grafana_password}|" "$env_file"
+
+  # Production settings: HTTPS cookies, domain CORS, prod environment.
+  sed -i "s|^COOKIE_SECURE=.*|COOKIE_SECURE=True|" "$env_file"
+  # CORS_ORIGINS and ENVIRONMENT are commented out in .env.example — uncomment
+  # or append them so production uses the real domain (not the localhost default).
+  if grep -q '^CORS_ORIGINS=' "$env_file"; then
+    sed -i "s|^CORS_ORIGINS=.*|CORS_ORIGINS=https://${DEPLOY_DOMAIN}|" "$env_file"
   else
-    log_warn "Env bulk update failed (HTTP ${COOLIFY_API_HTTP_CODE}): $(printf '%s' "$resp" | head -c 300)"
-    log_warn "Set the missing variables manually in the Coolify UI before the first deployment."
+    echo "CORS_ORIGINS=https://${DEPLOY_DOMAIN}" >> "$env_file"
   fi
+  if grep -q '^ENVIRONMENT=' "$env_file"; then
+    sed -i "s|^ENVIRONMENT=.*|ENVIRONMENT=production|" "$env_file"
+  else
+    echo "ENVIRONMENT=production" >> "$env_file"
+  fi
+  sed -i "s|^DEPLOY_DOMAIN=.*|DEPLOY_DOMAIN=${DEPLOY_DOMAIN}|" "$env_file"
+
+  # Never leave the file world-readable: it holds DB/Redis/JWT secrets.
+  chmod 600 "$env_file"
+  log_info ".env written (mode 600): $env_file"
 }
 
-# ── Phase 9: Deploy + verify ──────────────────────────────
+# ── Phase 6: Caddy reverse proxy ──────────────────────────
+# Generates the Caddyfile for DEPLOY_DOMAIN and a self-signed origin
+# certificate. Caddy presents the cert to Cloudflare (SSL/TLS mode "Full"),
+# so the origin leg is encrypted without needing a public CA. If the domain
+# is ever grey-clouded (direct traffic), switch the tls line to `tls internal`
+# and Caddy will issue a real Let's Encrypt cert automatically.
+setup_caddy() {
+  log_step "Phase 6: Caddy reverse proxy (TLS origin cert)"
+
+  local cert_dir="$REPO_DIR/certs"
+  mkdir -p "$cert_dir"
+  local cert_file="$cert_dir/${DEPLOY_DOMAIN}.crt"
+  local key_file="$cert_dir/${DEPLOY_DOMAIN}.key"
+
+  if [[ -f "$cert_file" && -f "$key_file" ]]; then
+    log_info "Existing certificate found — reusing $cert_file"
+  else
+    log_info "Generating self-signed certificate for $DEPLOY_DOMAIN (1 year)..."
+    openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
+      -keyout "$key_file" -out "$cert_file" \
+      -subj "/CN=${DEPLOY_DOMAIN}" \
+      -addext "subjectAltName=DNS:${DEPLOY_DOMAIN},DNS:*.${DEPLOY_DOMAIN}" \
+      >/dev/null 2>&1 || die "openssl certificate generation failed."
+    chmod 600 "$key_file"
+    log_info "Certificate written: $cert_file"
+  fi
+
+  cat > "$REPO_DIR/Caddyfile" <<EOF
+# Caddy reverse proxy for ${DEPLOY_DOMAIN} (behind Cloudflare proxy)
+#
+# ${DEPLOY_DOMAIN} is on Cloudflare. Caddy serves a TLS cert Cloudflare accepts
+# so the connection from Cloudflare -> this origin is encrypted. Set Cloudflare
+# SSL/TLS mode to "Full" (or "Full (strict)" with a Cloudflare Origin CA cert —
+# this self-signed cert is enough for "Full"). Plain HTTP :80 is also served so
+# "Flexible" mode works too.
+#
+# (If you later drop the Cloudflare proxy / grey-cloud the DNS, change the tls
+#  block to \`tls internal\` and Caddy will auto-issue a real Let's Encrypt cert.)
+
+${DEPLOY_DOMAIN} {
+	encode gzip zstd
+
+	# Present the origin cert to Cloudflare (and direct visitors).
+	tls /etc/caddy/certs/${DEPLOY_DOMAIN}.crt /etc/caddy/certs/${DEPLOY_DOMAIN}.key
+
+	reverse_proxy api:8000
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# Plain HTTP listener: redirect everything to HTTPS (covers Cloudflare Flexible mode
+# and direct IP visitors). Health checks that hit http://:80/health still reach the app.
+:80 {
+	reverse_proxy api:8000
+}
+EOF
+  log_info "Caddyfile written for ${DEPLOY_DOMAIN}"
+}
+
+# ── Phase 7: Deploy + verify ──────────────────────────────
 deploy_and_verify() {
-  log_step "Phase 9: Deploy and verify"
+  log_step "Phase 7: Deploy and verify"
 
-  log_info "Triggering deployment..."
-  local trigger_resp
-  trigger_resp=$(coolify_api POST "/deploy" "{\"uuid\":\"${APP_UUID}\"}")
-  if http_ok "$COOLIFY_API_HTTP_CODE"; then
-    log_info "Deployment triggered (HTTP ${COOLIFY_API_HTTP_CODE})"
-  else
-    log_warn "Primary deploy trigger failed (HTTP ${COOLIFY_API_HTTP_CODE}). Trying the start endpoint..."
-    trigger_resp=$(coolify_api POST "/applications/${APP_UUID}/start" "")
-    if http_ok "$COOLIFY_API_HTTP_CODE"; then
-      log_info "Deployment started via /start (HTTP ${COOLIFY_API_HTTP_CODE})"
-    else
-      log_warn "Deploy trigger failed (HTTP ${COOLIFY_API_HTTP_CODE}): $(printf '%s' "$trigger_resp" | head -c 300)"
-      log_warn "Start the deployment manually from the Coolify UI."
-    fi
+  local compose=(docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml)
+  cd "$REPO_DIR"
+
+  log_info "Starting the stack (this builds the api/worker images on first run; can take several minutes)..."
+  if ! "${compose[@]}" up -d --build 2>&1 | tail -n 5; then
+    log_error "docker compose up failed. Diagnostics:"
+    "${compose[@]}" ps 2>&1 || true
+    "${compose[@]}" logs --tail=50 api 2>&1 || true
+    return 1
   fi
 
-  log_info "Waiting for https://${DEPLOY_DOMAIN}/health (first deployment builds/pulls images and issues the TLS certificate; this can take several minutes)..."
-  local i
-  for i in $(seq 1 60); do
-    local code body
+  # Local health first (decouples verification from Cloudflare/DNS propagation).
+  log_info "Waiting for local health (http://127.0.0.1/health via Caddy)..."
+  local i code
+  for i in $(seq 1 36); do
+    code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1/health 2>/dev/null || echo "000")
+    if [[ "$code" == "200" ]]; then
+      log_info "✓ Local health check passed (HTTP 200)"
+      break
+    fi
+    [[ $((i % 6)) -eq 0 ]] && log_info "  waiting for the stack (${i}/36, HTTP $code)..."
+    sleep 5
+  done
+  if [[ "$code" != "200" ]]; then
+    log_warn "Local health check did not pass. Check: docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml logs api"
+    return 1
+  fi
+
+  # Public check (through Cloudflare when proxied).
+  log_info "Waiting for https://${DEPLOY_DOMAIN}/health (TLS cert + Cloudflare; can take a minute)..."
+  for i in $(seq 1 30); do
+    local body
     code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || echo "000")
     if [[ "$code" == "200" ]]; then
       body=$(curl -fsS --max-time 10 "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || true)
       if printf '%s' "$body" | grep -q '"healthy"'; then
-        log_info "✓ Health check passed: https://${DEPLOY_DOMAIN}/health"
+        log_info "✓ Public health check passed: https://${DEPLOY_DOMAIN}/health"
         return 0
       fi
     fi
-    [[ $((i % 6)) -eq 0 ]] && log_info "  waiting for the service to become healthy (${i}/60, HTTP $code)..."
+    [[ $((i % 6)) -eq 0 ]] && log_info "  waiting for public health (${i}/30, HTTP $code)..."
     sleep 10
   done
-  log_warn "Health check did not pass within 10 minutes. Check deployment logs in the Coolify UI."
+  log_warn "Public health check did not pass within 5 minutes (local check passed, so the app is up — check DNS/Cloudflare)."
   return 1
 }
 
@@ -757,35 +516,34 @@ summary() { # deploy_ok: "ok" | "failed"
   if [[ "$deploy_ok" == "ok" ]]; then
     echo -e "${GREEN}  Vooglaadija is live at:${NC} https://${DEPLOY_DOMAIN}"
   else
-    log_warn "The health check did not pass — the deployment may still be starting or it failed."
+    log_warn "The health check did not pass — the stack may still be starting or it failed."
     echo -e "${YELLOW}  Application URL (not verified yet):${NC} https://${DEPLOY_DOMAIN}"
   fi
-  echo -e "${GREEN}  Coolify dashboard:${NC}    ${COOLIFY_UI_URL:-http://$PUBLIC_IP:8000}"
-  if [[ -n "${COOLIFY_ADMIN_PASSWORD:-}" ]]; then
-    echo -e "${YELLOW}  Coolify admin (auto-created):${NC} ${ROOT_USERNAME:-admin} / ${COOLIFY_ADMIN_PASSWORD}"
-    echo "    Change it after the first login (Coolify UI → Settings → User)."
-  fi
   echo ""
-  echo "  Continuous deployment is enabled: every push to the '${GIT_BRANCH}' branch of"
-  echo "  ${REPO_URL}"
-  echo "  builds new images in GitHub Actions (GHCR) and Coolify redeploys automatically."
+  echo "  Stack: api, worker, db (PostgreSQL), redis, otel-collector, browser-downloader,"
+  echo "         and caddy — all managed by docker compose in $REPO_DIR."
   echo ""
-  echo "  TLS: wildcard certificate for ${DEPLOY_DOMAIN} and *.${DEPLOY_DOMAIN} is issued"
-  echo "  via the Cloudflare DNS-01 challenge and renewed automatically by Caddy."
+  echo "  Manage the stack:"
+  echo "    cd $REPO_DIR"
+  echo "    docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml ps"
+  echo "    docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml logs -f api"
+  echo "    docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d --build   # update"
   echo ""
-  echo "  Secrets (DB password, Redis password, JWT key, Grafana admin password) were"
-  echo "  generated and stored encrypted in Coolify. Back them up! View them under the"
-  echo "  application's Environment Variables in the Coolify UI."
+  echo "  TLS: self-signed origin cert for ${DEPLOY_DOMAIN} presented to Cloudflare (SSL/TLS mode"
+  echo "  must be 'Full'). Ports 80/443 are the only public entry points (Caddy)."
   echo ""
-  echo "  Security: the Coolify dashboard listens on port 8000. Restrict it in your"
-  echo "  firewall to your IP (ufw allow from <your-ip> to any port 8000) or access it"
-  echo "  via an SSH tunnel (ssh -L 8000:127.0.0.1:8000 user@server)."
+  echo "  Secrets were generated and stored in $REPO_DIR/.env (mode 600)."
+  echo "  Back them up! They are required to talk to the existing PostgreSQL/Redis volumes."
+  echo ""
+  echo "  Firewall: only 22, 80, 443 need to be open"
+  echo "    (ufw allow ssh && ufw allow 80/tcp && ufw allow 443/tcp)."
+  echo ""
+  echo "  Updates: images are built locally from this checkout. To update:"
+  echo "    git -C $REPO_DIR pull && ${compose_update_cmd:-docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d --build}"
   echo ""
   echo "  Optional extras (profiles in docker-compose.yml):"
-  echo "    monitoring: Prometheus + Grafana"
-  echo "    backup:     daily PostgreSQL dumps"
-  echo "  To enable them, add the profile in Coolify's Docker Compose start command, e.g."
-  echo "    --profile monitoring up -d --pull always --remove-orphans"
+  echo "    monitoring: docker compose --profile monitoring up -d"
+  echo "    backup:     docker compose --profile backup up -d"
 }
 
 # ── Main ──────────────────────────────────────────────────
@@ -793,6 +551,7 @@ main() {
   echo ""
   echo -e "${BLUE}╔══════════════════════════════════════════════════════╗${NC}"
   echo -e "${BLUE}║   Vooglaadija — Plug-n-Play VPS Bootstrap            ║${NC}"
+  echo -e "${BLUE}║   (standalone Caddy deployment — no Coolify)         ║${NC}"
   echo -e "${BLUE}╚══════════════════════════════════════════════════════╝${NC}"
   echo ""
 
@@ -804,12 +563,9 @@ main() {
   gather_inputs
   dns_setup
   install_docker
-  install_coolify
-  ensure_root_user_exists
-  switch_proxy_to_caddy
-  ensure_api_token
-  create_application
-  set_environment
+  setup_repo
+  setup_environment
+  setup_caddy
   if deploy_and_verify; then
     summary ok
   else
@@ -818,4 +574,7 @@ main() {
   fi
 }
 
-main "$@"
+# Run main only when executed directly (not when sourced for testing).
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
