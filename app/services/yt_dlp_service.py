@@ -25,13 +25,39 @@ YT_DLP_METADATA_TIMEOUT = 15
 
 THROTTLE_PATTERN = re.compile(r"HTTP Error 429", re.IGNORECASE)
 
-FORMAT_FALLBACK_CHAIN = [
-    {"format": "bestvideo*+bestaudio/best", "format_sort": ["res:1080", "codec:h264"]},
-    {"format": "bestvideo+bestaudio/best", "format_sort": ["res", "codec"]},
-    {"format": "worstvideo*+bestaudio/best", "format_sort": ["res:720"]},
-    {"format": "best", "format_sort": ["quality"]},
-    {"format": "worst", "format_sort": ["quality"]},
-]
+# Native single-pass YouTube format selection.
+#
+# Historically this was a list of format specs iterated in a `for` loop, but
+# `extract_info(download=True)` resolves AND downloads in one shot, so the loop
+# was a sequence of independent full-selection attempts — only the first spec
+# ever ran, and the "chain" collapsed to a single 1080p/h264 selector (see
+# issue #169). yt-dlp already does progressive degradation across a "/"-
+# separated format string in a single call, so we encode the whole chain there
+# and issue ONE extract_info. The trailing `/best` / `/worst` give yt-dlp
+# built-in fallback when the merged combos are unavailable.
+YOUTUBE_FORMAT = (
+    "bestvideo*+bestaudio/best/res:1080+h264"
+    " / bestvideo+bestaudio/best"
+    " / worstvideo*+bestaudio/best/res:720"
+    " / best"
+    " / worst"
+)
+YOUTUBE_FORMAT_SORT = ["res:1080", "codec:h264"]
+
+# Non-YouTube platforms use single-stream progressive formats (no merging).
+GENERIC_FORMAT = "best"
+GENERIC_FORMAT_SORT = ["quality"]
+
+
+def _format_spec_for(platform: str) -> tuple[str, list[str]]:
+    """Return (format_string, format_sort) for a platform.
+
+    YouTube uses the merged-combo chain above; everything else gets a single
+    progressive `best` stream.
+    """
+    if platform == "youtube":
+        return YOUTUBE_FORMAT, YOUTUBE_FORMAT_SORT
+    return GENERIC_FORMAT, GENERIC_FORMAT_SORT
 
 # Max bytes for a single stdout line from the yt-dlp subprocess.
 # YouTube video metadata JSON can exceed the default 64KB StreamReader limit
@@ -384,19 +410,10 @@ def _build_cookies_opts() -> dict:
     return opts
 
 
-# Non-YouTube platforms use single-stream formats with no merging semantics.
-_GENERIC_FORMAT_CHAIN: list[dict] = [
-    {"format": "best", "format_sort": ["quality"]},
-]
-
-_PLATFORM_FORMAT_CHAINS: dict[str, list[dict]] = {
-    "youtube": FORMAT_FALLBACK_CHAIN,
-    "tiktok": _GENERIC_FORMAT_CHAIN,
-    "instagram": _GENERIC_FORMAT_CHAIN,
-    "vimeo": _GENERIC_FORMAT_CHAIN,
-    "dailymotion": _GENERIC_FORMAT_CHAIN,
-    "twitch": _GENERIC_FORMAT_CHAIN,
-}
+# Platform format selection is handled by `_format_spec_for()` (defined above):
+# YouTube uses the merged-combo chain; every other platform gets a single
+# progressive `best` stream. Both are encoded as a single yt-dlp format string
+# (with "/" fallback) so yt-dlp does the degradation in one extract_info call.
 
 # Extractor args per platform. Only YouTube benefits from player-client hints.
 _PLATFORM_EXTRACTOR_ARGS: dict[str, dict] = {
@@ -707,8 +724,9 @@ async def _extract_via_subprocess(
     platform_json = json.dumps(platform)
     cookies_opts = _build_cookies_opts()
     cookies_opts_json = json.dumps(cookies_opts)
-    fallback_chain = _PLATFORM_FORMAT_CHAINS.get(platform, FORMAT_FALLBACK_CHAIN)
-    fallback_chain_json = json.dumps(fallback_chain)
+    format_spec, format_sort = _format_spec_for(platform)
+    format_spec_json = json.dumps(format_spec)
+    format_sort_json = json.dumps(format_sort)
     extractor_args = _PLATFORM_EXTRACTOR_ARGS.get(platform, {})
     extractor_args_json = json.dumps(extractor_args)
 
@@ -740,7 +758,8 @@ import yt_dlp
 url = {url_json}
 output_template = {output_template_json}
 platform = {platform_json}
-fallback_chain = {fallback_chain_json}
+format_spec = {format_spec_json}
+format_sort = {format_sort_json}
 extractor_args = {extractor_args_json}
 cookies_opts = {cookies_opts_json}
 output_fields = {output_fields_json}
@@ -769,46 +788,38 @@ def _progress_hook(d):
             "eta": d.get("eta"),
         }}), flush=True)
 
-for i, format_spec in enumerate(fallback_chain):
-    _last_progress_pct = -1.0
-    ydl_opts = {{
-        "format": format_spec["format"],
-        "format_sort": format_spec.get("format_sort", []),
-        "outtmpl": output_template,
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
-        "socket_timeout": 60,
-        "retries": 3,
-        "progress_hooks": [_progress_hook],
-{youtube_opts}    }}
-    ydl_opts.update(cookies_opts)
-    if extractor_args:
-        ydl_opts["extractor_args"] = extractor_args
+# Single extract_info call. The "/" in format_spec is yt-dlp's native fallback
+# across the whole chain, so degradation (merged-combo -> best -> worst) happens
+# inside one call instead of a per-spec loop that only ever ran the first entry.
+ydl_opts = {{
+    "format": format_spec,
+    "format_sort": format_sort,
+    "outtmpl": output_template,
+    "quiet": True,
+    "no_warnings": True,
+    "noprogress": True,
+    "socket_timeout": 60,
+    "retries": 3,
+    "progress_hooks": [_progress_hook],
+{youtube_opts}}}
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if info is None:
-                last_error = "No video info returned"
-                continue
-            sanitized_info = ydl.sanitize_info(info)
-            filtered = {{k: sanitized_info.get(k) for k in output_fields if k in sanitized_info}}
-            print(json.dumps(filtered))
-            sys.exit(0)
-    except Exception as e:
-        err_str = str(e)
-        if "Requested format" in err_str and "not available" in err_str:
-            last_error = err_str
-            continue
-        print(json.dumps({{"error": err_str}}))
-        sys.exit(1)
+ydl_opts.update(cookies_opts)
+if extractor_args:
+    ydl_opts["extractor_args"] = extractor_args
 
-attempted_formats = [spec["format"] for spec in fallback_chain]
-print(json.dumps({{
-    "error": f"[{{platform}}] All formats failed. Last error: {{last_error}}. Attempted formats: {{attempted_formats}}"
-}}))
-sys.exit(1)
+try:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        if info is None:
+            print(json.dumps({{"error": f"[{platform}] No video info returned"}}))
+            sys.exit(1)
+        sanitized_info = ydl.sanitize_info(info)
+        filtered = {{k: sanitized_info.get(k) for k in output_fields if k in sanitized_info}}
+        print(json.dumps(filtered))
+        sys.exit(0)
+except Exception as e:
+    print(json.dumps({{"error": f"[{platform}] {{str(e)}}"}}))
+    sys.exit(1)
 """
     process = None
     stderr_lines: list[str] = []
@@ -959,7 +970,7 @@ async def extract_media_url(
         pool = _get_pool()
         if pool is not None:
             platform = _get_platform(url)
-            fallback_chain = _PLATFORM_FORMAT_CHAINS.get(platform, FORMAT_FALLBACK_CHAIN)
+            format_spec, format_sort = _format_spec_for(platform)
             extractor_args = _PLATFORM_EXTRACTOR_ARGS.get(platform, {})
             cookies_opts = _build_cookies_opts()
             job = {
@@ -968,7 +979,8 @@ async def extract_media_url(
                 "url": url,
                 "output_template": output_template,
                 "platform": platform,
-                "fallback_chain": fallback_chain,
+                "format": format_spec,
+                "format_sort": format_sort,
                 "extractor_args": extractor_args,
                 "cookies_opts": cookies_opts,
                 "youtube_opts": platform == "youtube",

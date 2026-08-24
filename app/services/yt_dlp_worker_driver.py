@@ -6,8 +6,9 @@ stdin and writes newline-delimited JSON responses to stdout:
 
 Request (one line):
     {"job_id": "uuid", "mode": "extract" | "metadata", "url": "...",
-     "output_template": "...", "platform": "youtube", "fallback_chain": [...],
-     "extractor_args": {...}, "cookies_opts": {...}, "youtube_opts": bool}
+     "output_template": "...", "platform": "youtube", "format": "...",
+     "format_sort": [...], "extractor_args": {...}, "cookies_opts": {...},
+     "youtube_opts": bool}
 
 Response lines (may be several per job):
     {"job_id": "uuid", "progress": true, "percent": 12.0, ...}   # progress hook
@@ -22,8 +23,9 @@ whole point: ``import yt_dlp`` happens once per process instead of once per job,
 eliminating the per-job cold start that dominates short downloads.
 
 The driver intentionally owns no platform-specific logic — the parent
-``yt_dlp_service`` computes ``fallback_chain`` / ``extractor_args`` / etc. and
-ships them in the request, so behaviour stays identical to the inline path.
+``yt_dlp_service`` computes ``format`` / ``format_sort`` / ``extractor_args`` /
+etc. (via ``_format_spec_for``) and ships them in the request, so behaviour
+stays identical to the inline path.
 """
 
 import json
@@ -39,14 +41,17 @@ _OUTPUT_FIELDS = frozenset(
 
 
 def _run_extract(job: dict, progress_hook=None) -> dict | None:
-    """Execute an extract job; return the result dict or raise.
+    """Execute an extract job; return the filtered sanitized_info dict or raise.
 
-    Returns the filtered sanitized_info dict on success, or None if every
-    format in the fallback chain produced no info (caller records last_error).
+    Uses a single yt-dlp ``extract_info`` call with a "/" - separated native
+    format string (built by the parent via ``_format_spec_for``), so yt-dlp does
+    the whole fallback chain (merged-combo -> best -> worst) in one pass instead
+    of the old per-spec loop that only ever ran the first entry.
     """
     url = job["url"]
     output_template = job["output_template"]
-    fallback_chain = job.get("fallback_chain") or [{"format": "best"}]
+    format_spec = job.get("format") or "best"
+    format_sort = job.get("format_sort") or ["quality"]
     extractor_args = job.get("extractor_args") or {}
     cookies_opts = job.get("cookies_opts") or {}
     youtube_opts = bool(job.get("youtube_opts"))
@@ -56,49 +61,33 @@ def _run_extract(job: dict, progress_hook=None) -> dict | None:
     ):
         cookies_opts["cookiesfrombrowser"] = tuple(cookies_opts["cookiesfrombrowser"])
 
-    last_error = None
-    for format_spec in fallback_chain:
-        ydl_opts = {
-            "format": format_spec["format"],
-            "format_sort": format_spec.get("format_sort", []),
-            "outtmpl": output_template,
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-            "socket_timeout": 60,
-            "retries": 3,
+    ydl_opts = {
+        "format": format_spec,
+        "format_sort": format_sort,
+        "outtmpl": output_template,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "socket_timeout": 60,
+        "retries": 3,
+    }
+    if youtube_opts:
+        ydl_opts["prefer_free_formats"] = True
+        ydl_opts["check_formats"] = "missable"
+    if progress_hook is not None:
+        ydl_opts["progress_hooks"] = [progress_hook]
+    ydl_opts.update(cookies_opts)
+    if extractor_args:
+        ydl_opts["extractor_args"] = extractor_args
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        if info is None:
+            raise RuntimeError(f"[{job.get('platform', 'unknown')}] No video info returned")
+        sanitized = ydl.sanitize_info(info)
+        return {
+            k: sanitized.get(k) for k in _OUTPUT_FIELDS if k in sanitized
         }
-        if youtube_opts:
-            ydl_opts["prefer_free_formats"] = True
-            ydl_opts["check_formats"] = "missable"
-        if progress_hook is not None:
-            ydl_opts["progress_hooks"] = [progress_hook]
-        ydl_opts.update(cookies_opts)
-        if extractor_args:
-            ydl_opts["extractor_args"] = extractor_args
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if info is None:
-                    last_error = "No video info returned"
-                    continue
-                sanitized = ydl.sanitize_info(info)
-                return {
-                    k: sanitized.get(k) for k in _OUTPUT_FIELDS if k in sanitized
-                }
-        except Exception as exc:
-            err_str = str(exc)
-            if "Requested format" in err_str and "not available" in err_str:
-                last_error = err_str
-                continue
-            raise
-
-    attempted = [spec["format"] for spec in fallback_chain]
-    raise RuntimeError(
-        f"[{job.get('platform', 'unknown')}] All formats failed. "
-        f"Last error: {last_error}. Attempted formats: {attempted}"
-    )
 
 
 def _run_metadata(job: dict) -> dict | None:

@@ -630,16 +630,22 @@ class TestFormatFallbackChain:
 
     @pytest.mark.asyncio
     async def test_format_fallback_chain_in_script(self, captured_script: str) -> None:
-        """Verify the generated script contains the fallback chain with all 5 format specs."""
-        assert "bestvideo*+bestaudio/best" in captured_script
+        """Verify the generated script encodes the full YouTube chain as a single
+        native yt-dlp format string with '/' fallback (issue #169: previously a
+        per-spec loop that only ever ran the first entry)."""
+        # Every segment of the merged-combo chain must appear in the single format value.
+        assert "bestvideo*+bestaudio/best/res:1080+h264" in captured_script
         assert "bestvideo+bestaudio/best" in captured_script
-        assert "worstvideo*+bestaudio/best" in captured_script
-        assert '"best"' in captured_script
-        assert '"worst"' in captured_script
-        # yt_dlp uses separate array elements for format_sort, not comma-joined
+        assert "worstvideo*+bestaudio/best/res:720" in captured_script
+        # The native '/' separators wire the whole chain as yt-dlp's own fallback.
+        assert " / best" in captured_script
+        assert " / worst" in captured_script
+        # format_sort still biases toward 1080p/h264 on the first segment.
         assert '"res:1080"' in captured_script
         assert '"codec:h264"' in captured_script
-        assert "res:720" in captured_script
+        # The new model uses ONE extract_info call, not a per-spec Python loop.
+        assert '"format"' in captured_script
+        assert "for i, format_spec" not in captured_script
 
     @pytest.mark.asyncio
     async def test_prefer_free_formats_enabled(self, captured_script: str) -> None:
@@ -658,9 +664,18 @@ class TestFormatFallbackChain:
 
     @pytest.mark.asyncio
     async def test_format_unavailable_continues_to_next(self, captured_script: str) -> None:
-        """Verify the script contains error handling that continues to next format on 'not available'."""
-        assert '"Requested format" in err_str and "not available" in err_str' in captured_script
-        assert "continue" in captured_script
+        """The fallback chain is encoded as a single native yt-dlp format string
+        whose '/' separators make yt-dlp degrade across the whole chain in one
+        extract_info call (issue #169). There is no longer a per-format Python
+        loop that only caught one narrow error string."""
+        assert '"format":' in captured_script
+        assert "bestvideo*+bestaudio/best/res:1080+h264" in captured_script
+        assert " / best" in captured_script
+        assert " / worst" in captured_script
+        # Degradation is yt-dlp's responsibility now: no hand-rolled loop that
+        # only continued on 'Requested format ... not available'.
+        assert "for i, format_spec" not in captured_script
+        assert '"Requested format" in err_str' not in captured_script
 
 
 class TestGetPlatform:
