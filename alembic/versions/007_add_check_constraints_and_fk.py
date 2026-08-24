@@ -62,9 +62,7 @@ def _pre_check_data(bind: sa.engine.Connection) -> None:
     ).scalar()
     if result and result > 0:
         bind.execute(
-            sa.text(
-                f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({in_clause})"
-            )
+            sa.text(f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({in_clause})")
         )
 
     # Clean orphaned outbox entries (job_id points to non-existent download_job)

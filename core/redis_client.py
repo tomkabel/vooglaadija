@@ -50,6 +50,7 @@ def get_pubsub_redis_client() -> aioredis.Redis:
     )
     return cast("aioredis.Redis", _redis_state["pubsub_client"])
 
+
 # Chaos Engineering Redis key constants — single source of truth
 CHAOS_CIRCUIT_BREAKER_KEY = "chaos:circuit_breaker_override"
 CHAOS_ZOMBIE_JOB_KEY = "chaos:zombie_job_trigger"

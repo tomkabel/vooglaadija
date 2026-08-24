@@ -54,7 +54,9 @@ def test_classify_error_routes_transient_403_to_transient(error_str, expected):
 
 @pytest.mark.unit
 def test_generic_403_is_retryable_while_blocked_markers_are_not():
-    transient_403 = classify_error("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+    transient_403 = classify_error(
+        "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+    )
     assert not is_non_retryable(transient_403.category)
     assert CATEGORY_POLICIES[transient_403.category].max_retries > 0
 
@@ -68,7 +70,10 @@ def test_geo_unavailable_in_your_country_routes_to_blocked():
     # "unavailable in your country" is a permanent, request-specific condition.
     # The BLOCKED pattern "unavailable in your" matches it before NOT_FOUND,
     # and BLOCKED is non-retryable — which is the correct terminal verdict.
-    assert classify_error("This video is unavailable in your country").category == ErrorCategory.BLOCKED
+    assert (
+        classify_error("This video is unavailable in your country").category
+        == ErrorCategory.BLOCKED
+    )
     assert is_non_retryable(ErrorCategory.BLOCKED)
 
 

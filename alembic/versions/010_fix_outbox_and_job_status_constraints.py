@@ -56,10 +56,7 @@ def upgrade() -> None:
     # the allowed values, so skipping here is safe.
     if bind.dialect.name == "postgresql":
         op.execute(
-            sa.text(
-                "ALTER TABLE download_jobs "
-                "DROP CONSTRAINT IF EXISTS chk_download_jobs_status"
-            )
+            sa.text("ALTER TABLE download_jobs DROP CONSTRAINT IF EXISTS chk_download_jobs_status")
         )
         op.execute(
             sa.text(
@@ -72,9 +69,7 @@ def upgrade() -> None:
     # --- outbox.status: allow the real lifecycle ---------------------------
     outbox_in = ", ".join(f"'{s}'" for s in _OUTBOX_STATUSES)
     if bind.dialect.name == "postgresql":
-        op.execute(
-            sa.text("ALTER TABLE outbox DROP CONSTRAINT IF EXISTS chk_outbox_status")
-        )
+        op.execute(sa.text("ALTER TABLE outbox DROP CONSTRAINT IF EXISTS chk_outbox_status"))
         op.execute(
             sa.text(
                 f"ALTER TABLE outbox "
@@ -86,10 +81,7 @@ def upgrade() -> None:
         # Any rows already carrying a now-forbidden value are reconciled so the
         # rebuilt constraint validates immediately.
         op.execute(
-            sa.text(
-                f"UPDATE outbox SET status = 'pending' "
-                f"WHERE status NOT IN ({outbox_in})"
-            )
+            sa.text(f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({outbox_in})")
         )
 
 
@@ -97,9 +89,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
         return
-    op.execute(
-        sa.text("ALTER TABLE outbox DROP CONSTRAINT IF EXISTS chk_outbox_status")
-    )
+    op.execute(sa.text("ALTER TABLE outbox DROP CONSTRAINT IF EXISTS chk_outbox_status"))
     op.execute(
         sa.text("ALTER TABLE download_jobs DROP CONSTRAINT IF EXISTS chk_download_jobs_status")
     )
