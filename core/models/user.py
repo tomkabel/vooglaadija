@@ -13,6 +13,7 @@ from core.models.base import Base
 
 if TYPE_CHECKING:
     from core.models.download_job import DownloadJob
+    from core.models.personal_access_token import PersonalAccessToken
 
 
 def not_deleted() -> ColumnElement[bool]:
@@ -57,3 +58,6 @@ class User(Base):
     )
 
     download_jobs: Mapped[list[DownloadJob]] = relationship("DownloadJob", back_populates="user")
+    personal_access_tokens: Mapped[list[PersonalAccessToken]] = relationship(
+        "PersonalAccessToken", back_populates="user", cascade="all, delete-orphan"
+    )

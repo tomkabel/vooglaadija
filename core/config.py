@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     browser_downloader_timeout: int = 300
     browser_downloader_cb_use_redis: bool = False
 
+    # MCP server configuration
+    mcp_api_key: str = ""
+    mcp_base_url: str = "http://localhost:8000"
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""

@@ -28,7 +28,9 @@ from app.api.middleware import (
 from app.api.rate_limit_config import limiter
 from app.api.routes import auth, downloads, health
 from app.api.routes.chaos import router as chaos_router
+from app.api.routes.mcp import router as mcp_router
 from app.api.routes.metrics import router as metrics_router
+from app.api.routes.personal_access_tokens import router as personal_access_tokens_router
 from app.api.routes.sse import router as sse_router
 from app.api.routes.web import router as web_router
 from app.api.startup import create_lifespan, initialize_sentry
@@ -74,10 +76,15 @@ app = FastAPI(
             "description": "User registration, user authentication, token refresh, and current user profile.",
         },
         {
+            "name": "tokens",
+            "description": "Personal Access Token management for machine/agents.",
+        },
+        {
             "name": "downloads",
             "description": "Create, query, download, and delete media extraction jobs.",
         },
         {"name": "health", "description": "Service health and readiness checks."},
+        {"name": "mcp", "description": "Model Context Protocol endpoints for AI agent integration."},
     ],
     lifespan=lifespan,
 )
@@ -118,9 +125,11 @@ register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(downloads.router, prefix="/api/v1")
+app.include_router(personal_access_tokens_router, prefix="/api/v1")
 app.include_router(health.router)
 app.include_router(metrics_router)
 app.include_router(chaos_router)
+app.include_router(mcp_router)
 if settings.feature_chaos_api_enabled:
     logger.info("chaos_api_enabled", feature_chaos_api_enabled=True)
 else:
