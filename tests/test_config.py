@@ -564,3 +564,19 @@ class TestYtDlpWarmPoolConfig:
                 database_url="postgresql+asyncpg://u:p@localhost/db",
                 yt_dlp_pool_size=64,
             )
+
+    def test_prefer_progressive_off_by_default(self):
+        """Merged-combo 1080p stays the default; progressive is opt-in (#170)."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+        assert s.yt_dlp_prefer_progressive is False
+
+    def test_prefer_progressive_can_be_enabled(self):
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            yt_dlp_prefer_progressive=True,
+        )
+        assert s.yt_dlp_prefer_progressive is True

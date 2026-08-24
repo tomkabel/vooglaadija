@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # jobs over stdin. Disabling falls back to the per-job subprocess path.
     yt_dlp_warm_pool: bool = True
     yt_dlp_pool_size: int = 2
+    # When True, YouTube downloads try a single progressive stream (no ffmpeg
+    # merge) *before* the merged combos. Lighter CPU/storage and lower failure
+    # surface, at the cost of a lower resolution ceiling (YouTube progressive
+    # mp4 caps ~720p). Default False preserves the current 1080p-merged behavior.
+    yt_dlp_prefer_progressive: bool = False
 
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"

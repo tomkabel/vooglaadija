@@ -44,6 +44,20 @@ YOUTUBE_FORMAT = (
 )
 YOUTUBE_FORMAT_SORT = ["res:1080", "codec:h264"]
 
+# Progressive-first variant (used when YT_DLP_PREFER_PROGRESSIVE is enabled):
+# try a single-stream (no ffmpeg merge) progressive file *before* the merged
+# combos. Lighter CPU/storage and smaller failure surface, but YouTube
+# progressive mp4 caps ~720p, so this trades resolution ceiling for weight.
+YOUTUBE_FORMAT_PROGRESSIVE = (
+    "best[ext=mp4][protocol!=dash]"
+    " / best[protocol!=dash]"
+    " / bestvideo*+bestaudio/best/res:1080+h264"
+    " / bestvideo+bestaudio/best"
+    " / worstvideo*+bestaudio/best/res:720"
+    " / best"
+    " / worst"
+)
+
 # Non-YouTube platforms use single-stream progressive formats (no merging).
 GENERIC_FORMAT = "best"
 GENERIC_FORMAT_SORT = ["quality"]
@@ -52,10 +66,13 @@ GENERIC_FORMAT_SORT = ["quality"]
 def _format_spec_for(platform: str) -> tuple[str, list[str]]:
     """Return (format_string, format_sort) for a platform.
 
-    YouTube uses the merged-combo chain above; everything else gets a single
-    progressive `best` stream.
+    YouTube uses the merged-combo chain above (or the progressive-first variant
+    when ``settings.yt_dlp_prefer_progressive`` is enabled); everything else gets
+    a single progressive ``best`` stream.
     """
     if platform == "youtube":
+        if getattr(settings, "yt_dlp_prefer_progressive", False):
+            return YOUTUBE_FORMAT_PROGRESSIVE, YOUTUBE_FORMAT_SORT
         return YOUTUBE_FORMAT, YOUTUBE_FORMAT_SORT
     return GENERIC_FORMAT, GENERIC_FORMAT_SORT
 

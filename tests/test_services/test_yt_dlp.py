@@ -110,6 +110,47 @@ def _discard_awaitable(awaitable) -> None:
         awaitable.close()
 
 
+class TestFormatSpecFor:
+    """_format_spec_for honors YT_DLP_PREFER_PROGRESSIVE (#170)."""
+
+    def test_youtube_default_uses_merged_chain(self) -> None:
+        """Default (progressive off) returns the merged-combo YouTube chain."""
+        from app.services.yt_dlp_service import (
+            YOUTUBE_FORMAT,
+            _format_spec_for,
+        )
+
+        fmt, _sort = _format_spec_for("youtube")
+        assert fmt == YOUTUBE_FORMAT
+        assert "bestvideo*+bestaudio/best/best/res:1080+h264" not in fmt  # sanity
+        assert "bestvideo*+bestaudio/best/res:1080+h264" in fmt
+
+    def test_youtube_progressive_enabled_uses_progressive_first(self) -> None:
+        """When the setting is on, YouTube returns the progressive-first chain."""
+        from app.services.yt_dlp_service import (
+            YOUTUBE_FORMAT_PROGRESSIVE,
+            _format_spec_for,
+            settings,
+        )
+
+        original = settings.yt_dlp_prefer_progressive
+        settings.yt_dlp_prefer_progressive = True
+        try:
+            fmt, _sort = _format_spec_for("youtube")
+            assert fmt == YOUTUBE_FORMAT_PROGRESSIVE
+            # Progressive single-stream entry leads; merged combos come after.
+            assert fmt.startswith("best[ext=mp4][protocol!=dash]")
+            assert "bestvideo*+bestaudio/best/res:1080+h264" in fmt
+        finally:
+            settings.yt_dlp_prefer_progressive = original
+
+    def test_non_youtube_always_single_stream(self) -> None:
+        from app.services.yt_dlp_service import _format_spec_for
+
+        fmt, _sort = _format_spec_for("tiktok")
+        assert fmt == "best"
+
+
 class TestExtractMediaUrl:
     """Tests for extract_media_url function."""
 
