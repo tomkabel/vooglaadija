@@ -26,7 +26,7 @@ from app.api.middleware import (
     add_security_headers,
 )
 from app.api.rate_limit_config import limiter
-from app.api.routes import auth, downloads, health
+from app.api.routes import auth, downloads, health, keys
 from app.api.routes.chaos import router as chaos_router
 from app.api.routes.metrics import router as metrics_router
 from app.api.routes.sse import router as sse_router
@@ -61,7 +61,8 @@ app = FastAPI(
     summary="Asynchronous API for authenticated video download jobs.",
     description=(
         "REST API for user authentication, creating download jobs, tracking job status, "
-        "and retrieving processed files. Authentication uses bearer JWT access tokens."
+        "and retrieving processed files. Authentication accepts bearer JWT access tokens "
+        "or long-lived, scoped personal access tokens (PATs) for agent/machine clients."
     ),
     version=APP_VERSION,
     docs_url=None,
@@ -74,10 +75,16 @@ app = FastAPI(
             "description": "User registration, user authentication, token refresh, and current user profile.",
         },
         {
-            "name": "downloads",
-            "description": "Create, query, download, and delete media extraction jobs.",
+            "name": "health",
+            "description": "Service health and readiness checks.",
         },
-        {"name": "health", "description": "Service health and readiness checks."},
+        {
+            "name": "keys",
+            "description": (
+                "Manage long-lived, scoped personal access tokens (PATs) for "
+                "machine-to-machine and agent authentication."
+            ),
+        },
     ],
     lifespan=lifespan,
 )
@@ -118,6 +125,7 @@ register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(downloads.router, prefix="/api/v1")
+app.include_router(keys.router, prefix="/api/v1")
 app.include_router(health.router)
 app.include_router(metrics_router)
 app.include_router(chaos_router)
