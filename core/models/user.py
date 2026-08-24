@@ -12,6 +12,7 @@ from sqlalchemy.sql import column, func
 from core.models.base import Base
 
 if TYPE_CHECKING:
+    from core.models.api_key import ApiKey
     from core.models.download_job import DownloadJob
 
 
@@ -57,3 +58,8 @@ class User(Base):
     )
 
     download_jobs: Mapped[list[DownloadJob]] = relationship("DownloadJob", back_populates="user")
+    api_keys: Mapped[list[ApiKey]] = relationship(
+        "ApiKey",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
