@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/managed-by: argocd
+---
+# ServiceMonitor for API (requires Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vooglaadija-api
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vooglaadija
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vooglaadija
+      app.kubernetes.io/component: api
+  namespaceSelector:
+    matchNames:
+      - vooglaadija
+  endpoints:
+    - port: http
+      path: /prometheus-metrics
+      interval: 15s
+---
+# ServiceMonitor for Worker
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vooglaadija-worker
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vooglaadija
+    app.kubernetes.io/component: worker
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vooglaadija
+      app.kubernetes.io/component: worker
+  namespaceSelector:
+    matchNames:
+      - vooglaadija
+  endpoints:
+    - port: health
+      path: /metrics
+      interval: 15s
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vooglaadija-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: vooglaadija
+spec:
+  groups:
+    - name: vooglaadija.rules
+      rules:
+        - alert: VooglaadijaHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="vooglaadija-api",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="vooglaadija-api"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Vooglaadija API high error rate"
+            description: "Error rate is above 5% for more than 5 minutes"
+        - alert: VooglaadijaWorkerBacklog
+          expr: ytprocessor_queue_depth > 100
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Vooglaadija worker queue backlog"
+            description: "Queue depth has been above 100 for 10 minutes"
+        - alert: VooglaadijaPodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{namespace="vooglaadija"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod {{ $labels.pod }} is crash looping"
+        - alert: VooglaadijaHighLatency
+          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="vooglaadija-api"}[5m])) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Vooglaadija API high latency"
+            description: "P95 latency is above 2 seconds"
+        - alert: VooglaadijaDBConnectionPoolExhaustion
+          expr: ytprocessor_db_pool_available_connections < 2
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Database connection pool near exhaustion"
+        - alert: VooglaadijaRedisMemoryPressure
+          expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis memory pressure detected"

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vooglaadija.fullname" . }}-worker
+  labels:
+    {{- include "vooglaadija.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.worker.service.port }}
+      targetPort: health
+      protocol: TCP
+      name: health
+  selector:
+    {{- include "vooglaadija.workerSelectorLabels" . | nindent 4 }}

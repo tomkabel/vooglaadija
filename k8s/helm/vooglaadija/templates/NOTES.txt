@@ -1,0 +1,55 @@
+Thank you for installing {{ .Chart.Name }}.
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+## Services
+
+- API: {{ include "vooglaadija.fullname" . }}-api
+- Worker: {{ include "vooglaadija.fullname" . }}-worker
+{{- if .Values.browserDownloader.enabled }}
+- Browser Downloader: {{ include "vooglaadija.fullname" . }}-browser-downloader
+{{- end }}
+- Prometheus: {{ include "vooglaadija.fullname" . }}-prometheus
+- Grafana: {{ include "vooglaadija.fullname" . }}-grafana
+
+## Access
+
+To access the API port-forward to the service:
+
+  kubectl port-forward svc/{{ include "vooglaadija.fullname" . }}-api 8000:8000 -n {{ .Release.Namespace }}
+
+{{- if .Values.api.ingress.enabled }}
+## Ingress
+
+The API is configured with ingress at:
+{{- range .Values.api.ingress.hosts }}
+  {{- range .paths }}
+  http://{{ .host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+## Database
+
+{{- if .Values.postgresql.enabled }}
+PostgreSQL is deployed via Bitnami chart:
+  Host: {{ include "vooglaadija.fullname" . }}-postgresql
+  Port: 5432
+{{- else }}
+Using external PostgreSQL:
+  Host: {{ .Values.db.host }}
+  Port: {{ .Values.db.port }}
+{{- end }}
+
+## Redis
+
+{{- if .Values.redis.enabled }}
+Redis is deployed via Bitnami chart:
+  Host: {{ include "vooglaadija.fullname" . }}-redis-master
+  Port: 6379
+{{- else }}
+Using external Redis:
+  Host: {{ .Values.redis.host }}
+  Port: {{ .Values.redis.port }}
+{{- end }}

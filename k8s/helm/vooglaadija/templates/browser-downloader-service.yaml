@@ -1,0 +1,18 @@
+{{- if .Values.browserDownloader.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vooglaadija.fullname" . }}-browser-downloader
+  labels:
+    {{- include "vooglaadija.labels" . | nindent 4 }}
+    app.kubernetes.io/component: browser-downloader
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.browserDownloader.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "vooglaadija.browserDownloaderSelectorLabels" . | nindent 4 }}
+{{- end }}
