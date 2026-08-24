@@ -7,12 +7,8 @@ gzip-compressed custom-format `.dump` archives) at 02:00 with a 7-day retention
 (`BACKUP_RETENTION_DAYS`). Dumps land in `infra/backup/backup-data/`.
 
 ```bash
-# Local stack
-docker compose -f docker-compose.yml -f docker-compose.local.yml --profile backup up -d
-
-# Coolify deployment: prepend the profile flag to the application's
-# Docker Compose start command (Coolify UI → vooglaadija → Advanced):
-#   --profile backup up -d --pull always --remove-orphans
+# Local stack / standalone production
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml --profile backup up -d
 ```
 
 A one-off manual backup (no scheduler):
@@ -67,5 +63,5 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml exec db psql -U
 
 - Copy dumps off the server (rsync to another host or object storage) — a backup on the same disk as
   the data is not a real backup.
-- The Coolify-managed deployment stores its database in the `ytprocessor-postgres-data` volume;
+- The standalone deployment stores its database in the `ytprocessor-postgres-data` volume;
   backups via the profile above are the supported restore path.

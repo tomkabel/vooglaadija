@@ -1,40 +1,41 @@
 # Production Deployment Guide
 
 Vooglaadija deploys to **any VPS** with a single plug-n-play bootstrap script. The script asks for
-two things — your domain and a Cloudflare API token — then provisions everything: Docker, Coolify, a
-Caddy reverse proxy with an auto-renewing **wildcard TLS certificate** (Let's Encrypt via the
-Cloudflare DNS-01 challenge), the application stack, and continuous deployment from GitHub.
+your domain (and optionally a Cloudflare API token) and then provisions everything: Docker, a
+standalone **Caddy** reverse proxy with a TLS origin certificate, and the full application stack —
+**no Coolify, no PaaS**.
 
 ## How it works
 
 ```text
 VPS (any provider)
 ├── Docker Engine + Compose plugin
-├── Coolify (self-hosted PaaS, controls deployments, envs, rollbacks)
-│   ├── Caddy proxy (port 80/443)
-│   │   └── wildcard TLS *.your-domain.com  ← Cloudflare DNS-01, auto-renewed
-│   └── vooglaadija application
-│       └── docker-compose.yml (single source of truth)
-│           ├── api      (ghcr.io/tomkabel/vooglaadija:latest)
-│           ├── worker   (ghcr.io/tomkabel/vooglaadija:worker-latest)
-│           ├── db       (PostgreSQL 15)
-│           ├── redis    (Redis 7, AOF)
-│           ├── storage-init + otel-collector
-│           └── profiles: monitoring (Prometheus+Grafana), backup (pg_dump)
-└── Continuous deployment: push to main → GitHub Actions builds images (GHCR)
-    → Coolify redeploys automatically
+├── caddy service (ports 80/443) — the ONLY public entry point
+│   └── TLS origin cert for your domain (self-signed, presented to Cloudflare)
+│       └── reverse_proxy api:8000
+└── vooglaadija stack (docker-compose.yml + overrides)
+    ├── api      (built locally from Dockerfile, target api)
+    ├── worker   (built locally from Dockerfile, target worker)
+    ├── browser-downloader
+    ├── db       (PostgreSQL 15)
+    ├── redis    (Redis 7, AOF)
+    ├── storage-init + otel-collector
+    └── profiles: monitoring (Prometheus+Grafana), backup (pg_dump)
+
+Cloudflare (orange-cloud proxy) → Caddy :80/:443 → api:8000
 ```
 
-The server **never builds images** — GitHub Actions builds multi-arch images with immutable SHA tags
-in CI and pushes them to GHCR; Coolify only pulls and swaps containers.
+Caddy is the **only** public entry point. It terminates TLS and forwards to the API at `api:8000`
+over the default compose network. If Caddy is down, Cloudflare returns **HTTP 521**.
 
 ## Prerequisites
 
 - A VPS with **≥ 4 GB RAM** (2 GB minimum), Ubuntu/Debian or any systemd Linux distro
-- A domain whose DNS is managed by **Cloudflare** (required for the DNS-01 challenge)
-- A Cloudflare API token with **Zone → DNS → Edit** permission for that zone (create at
-  <https://dash.cloudflare.com/profile/api-tokens>; the token only needs `Zone.Zone Read` +
-  `Zone.DNS Edit`)
+- A domain you control, ideally DNS-managed by **Cloudflare** (the script can auto-create the
+  A records with a token; otherwise set them manually)
+- Optional: a Cloudflare API token with **Zone → DNS → Edit** permission for that zone
+  (create at <https://dash.cloudflare.com/profile/api-tokens>; only needs `Zone.Zone Read` +
+  `Zone.DNS Edit`) — only required for automatic DNS provisioning, not for the app itself
 
 ## Quick Start
 
@@ -49,81 +50,72 @@ sudo ./deploy/bootstrap.sh
 
 You will be asked for:
 
-1. **Domain** — e.g. `app.example.com` (the script also provisions the `*.app.example.com` wildcard
-   record and certificate)
-2. **Cloudflare API token** — used to auto-create the DNS records and to issue/renew the wildcard
-   certificate; stored only inside Coolify's encrypted config
-3. (First run only) complete Coolify's one-time browser setup and optionally create a Coolify API
-   token if the script cannot do it automatically
+1. **Domain** — e.g. `app.example.com` (the script also provisions the `*.app.example.com`
+   wildcard A record if you provide a Cloudflare token)
+2. **Cloudflare API token** (optional) — used to auto-create the DNS records; leave empty to
+   manage DNS manually
+
+> **DNS precondition (no token / `SKIP_DNS=1`):** the A record for the domain must already
+> exist and resolve to this server before the bootstrap's public `https://<domain>/health`
+> check can pass. For that check to verify cleanly, the record should be **proxied**
+> (orange cloud, so Cloudflare's public edge certificate is presented) — a grey-clouded
+> record pointing straight at the server will expose the self-signed origin certificate,
+> and the TLS verification in the final health check will reject it.
 
 The script then:
 
 1. Installs Docker Engine + Compose plugin
-2. Installs Coolify
-3. Switches Coolify's proxy to **Caddy** with the Cloudflare DNS-01 module (wildcard certs require
-   DNS-01; Caddy issues and renews them automatically — no certbot, no cron)
-4. Creates the `vooglaadija` application from the public GitHub repo (Docker Compose build pack,
-   auto-deploy on push to `main`)
-5. Generates and stores secrets (database password, Redis password, JWT signing key) plus the
-   production CORS origin and secure-cookie settings
-6. Assigns `https://<domain>` (+ wildcard) to the `api` service
-7. Deploys and polls `https://<domain>/health` until healthy
+2. Verifies/creates the Cloudflare DNS records (skipped without a token)
+3. Generates `./.env` with random secrets (DB password, Redis password, JWT key, Grafana admin) —
+   existing secrets are **preserved** on re-runs so the initialized PostgreSQL/Redis volumes
+   stay in sync
+4. Generates the `Caddyfile` and a self-signed TLS origin certificate for the domain
+5. Brings up the stack with the standalone Caddy reverse proxy
+   (`docker-compose.yml` + `docker-compose.local.yml` + `docker-compose.caddy.yml`)
+6. Polls `https://<domain>/health` until healthy (also verifies the local `:443` path first)
 
 Non-interactive (CI-friendly) mode — provide the values through environment variables (exported
 before running):
 
 ```bash
 export DEPLOY_DOMAIN=app.example.com
-export CLOUDFLARE_EMAIL=ops@example.com
-# export CLOUDFLARE_API_TOKEN=<your Cloudflare API token>
+export CLOUDFLARE_API_TOKEN=<your Cloudflare API token>   # optional
 sudo ./deploy/bootstrap.sh --non-interactive
 ```
 
-## Continuous deployment
+## TLS / certificates
 
-| Step                 | Where                                           | What happens                                                                            |
-| -------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `git push` to `main` | GitHub                                          | CI runs lint, type checks, unit/integration tests, security scans                       |
-| Image build          | GitHub Actions (`.github/workflows/docker.yml`) | Multi-arch `api` + `worker` images pushed to GHCR, tagged with SHA + version + `latest` |
-| Redeploy             | Coolify webhook                                 | Pulls the new images (`up -d --pull always`), recreates `api`/`worker`, health-gated    |
-| Rollback             | Coolify UI                                      | One click — re-deploy any previous deployment                                           |
-
-Coolify also gives you: environment variable management (encrypted), deployment history and logs,
-one-click rollback, and the ability to add staging/preview environments later.
-
-## TLS / wildcard certificates
-
-- Issued by Let's Encrypt via the **DNS-01 challenge** — no inbound port 80 requirement beyond
-  normal operation, works with Cloudflare proxy (orange cloud) enabled.
-- Certificate covers `your-domain.com` **and** `*.your-domain.com`; renewed automatically by Caddy
-  (30 days before expiry).
-- If a certificate is ever missing (e.g. after Coolify upgrades reset the proxy config), re-apply
-  the Caddy DNS-01 proxy configuration from
-  [Coolify's docs](https://coolify.io/docs/knowledge-base/proxy/caddy/dns-challenge) or re-run
-  `./deploy/bootstrap.sh --force`.
+- Caddy serves a **self-signed origin certificate** for `your-domain.com` so the
+  Cloudflare → origin leg is encrypted. Set Cloudflare SSL/TLS mode to **Full** (the self-signed
+  cert is enough; use "Full (strict)" only with a Cloudflare Origin CA cert).
+- Plain HTTP `:80` **redirects to HTTPS** (Caddy `redir`), so credentials are never accepted
+  over cleartext. Cloudflare "Flexible" mode is **not** supported — use "Full".
+- If you later grey-cloud the DNS (direct traffic, no Cloudflare), change the `tls` line in the
+  `Caddyfile` to `tls internal` and Caddy will auto-issue a real Let's Encrypt certificate.
 
 ## Operations
 
 ### View status / logs
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-docker logs ytprocessor-api
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml ps
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml logs -f api
 ```
-
-Or use the Coolify UI (deployment logs, container logs, metrics).
 
 ### Update secrets or environment
 
-Coolify UI → vooglaadija → Environment Variables. Restart the application afterward.
+Edit `./.env` (mode 600) and restart the affected services:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
+```
 
 ### Enable optional profiles
 
-The compose file ships with optional profiles. Edit the application's _Docker Compose start command_
-in Coolify (Advanced) to include a profile, e.g.:
+The compose file ships with optional profiles; pass `--profile` to the compose command:
 
-```text
---profile monitoring up -d --pull always --remove-orphans
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml --profile monitoring up -d
 ```
 
 - `monitoring` — Prometheus (loopback :9090) + Grafana (loopback :3000, preloaded dashboards)
@@ -153,69 +145,31 @@ Enable the `backup` profile (see above). Dumps land in `infra/backup/backup-data
 
 ```bash
 # Restart a service
-docker compose -f docker-compose.yml -f docker-compose.local.yml restart api   # local stack
-# Coolify-managed: restart via the Coolify UI
+docker compose -f docker-compose.yml -f docker-compose.local.yml restart api
+# Bring the whole stack up cleanly (safe after a host reboot)
+docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
 ```
 
-## Standalone deployment (Caddy, no Coolify)
-
-This VPS runs the stack **without** Coolify, using a standalone Caddy reverse proxy as the only
-public entry point. Caddy terminates TLS (a Cloudflare-origin self-signed cert) on port 443, serves
-plain HTTP on port 80, and forwards both listeners to `api:8000`. Cloudflare's orange-cloud proxy
-forwards visitor traffic to this origin on 80/443, so **Caddy must be running or Cloudflare returns
-HTTP 521**.
-
-> ⚠️ The Caddy service is defined **only** in `docker-compose.caddy.yml`. It is an override that
-> must be passed on every stack start, restart, and update invocation. Starting the base files alone
-> leaves nothing listening on 80/443 and breaks the site.
-
-### Files
-
-- `Caddyfile` — site block for `${DEPLOY_DOMAIN}` + plain `:80` fallback.
-- `docker-compose.caddy.yml` — defines the `caddy` service (ports 80/443, mounts `Caddyfile` +
-  `certs`).
-- `certs/` — `${DEPLOY_DOMAIN}.crt` / `.key` (self-signed, valid for 1 year from issue).
-
-### Canonical start / restart / update commands
-
-Always include all three files:
+## Update the app after a new build
 
 ```bash
-cd /root/vooglaadija
-
-# First start
-docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
-
-# Restart everything (e.g. after a host reboot a manual `docker start` isn't needed —
-# all services use restart: unless-stopped — but this brings the whole stack up cleanly)
-docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
-
-# Update the app after a new build
+cd /root/vooglaadija          # or wherever the checkout lives
+git pull
 docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d --build
 ```
 
-### Verify
-
-```bash
-# Caddy container should be Up and listening on 80/443
-docker ps --filter name=caddy --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-ss -tlnp | grep -E ':80|:443'
-
-# Public check (through Cloudflare)
-curl -sS -o /dev/null -w '%{http_code}\n' https://${DEPLOY_DOMAIN}/health
-```
+Images are built locally from the checkout (no GHCR pull required).
 
 ## Troubleshooting
 
-| Symptom                                           | Fix                                                                                                                                                                                                                                                |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `https://<domain>` returns 502/504                | Check the API container in Coolify logs; verify the domain is assigned to the `api` service                                                                                                                                                        |
+| Symptom                                         | Fix                                                                                                                                                              |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://<domain>` returns 502/504              | Check the API container: `docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml logs api`                                  |
 | Cloudflare returns **HTTP 521** (web server down) | The Caddy container isn't running or 80/443 aren't listening on this origin. Check `docker ps --filter name=caddy`; if missing, start with the standalone command above (`-f docker-compose.caddy.yml`). Verify `ss -tlnp \| grep -E ':80\|:443'`. |
-| Certificate not issued                            | Check `docker logs coolify-proxy`; verify the Cloudflare token has `Zone.DNS:Edit`; wait for DNS propagation                                                                                                                                       |
-| Wildcard subdomains don't resolve                 | Create `*.domain` A record (bootstrap does this automatically when the token permits)                                                                                                                                                              |
-| Container stuck restarting                        | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars (Coolify UI highlights required ones)                                                                                                  |
-| Deploy doesn't pick up new image                  | The start command must include `--pull always` (bootstrap sets this); otherwise update it in Coolify → Advanced                                                                                                                                    |
-| Coolify proxy reverted to Traefik after upgrade   | Re-run `./deploy/bootstrap.sh --force` or re-apply the Caddy DNS-01 config from [Coolify docs](https://coolify.io/docs/knowledge-base/proxy/caddy/dns-challenge)                                                                                   |
+| Certificate not accepted by Cloudflare          | Set Cloudflare SSL/TLS mode to **Full** (self-signed origin cert). For "Full (strict)", use a Cloudflare Origin CA cert instead.                                  |
+| Wildcard subdomains don't resolve               | DNS only: create `*.domain` A record pointing at this server (bootstrap does this automatically when the token permits). The generated Caddyfile routes only the exact domain; wildcard hosts that *do* resolve are not proxied by Caddy. |
+| Container stuck restarting                      | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars in `.env` (DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY)  |
+| Deploy doesn't pick up new code                 | Rebuild: `docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d --build`                                            |
 
 ## Migrating an existing deployment
 
@@ -224,8 +178,7 @@ move an existing instance:
 
 1. Back up the database from the old server (`pg_dump` or the old `backup` profile).
 2. Run `./deploy/bootstrap.sh` on the new server with the same domain.
-3. Restore inside the database container (use the `db` compose service; in a Coolify-managed stack,
-   run the command inside the Coolify project directory or via the Coolify terminal):
+3. Restore inside the database container:
    - plain SQL dump:
      `docker compose -f docker-compose.yml -f docker-compose.local.yml exec -i db psql -U postgres -d ytprocessor < dump.sql`
    - custom-format archive:
@@ -235,12 +188,9 @@ move an existing instance:
 ## Security notes
 
 - Firewall: only ports 22, 80, 443 need to be open
-  (`ufw allow ssh && ufw allow 80/tcp && ufw allow 443/tcp`). The Coolify dashboard listens on
-  `:8000` with a default admin password — do **not** leave it exposed to the internet:
-  - restrict it to your IP: `ufw allow from <your-ip> to any port 8000`, or
-  - use an SSH tunnel instead: `ssh -L 8000:127.0.0.1:8000 user@server`, then open
-    <http://127.0.0.1:8000> locally and keep port 8000 closed in the firewall.
+  (`ufw allow ssh && ufw allow 80/tcp && ufw allow 443/tcp`). Everything else is internal to the
+  compose network; debug ports from `docker-compose.local.yml` are bound to loopback only.
 - Containers run as non-root with dropped capabilities, read-only rootfs and `no-new-privileges`
   (see `x-base-service` in `docker-compose.yml`).
-- Secrets live only in Coolify's encrypted store — never in the repo.
-- Keep the VPS patched and Coolify updated (Coolify has a self-update scheduler).
+- Secrets live only in `./.env` (mode 600) — never commit it to version control.
+- Keep the VPS patched.
