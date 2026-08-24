@@ -91,7 +91,12 @@ labels (`:Z`) and json-file log rotation for every service. `api`/`worker` pull 
 (`IMAGE_TAG`, default `latest`); the local override builds them from the `Dockerfile`.
 
 Worker DB pool overrides live in `docker-compose.yml` as `WORKER_DB_POOL_SIZE` (default 3) and
-`WORKER_DB_MAX_OVERFLOW` (default 2).
+`WORKER_DB_MAX_OVERFLOW` (default 2). The worker runs a bounded concurrency pool
+(`WORKER_CONCURRENCY`, default 2) and is sized at 2 CPU / 2 GB to back it. To scale out, set
+`WORKER_REPLICAS` (>1) — each replica runs its own pool, so total parallelism is
+`WORKER_REPLICAS * WORKER_CONCURRENCY` and total DB connections are `WORKER_REPLICAS * (pool + overflow)`.
+The worker has no static `container_name` (removed to allow replicas); containers are named
+`vooglaadija-worker-N` and are addressed by the `worker` service name.
 
 Configuration validation runs when `core.config.Settings` is constructed outside `TESTING=1`.
 Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PATH`, weak

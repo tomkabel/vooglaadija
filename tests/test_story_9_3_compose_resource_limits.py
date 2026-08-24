@@ -50,7 +50,10 @@ def test_worker_has_explicit_limits_distinct_from_api():
     worker_limits = compose["services"]["worker"]["deploy"]["resources"]["limits"]
 
     assert api_limits == base_limits
-    assert worker_limits == {"cpus": "0.75", "memory": "512M"}
+    # Worker is sized independently (and larger) than the base/API defaults to
+    # back the concurrency pool (#160/#161): 2 CPU / 2 GB sustains the default
+    # WORKER_CONCURRENCY=2 of concurrent yt-dlp/ffmpeg jobs.
+    assert worker_limits == {"cpus": "2.0", "memory": "2G"}
     assert worker_limits != base_limits
 
 
@@ -61,7 +64,7 @@ def test_story_required_service_memory_limits_match_contract():
 
     expected_memory_limits = {
         "otel-collector": "256M",
-        "worker": "512M",
+        "worker": "2G",
     }
 
     for service_name, expected_memory in expected_memory_limits.items():

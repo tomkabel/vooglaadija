@@ -160,9 +160,15 @@ services:
   # Worker — background job processor (yt-dlp)
   # ==========================================
   worker:
-    container_name: ytprocessor-worker
+    # NOTE: no static container_name — it blocks `deploy.replicas` (Compose
+    # requires unique names per replica). The container is named
+    # `vooglaadija-worker-N` automatically; inter-service comms and Prometheus
+    # use the service name `worker`, so removing this is safe.
     image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # Scale out by setting WORKER_REPLICAS>1 in the environment (each replica
+    # runs the bounded concurrency pool from #160, so total parallelism is
+    # WORKER_REPLICAS * WORKER_CONCURRENCY).
     environment:
       <<: *common-env
       WORKER_ID: ${HOSTNAME:-worker-1}
@@ -192,13 +198,17 @@ services:
         max-size: '10m'
         max-file: '3'
     deploy:
+      replicas: ${WORKER_REPLICAS:-1}
       resources:
+        # Raised from 0.75 CPU / 512M to back the concurrency pool (#160/#161):
+        # ~2 concurrent yt-dlp/ffmpeg jobs need ~1-1.5 CPU and ~1-1.5 GB during
+        # format negotiation. A single replica now sustains WORKER_CONCURRENCY=2.
         limits:
-          cpus: '0.75'
-          memory: 512M
+          cpus: '2.0'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test:
         [
