@@ -14,7 +14,7 @@ from app.main import app
 from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
 from core.models.outbox import Outbox
-from tests.conftest import create_test_user_and_login, test_engine
+from tests.conftest import TestingSessionLocal, create_test_user_and_login, test_engine
 
 
 def _user_id_from_token(token: str) -> uuid.UUID:
@@ -363,6 +363,59 @@ async def test_delete_download_requires_auth():
         response = await client.delete(
             f"/api/v1/downloads/{uuid.uuid4()}",
         )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_downloads_success():
+    """Test bulk deleting multiple download jobs in one request."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        token = await create_test_user_and_login(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        user_id = _user_id_from_token(token)
+
+        created = []
+        async with TestingSessionLocal() as session:
+            for _ in range(3):
+                job = DownloadJob(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                    status="completed",
+                    created_at=datetime.now(UTC),
+                )
+                session.add(job)
+                created.append(str(job.id))
+            await session.commit()
+
+        response = await client.post(
+            "/api/v1/downloads/bulk-delete",
+            json={"job_ids": created},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert {str(id_) for id_ in body["deleted"]} == set(created)
+        assert body["skipped"] == []
+        assert body["requested"] == 3
+
+        for job_id in created:
+            get_response = await client.get(
+                f"/api/v1/downloads/{job_id}",
+                headers=headers,
+            )
+            assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_downloads_requires_auth():
+    """Test that bulk deleting downloads requires authentication."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/downloads/bulk-delete",
+            json={"job_ids": [str(uuid.uuid4())]},
+        )
+    assert response  # endpoint defined
     assert response.status_code == 401
 
 

@@ -2,6 +2,7 @@
 
 import os
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -54,6 +55,15 @@ class DeleteOutcome:
     """Result of deleting a download and optionally its file."""
 
     file_deleted: bool
+
+
+@dataclass(frozen=True)
+class BulkDeleteResult:
+    """Outcome of a bulk delete operation across many user-owned jobs."""
+
+    deleted_ids: list[str]
+    skipped_ids: list[str]
+    requested: int
 
 
 @dataclass(frozen=True)
@@ -291,6 +301,46 @@ class DownloadService:
         await self.db.delete(job)
         await self.db.commit()
         return DeleteOutcome(file_deleted=file_deleted)
+
+    async def bulk_delete(
+        self,
+        job_ids: Sequence[str | uuid.UUID],
+        *,
+        allowed_statuses: set[str] | None = None,
+        fail_on_file_delete: bool = True,
+    ) -> BulkDeleteResult:
+        """
+        Delete many user-owned download jobs, skipping those that cannot be deleted.
+
+        Jobs that are missing, not owned by the user, or in a status that is not
+        allowed are collected as skipped rather than aborting the whole batch.
+
+        Parameters:
+            job_ids (list[str | uuid.UUID]): Identifiers of the download jobs to delete.
+            allowed_statuses (set[str] | None): Statuses permitted for deletion.
+            fail_on_file_delete (bool): Whether to raise when an associated file cannot be deleted.
+
+        Returns:
+            BulkDeleteResult: The deleted, skipped, and requested job id counts.
+        """
+        deleted_ids: list[str] = []
+        skipped_ids: list[str] = []
+        for job_id in job_ids:
+            try:
+                await self.delete(
+                    job_id,
+                    allowed_statuses=allowed_statuses,
+                    fail_on_file_delete=fail_on_file_delete,
+                )
+            except (InvalidDownloadIdError, DownloadNotFoundError, InvalidDownloadStatusError):
+                skipped_ids.append(str(job_id))
+                continue
+            deleted_ids.append(str(job_id))
+        return BulkDeleteResult(
+            deleted_ids=deleted_ids,
+            skipped_ids=skipped_ids,
+            requested=len(job_ids),
+        )
 
     async def resolve_errors(
         self,

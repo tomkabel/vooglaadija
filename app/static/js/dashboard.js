@@ -624,6 +624,18 @@
     row.className = 'download-row';
     row.dataset.jobId = jobId;
 
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className =
+      'form-checkbox h-4 w-4 flex-shrink-0 rounded border-white/20 bg-white/5 text-amber-500 focus:ring-amber-500/40';
+    checkbox.setAttribute('data-bulk-checkbox', '');
+    checkbox.name = 'job_ids';
+    checkbox.value = jobId;
+    checkbox.checked = false;
+    const ariaTitle = String(data.title || data.url || '');
+    checkbox.setAttribute('aria-label', `Select download: ${ariaTitle}`);
+    row.appendChild(checkbox);
+
     const main = document.createElement('div');
     main.className = 'flex-1 min-w-0';
 

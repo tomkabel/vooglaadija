@@ -1014,6 +1014,60 @@ class TestDashboardPage:
         assert 'aria-label="Delete download"' in dashboard_response.text
         assert 'class="btn-danger"' in dashboard_response.text
 
+    @pytest.mark.asyncio
+    async def test_dashboard_renders_bulk_selection_controls(self):
+        """Test dashboard renders bulk-select checkboxes, select-all, and delete button."""
+        from core.models.user import User
+
+        email = f"dashbulk_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            access_token = login_resp.cookies.get("access_token", "")
+
+            async with TestingSessionLocal() as session:
+                user_result = await session.execute(select(User).where(User.email == email))
+                user = user_result.scalar_one()
+                job = DownloadJob(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    url="https://www.youtube.com/watch?v=bulkselect",
+                    status="completed",
+                    title="Bulk select video",
+                    created_at=datetime.now(UTC),
+                )
+                session.add(job)
+                await session.commit()
+
+            dashboard_response = await client.get(
+                "/web/downloads",
+                cookies={"access_token": access_token},
+            )
+
+        text = dashboard_response.text
+        assert 'data-bulk-toolbar' in text
+        assert 'data-select-all' in text
+        assert 'data-bulk-delete' in text
+        assert 'data-bulk-checkbox' in text
+        assert 'name="job_ids"' in text
+        assert 'Delete selected' in text
+        assert '/web/downloads/bulk-delete' in text
+        # Empty list should not render the bulk toolbar.
+        from app.api.routes.web import templates
+
+        no_jobs = templates.env.get_template("partials/_download_list.html").render(jobs=[])
+        assert 'data-bulk-toolbar' not in no_jobs
+
     def test_download_list_and_item_render_equivalent_canonical_row(self):
         """Test list-rendered rows match the canonical download item partial structure."""
         from app.api.routes.web import templates
@@ -1606,6 +1660,115 @@ class TestDeleteDownload:
             response = await client.delete(f"/web/downloads/{fake_uuid}")
 
         assert response.status_code == 401
+
+
+class TestBulkDeleteDownload:
+    """Tests for POST /web/downloads/bulk-delete (HTMX bulk action)."""
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_removes_selected_rows(self):
+        """Test that bulk delete removes the selected jobs and reports deleted ids."""
+        from core.models.user import User
+
+        email = f"bulk_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            access_token = login_resp.cookies.get("access_token", "")
+            csrf_token = (
+                login_resp.cookies.get("csrf_token")
+                or client.cookies.get("csrf_token")
+                or csrf_token
+            )
+
+            async with TestingSessionLocal() as session:
+                user_result = await session.execute(select(User).where(User.email == email))
+                user = user_result.scalar_one()
+                created_ids = []
+                for index in range(2):
+                    job = DownloadJob(
+                        id=uuid.uuid4(),
+                        user_id=user.id,
+                        url=f"https://www.youtube.com/watch?v=bulk{index}",
+                        status="completed",
+                        created_at=datetime.now(UTC),
+                    )
+                    session.add(job)
+                    created_ids.append(str(job.id))
+                await session.commit()
+
+            headers = {"HX-Request": "true", "X-CSRF-Token": csrf_token}
+            cookies = {"access_token": access_token}
+            response = await client.post(
+                "/web/downloads/bulk-delete",
+                data={"job_ids": created_ids, "csrf_token": csrf_token},
+                headers=headers,
+                cookies=cookies,
+            )
+
+        assert response.status_code == 200
+        trigger = response.headers.get("HX-Trigger")
+        assert trigger is not None
+        import json as _json
+
+        payload = _json.loads(trigger)
+        assert set(payload["bulk-delete-complete"]["deleted"]) == set(created_ids)
+        assert payload["bulk-delete-complete"]["requested"] == 2
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_requires_csrf(self):
+        """Test that bulk delete rejects requests without a valid CSRF token."""
+        from core.models.user import User
+
+        email = f"bulkcsrf_{uuid.uuid4().hex[:8]}@example.com"
+        password = "securepassword123"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test", follow_redirects=False
+        ) as client:
+            await do_register(client, email, password)
+            csrf_token = await do_login(client, email, password)
+
+            login_resp = await client.post(
+                "/web/login",
+                data={"email": email, "password": password},
+                headers={"X-CSRF-Token": csrf_token},
+            )
+            access_token = login_resp.cookies.get("access_token", "")
+
+            async with TestingSessionLocal() as session:
+                user_result = await session.execute(select(User).where(User.email == email))
+                user = user_result.scalar_one()
+                job = DownloadJob(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    url="https://www.youtube.com/watch?v=bulkcsrf",
+                    status="completed",
+                    created_at=datetime.now(UTC),
+                )
+                session.add(job)
+                await session.commit()
+
+            headers = {"HX-Request": "true"}
+            cookies = {"access_token": access_token}
+            response = await client.post(
+                "/web/downloads/bulk-delete",
+                data={"job_ids": [str(job.id)]},
+                headers=headers,
+                cookies=cookies,
+            )
+
+        assert response.status_code == 403
 
 
 class TestDownloadFile:

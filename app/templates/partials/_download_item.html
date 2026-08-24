@@ -1,4 +1,12 @@
 <div class="download-row" data-job-id="{{ job.id }}">
+  <input
+    type="checkbox"
+    data-bulk-checkbox
+    name="job_ids"
+    value="{{ job.id }}"
+    class="form-checkbox h-4 w-4 flex-shrink-0 rounded border-white/20 bg-white/5 text-amber-500 focus:ring-amber-500/40"
+    aria-label="Select download: {{ job.title or job.url }}"
+  />
   <div class="flex-1 min-w-0">
     <div class="flex items-center gap-3">
       <div
