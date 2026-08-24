@@ -305,8 +305,42 @@ async def main() -> None:
     update_worker_state(status="running")
     health_heartbeat_task = asyncio.create_task(_health_heartbeat_loop())
 
-    # Track in-flight extraction for grace-period enforcement
-    current_job_task: asyncio.Task | None = None
+    # In-flight extraction tasks — bounded pool so the worker processes up to
+    # WORKER_CONCURRENCY downloads in parallel instead of one at a time.
+    in_flight: set[asyncio.Task[bool]] = set()
+
+    def _spawn_if_capacity(job_id_str: str) -> None:
+        """Spawn a process_next_job task if under the concurrency limit."""
+        if len(in_flight) >= settings.worker_concurrency:
+            return
+        task = asyncio.create_task(process_next_job(job_id_str))
+        in_flight.add(task)
+        task.add_done_callback(in_flight.discard)
+
+    def _reap_in_flight() -> None:
+        """Remove any completed/cancelled tasks from the pool (done callback also does)."""
+        in_flight.difference_update(t for t in in_flight if t.done())
+
+    async def _drain_queue_into_pool() -> bool:
+        """Pop due jobs from the download queue and spawn them up to capacity.
+
+        Returns True if at least one job was popped (so the caller can keep
+        polling without sleeping when the queue is busy).
+        """
+        popped_any = False
+        while len(in_flight) < settings.worker_concurrency:
+            grace_remaining = get_grace_period_remaining()
+            if grace_remaining is not None and grace_remaining <= 0:
+                break
+            effective_timeout = min(brpop_timeout, grace_remaining or brpop_timeout)
+            effective_timeout = max(1, int(effective_timeout))
+            result = await redis_client.brpop("download_queue", timeout=effective_timeout)
+            if not result:
+                break
+            _, job_id_str = result
+            popped_any = True
+            _spawn_if_capacity(job_id_str)
+        return popped_any
 
     while not shutdown_event.is_set():
         grace_remaining = get_grace_period_remaining()
@@ -352,19 +386,17 @@ async def main() -> None:
             grace_remaining = get_grace_period_remaining()
             if grace_remaining is not None and grace_remaining <= 0:
                 break
-            effective_timeout = min(brpop_timeout, grace_remaining or brpop_timeout)
-            effective_timeout = max(1, int(effective_timeout))
 
-            result = await redis_client.brpop("download_queue", timeout=effective_timeout)
-            if result:
-                _, job_id_str = result
-
-                # Wrap in a Task so we can enforce remaining grace period
-                current_job_task = asyncio.create_task(process_next_job(job_id_str))
-                try:
-                    await _await_current_job_with_shutdown_grace(current_job_task, job_id_str)
-                finally:
-                    current_job_task = None
+            # Reap finished tasks, then keep the pool fed from the queue.
+            _reap_in_flight()
+            popped = await _drain_queue_into_pool()
+            # Idle (nothing popped, nothing in flight): brpop already waited up to
+            # brpop_timeout, so only a tiny yield is needed to avoid a tight spin.
+            # Pool full (nothing popped but in_flight at capacity): also yield so we
+            # don't busy-spin while waiting for an in-flight job to free a slot.
+            if not popped:
+                if not in_flight or len(in_flight) >= settings.worker_concurrency:
+                    await asyncio.sleep(0.05)
 
         except asyncio.CancelledError:
             logger.info("Worker loop cancelled, exiting...")
@@ -431,14 +463,21 @@ async def main() -> None:
             )
             break
 
-    # Drain any remaining in-flight job task
-    if current_job_task is not None and not current_job_task.done():
-        current_job_task.cancel()
-        try:
-            await asyncio.wait_for(current_job_task, timeout=3.0)
-        except (asyncio.CancelledError, TimeoutError):
-            pass
-        current_job_task = None
+    # Drain any remaining in-flight job tasks. We await them (bounded by the
+    # remaining grace period) rather than cancelling, so jobs that are mid-flight
+    # finish cleanly instead of being orphaned for the zombie sweeper.
+    if in_flight:
+        grace_remaining = get_grace_period_remaining()
+        if grace_remaining is None or grace_remaining > 0:
+            wait_for = grace_remaining or 30.0
+            try:
+                await asyncio.wait_for(asyncio.gather(*in_flight, return_exceptions=True), timeout=wait_for)
+            except (asyncio.CancelledError, TimeoutError):
+                # Grace expired — cancel whatever is still running.
+                for task in list(in_flight):
+                    task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.gather(*in_flight, return_exceptions=True)
 
     health_heartbeat_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

@@ -103,9 +103,12 @@ async def create_download_form(
     if not is_supported_url(url):
         return HTMLResponse(status_code=422, content=_error_html("Invalid supported URL"))
 
+    # Defer title resolution: the worker captures the title during extraction and
+    # streams it to the client over pub/sub, so resolving it here would block the
+    # HTMX request for up to 15s and spawn a redundant yt-dlp subprocess.
     service = DownloadService(db, current_user.id)
     try:
-        job = await service.create(url, resolve_title=True)
+        job = await service.create(url, resolve_title=False)
     except Exception:
         logger.exception("failed_to_create_download_job")
         return HTMLResponse(status_code=500, content=_error_html("Failed to create download"))

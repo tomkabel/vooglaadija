@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     browser_downloader_timeout: int = 300
     browser_downloader_cb_use_redis: bool = False
 
+    # Worker job-processing concurrency. The worker main loop runs up to this
+    # many downloads in parallel (bounded in-flight task pool) instead of one at
+    # a time. Each in-flight job opens its own DB session, so the DB pool for the
+    # worker must be at least this large (see db_pool defaults + WORKER_DB_* env).
+    worker_concurrency: int = 2
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""
@@ -119,6 +125,7 @@ class Settings(BaseSettings):
 
         self._validate_ports()
         self._validate_db_pool_settings()
+        self._validate_worker_concurrency()
         self._build_database_url()
         self._validate_secret_key()
         self._validate_cors()
@@ -171,6 +178,26 @@ class Settings(BaseSettings):
         self._validate_minimum("DB_MAX_OVERFLOW", self.db_max_overflow, 0)
         self._validate_minimum("DB_POOL_TIMEOUT", self.db_pool_timeout, 1)
         self._validate_minimum("DB_POOL_RECYCLE", self.db_pool_recycle, 1)
+
+    def _validate_worker_concurrency(self) -> None:
+        # Allow up to 32 parallel downloads; beyond that the host is likely to be
+        # CPU/RAM-bound (each yt-dlp/ffmpeg process uses ~50-100MB + 1+ core
+        # during negotiation) and the DB pool would need to be sized accordingly.
+        self._validate_minimum("WORKER_CONCURRENCY", self.worker_concurrency, 1)
+        if self.worker_concurrency > 32:
+            raise ValueError(
+                f"Invalid WORKER_CONCURRENCY: {self.worker_concurrency!r} must be <= 32"
+            )
+        # The worker opens one DB session per in-flight job (process_next_job
+        # creates its own session), plus overhead for maintenance tasks. Guard
+        # against a config that would starve the pool and serialize on checkout.
+        required_pool = self.worker_concurrency + 2
+        if self.db_pool_size + self.db_max_overflow < required_pool:
+            raise ValueError(
+                f"Invalid worker config: DB_POOL_SIZE({self.db_pool_size}) + "
+                f"DB_MAX_OVERFLOW({self.db_max_overflow}) must be >= "
+                f"WORKER_CONCURRENCY({self.worker_concurrency}) + 2 for the worker"
+            )
 
     @staticmethod
     def _validate_minimum(name: str, value: int, minimum: int) -> None:

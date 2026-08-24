@@ -481,3 +481,57 @@ class TestSettingsProductionValidation:
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
         assert len(s.secret_key) >= 64
+
+
+class TestWorkerConcurrencyConfig:
+    """WORKER_CONCURRENCY validation and DB-pool coupling."""
+
+    def test_worker_concurrency_default_is_two(self):
+        """Default worker concurrency enables a small parallel pool out of the box."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+        assert s.worker_concurrency == 2
+
+    def test_worker_concurrency_accepts_valid_range(self):
+        """Concurrency within [1, 32] is accepted."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            worker_concurrency=8,
+            db_pool_size=12,
+            db_max_overflow=4,
+        )
+        assert s.worker_concurrency == 8
+
+    def test_worker_concurrency_below_one_rejected(self):
+        """Concurrency must be at least 1."""
+        with pytest.raises((ValidationError, ValueError), match="Invalid WORKER_CONCURRENCY"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=0,
+            )
+
+    def test_worker_concurrency_above_max_rejected(self):
+        """Concurrency above 32 is rejected."""
+        with pytest.raises((ValidationError, ValueError), match="Invalid WORKER_CONCURRENCY"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=64,
+                db_pool_size=80,
+                db_max_overflow=20,
+            )
+
+    def test_worker_concurrency_requires_sufficient_db_pool(self):
+        """Worker concurrency must be backed by a DB pool of at least N+2."""
+        with pytest.raises((ValidationError, ValueError), match="for the worker"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=6,
+                db_pool_size=4,
+                db_max_overflow=0,
+            )
