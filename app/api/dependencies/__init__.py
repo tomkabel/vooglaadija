@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ACCESS_TOKEN_TYPE, get_auth_cookie_names, verify_token
+from app.services.pat_service import PATService
 from app.services.token_blacklist import is_token_blacklisted
 from core.database import get_db
 from core.models.user import User, not_deleted
@@ -68,6 +69,37 @@ async def _resolve_user_from_token(
     return user
 
 
+async def _resolve_user_from_pat(
+    db: AsyncSession,
+    token: str | None,
+) -> tuple[User, "PATAuthContext"] | None:
+    if not token:
+        return None
+
+    service = PATService(db)
+    pat = await service.authenticate(token)
+
+    if pat is None:
+        return None
+
+    await service.record_usage(pat.id)
+    await db.commit()
+
+    from core.models.personal_access_token import PersonalAccessToken
+
+    result = await db.execute(
+        select(User).where(User.id == pat.user_id, not_deleted())
+    )
+    user: User | None = result.scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        return None
+
+    scopes = pat.scopes.split(",") if pat.scopes else []
+    context = PATAuthContext(user=user, scopes=scopes, pat_id=pat.id)
+    return user, context
+
+
 async def get_current_user_from_cookie(
     db: DbSession,
     request: Request,
@@ -109,5 +141,102 @@ async def get_current_user(
     )
 
 
+async def get_current_user_with_pat(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: DbSession,
+) -> User:
+    """
+    Authenticate via JWT or Personal Access Token.
+
+    Supports both traditional JWT bearer tokens and long-lived PATs
+    for machine/agents. PATs use the prefix 'vpat_'.
+
+    Parameters:
+        credentials: Bearer credentials from the Authorization header.
+        db: Database session.
+
+    Returns:
+        User: The authenticated user.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+
+    try:
+        user = await _resolve_user_from_token(db, token, expected_type=ACCESS_TOKEN_TYPE)
+        return user
+    except HTTPException:
+        pass
+
+    pat_result = await _resolve_user_from_pat(db, token)
+    if pat_result is not None:
+        return pat_result[0]
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+class PATAuthContext:
+    """Holds PAT authentication context including scopes."""
+
+    def __init__(self, user: User, scopes: list[str], pat_id: UUID) -> None:
+        self.user = user
+        self.scopes = scopes
+        self.pat_id = pat_id
+
+    def has_scope(self, scope: str) -> bool:
+        return scope in self.scopes
+
+
+async def get_pat_auth_context(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: DbSession,
+) -> PATAuthContext:
+    """
+    Authenticate via Personal Access Token and return the auth context with scopes.
+
+    This dependency is used for endpoints that need to verify PAT scopes
+    for fine-grained access control.
+
+    Parameters:
+        credentials: Bearer credentials from the Authorization header.
+        db: Database session.
+
+    Returns:
+        PATAuthContext: The authentication context with user and scopes.
+
+    Raises:
+        HTTPException: If authentication fails or the token is not a PAT.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+
+    pat_result = await _resolve_user_from_pat(db, token)
+    if pat_result is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return pat_result[1]
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentUserFromCookie = Annotated[User, Depends(get_current_user_from_cookie)]
+CurrentUserWithPAT = Annotated[User, Depends(get_current_user_with_pat)]
+PATContext = Annotated[PATAuthContext, Depends(get_pat_auth_context)]

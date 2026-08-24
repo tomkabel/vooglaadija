@@ -57,6 +57,9 @@ dependencies = [
     "pyasn1>=0.6.4",  # transitive; CVE-2025-0395 (panic on malformed BER)
     "authlib>=1.6.9",  # transitive; CVE-2025-62025 (token fixation via empty client secret)
 
+    # MCP (Model Context Protocol) for agentic tool integration
+    "mcp>=1.0.0",
+
     # MEDIUM PRIORITY - Reliability & Debugging
     # Battle-tested retry logic
     "tenacity>=8.2.0",
