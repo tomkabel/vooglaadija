@@ -105,6 +105,8 @@ See the [Terms of Service](/web/terms) for full details.
 ### Security & Reliability
 
 - JWT access/refresh tokens with bcrypt hashing
+- Long-lived, scoped Personal Access Tokens (PATs) for agent/machine auth
+- Official Model Context Protocol (MCP) server (`packages/mcp-server`)
 - CSRF token protection
 - Per-IP and per-user rate limiting
 - Content-Security-Policy headers
