@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     # worker must be at least this large (see db_pool defaults + WORKER_DB_* env).
     worker_concurrency: int = 2
 
+    # yt-dlp warm subprocess pool. Instead of spawning `python -c "import yt_dlp"`
+    # for every job (hundreds of ms of interpreter + import cold start per call),
+    # a small pool of long-lived Python processes imports yt_dlp once and is fed
+    # jobs over stdin. Disabling falls back to the per-job subprocess path.
+    yt_dlp_warm_pool: bool = True
+    yt_dlp_pool_size: int = 2
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""
@@ -126,6 +133,7 @@ class Settings(BaseSettings):
         self._validate_ports()
         self._validate_db_pool_settings()
         self._validate_worker_concurrency()
+        self._validate_yt_dlp_pool()
         self._build_database_url()
         self._validate_secret_key()
         self._validate_cors()
@@ -178,6 +186,17 @@ class Settings(BaseSettings):
         self._validate_minimum("DB_MAX_OVERFLOW", self.db_max_overflow, 0)
         self._validate_minimum("DB_POOL_TIMEOUT", self.db_pool_timeout, 1)
         self._validate_minimum("DB_POOL_RECYCLE", self.db_pool_recycle, 1)
+
+    def _validate_yt_dlp_pool(self) -> None:
+        # Warm pool size is capped to avoid spawning too many long-lived
+        # yt-dlp processes (each holds ~50-100MB resident + its own extractor
+        # state). It must also not exceed the extraction semaphore's capacity,
+        # which bounds how many jobs can run at once anyway.
+        self._validate_minimum("YT_DLP_POOL_SIZE", self.yt_dlp_pool_size, 1)
+        if self.yt_dlp_pool_size > 16:
+            raise ValueError(
+                f"Invalid YT_DLP_POOL_SIZE: {self.yt_dlp_pool_size!r} must be <= 16"
+            )
 
     def _validate_worker_concurrency(self) -> None:
         # Allow up to 32 parallel downloads; beyond that the host is likely to be

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from app.utils.exceptions import StorageError
 from app.utils.validators import validate_url_not_ssrf
+from core.config import settings
 from core.logging_config import get_logger
 from core.utils.security import validate_path
 
@@ -97,6 +98,31 @@ async def resolve_video_title(url: str) -> str | None:
             url=url[:80],
             hint="Set YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER to enable cookies for this platform",
         )
+
+    # Warm-pool fast path: ship a metadata job to a pooled driver (imports yt_dlp
+    # once) and fall back to the per-job python -c subprocess on any failure.
+    pool = _get_pool()
+    if pool is not None:
+        job = {
+            "job_id": str(uuid.uuid4()),
+            "mode": "metadata",
+            "url": url,
+            "platform": platform,
+            "cookies_opts": cookies_opts,
+        }
+        try:
+            await pool.ensure_started()
+            result = await pool.run_job(job, job_timeout=YT_DLP_METADATA_TIMEOUT)
+            raw = result.get("title") if isinstance(result, dict) else None
+            if isinstance(raw, str) and raw:
+                return raw
+            return None
+        except Exception as exc:
+            logger.warning(
+                "warm_pool_metadata_fallback",
+                error=str(exc),
+                hint="yt-dlp warm pool metadata failed; using per-job subprocess",
+            )
 
     script = f"""
 import sys
@@ -402,6 +428,252 @@ async def _check_throttle(stderr_text: str, service: str = "youtube") -> None:
         await record_response(service, 429)
 
 
+class YtDlpProcessPool:
+    """Pool of warm, long-lived yt-dlp driver subprocesses.
+
+    Each slot is a single driver process (``app.services.yt_dlp_worker_driver``)
+    that imported ``yt_dlp`` once and processes one job at a time over stdin/stdout.
+    This eliminates the per-job ``python -c "import yt_dlp"`` cold start.
+
+    Slots are checked out exclusively: a process handles exactly one job until it
+    emits a terminal response, so the existing process-group kill semantics (used
+    on timeout) always target the correct owning pid.
+
+    The pool is crash-tolerant: if a driver process dies, its slot is marked dead
+    and the next checkout spawns a replacement. Callers treat pool unavailability
+    as a signal to fall back to the per-job subprocess path.
+    """
+
+    def __init__(
+        self,
+        size: int,
+        startup_timeout: float = 30.0,
+        driver_module: str = "app.services.yt_dlp_worker_driver",
+    ) -> None:
+        self._size = max(1, size)
+        self._startup_timeout = startup_timeout
+        self._driver_module = driver_module
+        self._lock = asyncio.Lock()
+        # Each slot: {"proc": Process|None, "ready": bool, "busy": bool}
+        self._slots: list[dict] = [{"proc": None, "ready": False, "busy": False} for _ in range(self._size)]
+        self._started = False
+
+    async def _start_slot(self, slot: dict) -> bool:
+        """Spawn and readiness-check one driver process. Returns True on success."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                self._driver_module,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+                limit=_STREAM_READER_LIMIT,
+            )
+        except OSError:
+            return False
+
+        slot["proc"] = proc
+        slot["ready"] = False
+
+        # Wait for the driver's {"_worker_ready": true} handshake.
+        try:
+            line_bytes = await asyncio.wait_for(
+                proc.stdout.readline(), timeout=self._startup_timeout
+            )
+        except (TimeoutError, ValueError):
+            # No handshake in time — kill and treat as dead.
+            await _kill_process_group(proc, graceful=True)
+            slot["proc"] = None
+            return False
+
+        if not line_bytes:
+            # Process exited before ready.
+            await _kill_process_group(proc, graceful=True)
+            slot["proc"] = None
+            return False
+
+        try:
+            handshake = json.loads(line_bytes.decode().strip())
+        except json.JSONDecodeError:
+            handshake = {}
+
+        if not handshake.get("_worker_ready"):
+            await _kill_process_group(proc, graceful=True)
+            slot["proc"] = None
+            return False
+
+        slot["ready"] = True
+        return True
+
+    async def ensure_started(self) -> None:
+        """Start all slots (idempotent). Best-effort: dead slots are simply left None."""
+        if self._started:
+            return
+        async with self._lock:
+            if self._started:
+                return
+            for slot in self._slots:
+                await self._start_slot(slot)
+            self._started = True
+
+    def available_count(self) -> int:
+        return sum(1 for s in self._slots if s["proc"] is not None and s["ready"] and not s["busy"])
+
+    async def _checkout(self) -> dict | None:
+        """Return a free, ready slot, spawning replacements for dead ones.
+
+        Returns None if no slot is currently usable (caller should fall back).
+        """
+        async with self._lock:
+            for slot in self._slots:
+                if slot["busy"]:
+                    continue
+                proc = slot["proc"]
+                if proc is None or proc.returncode is not None or not slot["ready"]:
+                    # Try to (re)start this slot.
+                    if not await self._start_slot(slot):
+                        continue
+                slot["busy"] = True
+                return slot
+        return None
+
+    async def _release(self, slot: dict) -> None:
+        async with self._lock:
+            slot["busy"] = False
+            proc = slot["proc"]
+            # If the driver exited during the job, drop it so the next checkout
+            # respawns a fresh one.
+            if proc is None or proc.returncode is not None or not slot["ready"]:
+                slot["proc"] = None
+                slot["ready"] = False
+
+    async def run_job(
+        self,
+        job: dict,
+        job_timeout: float,
+        progress_callback: Callable[[dict], Awaitable[None]] | None = None,
+    ) -> dict:
+        """Run one job on a pooled driver. Raises on failure so callers can fall back.
+
+        Reads stdout lines for this job_id until a terminal ``result``/``error``
+        line arrives. Progress lines are relayed to ``progress_callback``.
+        On timeout, applies the same process-group kill semantics as the
+        per-job path (SIGTERM grace -> SIGKILL + orphan walk).
+        """
+        slot = await self._checkout()
+        if slot is None or slot["proc"] is None:
+            raise RuntimeError("yt-dlp warm pool has no available slot")
+        proc = slot["proc"]
+        job_id = job.get("job_id", "")
+
+        try:
+            proc.stdin.write((json.dumps(job) + "\n").encode())
+            await proc.stdin.drain()
+
+            result: dict | None = None
+            error: str | None = None
+            while True:
+                try:
+                    line_bytes = await asyncio.wait_for(proc.stdout.readline(), timeout=job_timeout)
+                except TimeoutError:
+                    await self._kill_busy_slot(slot, proc)
+                    raise TimeoutError(
+                        f"yt-dlp warm-pool job timed out after {job_timeout}s"
+                    ) from None
+                if not line_bytes:
+                    # Driver closed stdout unexpectedly.
+                    await _kill_process_group(proc, graceful=True)
+                    raise RuntimeError("yt-dlp warm-pool driver closed stdout")
+                try:
+                    parsed = json.loads(line_bytes.decode().strip())
+                except json.JSONDecodeError:
+                    logger.warning("warm_pool_stdout_non_json", line=line_bytes[:200].decode(errors="replace"))
+                    continue
+                if parsed.get("job_id") != job_id:
+                    continue
+                if parsed.get("progress") and progress_callback:
+                    await progress_callback(parsed)
+                elif "error" in parsed:
+                    error = parsed["error"]
+                    break
+                elif "result" in parsed:
+                    result = parsed["result"]
+                    break
+
+            if error is not None:
+                raise RuntimeError(f"yt-dlp extraction failed: {error}")
+            if result is None:
+                raise RuntimeError("yt-dlp warm-pool produced no result")
+            return result
+        finally:
+            await self._release(slot)
+
+    async def _kill_busy_slot(self, slot: dict, proc: asyncio.subprocess.Process) -> None:
+        """Apply SIGTERM -> SIGKILL + orphan walk against a busy driver's group."""
+        try:
+            pgid = os.getpgid(proc.pid)
+        except (ProcessLookupError, OSError):
+            return
+        for sig in (signal.SIGTERM, signal.SIGCONT):
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, OSError):
+                pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=3)
+        except TimeoutError:
+            pass
+        await _walk_and_kill_orphaned_children(proc)
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=3)
+        except TimeoutError:
+            pass
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            for slot in self._slots:
+                proc = slot["proc"]
+                if proc is not None and proc.returncode is None:
+                    await _kill_process_group(proc, graceful=True)
+                slot["proc"] = None
+                slot["ready"] = False
+            self._started = False
+
+
+# Module-level singleton, created lazily from settings so importing this module
+# (e.g. in tests) does not spawn processes.
+_pool: YtDlpProcessPool | None = None
+_pool_failed = False
+
+
+def _get_pool() -> YtDlpProcessPool | None:
+    """Return the warm pool singleton, or None if disabled/unavailable."""
+    global _pool, _pool_failed
+    if _pool_failed:
+        return None
+    if os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on"):
+        # Under TESTING the subprocess layer is mocked, so spawning real driver
+        # processes (and waiting on their handshake) is both pointless and would
+        # hang. Callers fall back to the inline per-job subprocess path.
+        return None
+    if not settings.yt_dlp_warm_pool:
+        return None
+    if _pool is None:
+        try:
+            _pool = YtDlpProcessPool(size=settings.yt_dlp_pool_size)
+        except Exception as exc:
+            logger.warning("yt_dlp_warm_pool_init_failed", error=str(exc))
+            _pool_failed = True
+            return None
+    return _pool
+
+
 async def _extract_via_subprocess(
     url: str,
     output_template: str,
@@ -679,14 +951,46 @@ async def extract_media_url(
     # Use ONLY the UUID for the filesystem path — never the title
     output_template = os.path.join(download_dir, f"{file_id}.%(ext)s")
 
-    # Run via subprocess so it can be killed on timeout.
-    # Extraction semaphore prevents OOM from N concurrent ~50-100MB processes.
+    # Run via subprocess so it can be killed on timeout. The extraction semaphore
+    # bounds total concurrent extraction (pool slots + inline) to avoid OOM from
+    # N concurrent ~50-100MB yt-dlp/ffmpeg processes.
     async with _EXTRACTION_SEMAPHORE:
-        info = await _extract_via_subprocess(
-            url,
-            output_template,
-            progress_callback=progress_callback,
-        )
+        info: dict | None = None
+        pool = _get_pool()
+        if pool is not None:
+            platform = _get_platform(url)
+            fallback_chain = _PLATFORM_FORMAT_CHAINS.get(platform, FORMAT_FALLBACK_CHAIN)
+            extractor_args = _PLATFORM_EXTRACTOR_ARGS.get(platform, {})
+            cookies_opts = _build_cookies_opts()
+            job = {
+                "job_id": str(uuid.uuid4()),
+                "mode": "extract",
+                "url": url,
+                "output_template": output_template,
+                "platform": platform,
+                "fallback_chain": fallback_chain,
+                "extractor_args": extractor_args,
+                "cookies_opts": cookies_opts,
+                "youtube_opts": platform == "youtube",
+            }
+            try:
+                await pool.ensure_started()
+                info = await pool.run_job(
+                    job, job_timeout=YT_DLP_TIMEOUT, progress_callback=progress_callback
+                )
+            except Exception as exc:
+                logger.warning(
+                    "warm_pool_extract_fallback",
+                    error=str(exc),
+                    hint="yt-dlp warm pool failed; using per-job subprocess",
+                )
+
+        if info is None:
+            info = await _extract_via_subprocess(
+                url,
+                output_template,
+                progress_callback=progress_callback,
+            )
 
     title: str | None = info.get("title") or None
     ext = info.get("ext") or "mp4"

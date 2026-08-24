@@ -98,6 +98,13 @@ Worker DB pool overrides live in `docker-compose.yml` as `WORKER_DB_POOL_SIZE` (
 The worker has no static `container_name` (removed to allow replicas); containers are named
 `vooglaadija-worker-N` and are addressed by the `worker` service name.
 
+yt-dlp runs through a **warm subprocess pool** (`YT_DLP_WARM_POOL=true`, `YT_DLP_POOL_SIZE=2`):
+instead of spawning `python -c "import yt_dlp"` for every job (hundreds of ms of interpreter +
+import cold start per call), a small pool of long-lived Python processes imports yt_dlp once and
+is fed jobs over stdin. The pool reuses the same process-group kill/orphan-walk semantics as the
+per-job path and falls back to it transparently if a driver dies or the pool is disabled. Set
+`YT_DLP_WARM_POOL=false` to force the legacy per-job subprocess path.
+
 Configuration validation runs when `core.config.Settings` is constructed outside `TESTING=1`.
 Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PATH`, weak
 `SECRET_KEY`, and invalid DB pool values fail startup before the API or worker handles traffic.

@@ -535,3 +535,32 @@ class TestWorkerConcurrencyConfig:
                 db_pool_size=4,
                 db_max_overflow=0,
             )
+
+
+class TestYtDlpWarmPoolConfig:
+    """YT_DLP_WARM_POOL / YT_DLP_POOL_SIZE validation (#162)."""
+
+    def test_warm_pool_enabled_by_default(self):
+        """The warm pool is on by default to kill the per-job import cold start."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+        assert s.yt_dlp_warm_pool is True
+        assert s.yt_dlp_pool_size == 2
+
+    def test_warm_pool_size_below_one_rejected(self):
+        with pytest.raises((ValidationError, ValueError), match="Invalid YT_DLP_POOL_SIZE"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                yt_dlp_pool_size=0,
+            )
+
+    def test_warm_pool_size_above_max_rejected(self):
+        with pytest.raises((ValidationError, ValueError), match="Invalid YT_DLP_POOL_SIZE"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                yt_dlp_pool_size=64,
+            )
