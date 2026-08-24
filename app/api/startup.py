@@ -176,6 +176,14 @@ async def close_api_resources() -> None:
     except Exception:
         pass
 
+    # Terminate the persistent yt-dlp worker pool (best-effort).
+    try:
+        from app.services.yt_dlp_service import shutdown_yt_dlp_pool
+
+        await shutdown_yt_dlp_pool()
+    except Exception:
+        pass
+
 
 def create_lifespan(
     app_version: str,

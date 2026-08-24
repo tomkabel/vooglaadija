@@ -232,6 +232,258 @@ async def _walk_and_kill_orphaned_children(process: asyncio.subprocess.Process) 
         pass
 
 
+async def _terminate_worker_on_timeout(process: asyncio.subprocess.Process) -> None:
+    """Kill a timed-out worker's process group, preserving original semantics.
+
+    Mirrors the timeout-kill sequence previously applied to the per-call
+    extraction subprocess: broadcast SIGTERM (and SIGCONT) to the process
+    group, wait briefly for a clean exit, walk /proc for ffmpeg children that
+    detached from the group, then escalate to SIGKILL.
+    """
+    try:
+        pgid = os.getpgid(process.pid)
+    except (ProcessLookupError, OSError):
+        pgid = process.pid
+
+    for sig in (signal.SIGTERM, signal.SIGCONT):
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, OSError):
+            pass
+
+    try:
+        await asyncio.wait_for(process.wait(), timeout=3)
+    except TimeoutError:
+        pass
+
+    # Walk /proc for survivors — catches ffmpeg that detached from process group
+    await _walk_and_kill_orphaned_children(process)
+
+    # Final escalation: SIGKILL the process group
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        pass
+
+    try:
+        await asyncio.wait_for(process.wait(), timeout=3)
+    except TimeoutError:
+        pass
+
+
+class _WorkerDead(Exception):
+    """Raised when a worker slot's subprocess is no longer usable."""
+
+
+class _Worker:
+    """A single persistent yt-dlp worker subprocess and its IO handles."""
+
+    __slots__ = ("process", "stdin", "stdout")
+
+    def __init__(
+        self,
+        process: asyncio.subprocess.Process,
+        stdin: asyncio.StreamWriter,
+        stdout: asyncio.StreamReader,
+    ) -> None:
+        self.process = process
+        self.stdin = stdin
+        self.stdout = stdout
+
+
+class YtDlpProcessPool:
+    """A pool of persistent yt-dlp worker subprocesses.
+
+    Each worker imports ``yt_dlp`` once and serves extraction requests over
+    stdin/stdout, eliminating the per-job import + extractor-init cold start.
+    One worker is allocated per extraction concurrency slot; workers are reused
+    across jobs. On a per-job timeout the offending worker is killed (using the
+    same process-group SIGTERM -> SIGKILL + orphan-walk semantics as before)
+    and immediately respawned so the pool stays at full strength.
+    """
+
+    def __init__(self, size: int, timeout: int) -> None:
+        self._size = max(1, int(size))
+        self._timeout = timeout
+        self._workers: list[_Worker] = []
+        self._free: asyncio.Queue[_Worker] = asyncio.Queue(maxsize=self._size)
+        self._started = False
+        self._lock = asyncio.Lock()
+
+    async def _ensure_started(self) -> None:
+        async with self._lock:
+            if self._started:
+                return
+            for _ in range(self._size):
+                worker = await self._spawn_worker()
+                self._workers.append(worker)
+                await self._free.put(worker)
+            self._started = True
+
+    async def _spawn_worker(self) -> _Worker:
+        worker_path = os.path.join(os.path.dirname(__file__), "yt_dlp_worker.py")
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            worker_path,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+            limit=_STREAM_READER_LIMIT,
+        )
+        assert process.stdin is not None
+        assert process.stdout is not None
+        return _Worker(process, process.stdin, process.stdout)
+
+    async def submit(
+        self,
+        request: dict,
+        progress_callback: Callable[[dict], Awaitable[None]] | None = None,
+    ) -> tuple[dict, str]:
+        """Run one extraction request on a pooled worker.
+
+        Returns ``(result, stderr_text)`` on success. Raises ``TimeoutError`` if
+        the worker does not respond within the pool timeout, or ``RuntimeError``
+        if the worker reports an extraction failure or dies unexpectedly.
+        """
+        await self._ensure_started()
+        worker = await self._free.get()
+        died = False
+        try:
+            return await self._run_on_worker(worker, request, progress_callback)
+        except Exception:
+            died = True
+            raise
+        finally:
+            if died or worker.process.returncode is not None:
+                await self._respawn_into_free(worker)
+            else:
+                await self._free.put(worker)
+
+    async def _run_on_worker(
+        self,
+        worker: _Worker,
+        request: dict,
+        progress_callback: Callable[[dict], Awaitable[None]] | None,
+    ) -> tuple[dict, str]:
+        try:
+            worker.stdin.write((json.dumps(request) + "\n").encode())
+            await worker.stdin.drain()
+        except (BrokenPipeError, ConnectionError, ValueError) as exc:
+            raise _WorkerDead(str(exc)) from exc
+
+        result: dict | None = None
+        error_result: dict | None = None
+        stderr_text = ""
+
+        async def _read_stdout() -> None:
+            nonlocal result, error_result, stderr_text
+            if worker.stdout is None:
+                return
+            async for line_bytes in worker.stdout:
+                line = line_bytes.decode().strip()
+                if not line:
+                    continue
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("worker_stdout_non_json", line=line[:200])
+                    continue
+                if parsed.get("progress") and progress_callback:
+                    await progress_callback(parsed)
+                elif "error" in parsed:
+                    error_result = parsed
+                    stderr_text = parsed.get("_stderr", "")
+                    return
+                else:
+                    result = {k: v for k, v in parsed.items() if k != "_stderr"}
+                    stderr_text = parsed.get("_stderr", "")
+                    return
+
+        try:
+            await asyncio.wait_for(_read_stdout(), timeout=self._timeout)
+        except TimeoutError as exc:
+            await _terminate_worker_on_timeout(worker.process)
+            raise TimeoutError(
+                f"yt-dlp extraction timed out after {self._timeout}s"
+            ) from exc
+
+        if error_result:
+            raise RuntimeError(f"yt-dlp extraction failed: {error_result['error']}")
+        if result is not None:
+            return result, stderr_text
+        raise RuntimeError("yt-dlp worker exited without producing a result")
+
+    async def _respawn_into_free(self, dead_worker: _Worker) -> None:
+        """Replace a dead worker so the pool stays at full size.
+
+        Spawn failures are swallowed (logged) so the original job error still
+        propagates to the caller; the pool simply shrinks until a future
+        respawn succeeds.
+        """
+        try:
+            if dead_worker in self._workers:
+                self._workers.remove(dead_worker)
+        except ValueError:
+            pass
+        try:
+            new_worker = await self._spawn_worker()
+        except Exception:
+            logger.warning("yt_dlp_worker_respawn_failed", exc_info=True)
+            return
+        self._workers.append(new_worker)
+        await self._free.put(new_worker)
+
+    async def shutdown(self) -> None:
+        """Terminate all workers and reset the pool."""
+        async with self._lock:
+            self._started = False
+            workers = self._workers
+            self._workers = []
+            while not self._free.empty():
+                try:
+                    self._free.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+        for worker in workers:
+            try:
+                if worker.process.returncode is None:
+                    await _kill_process_group(worker.process, graceful=True)
+            except Exception:
+                pass
+
+
+_pool: YtDlpProcessPool | None = None
+
+
+def _get_pool() -> YtDlpProcessPool:
+    """Return the module-level singleton worker pool, creating it lazily.
+
+    Creation is synchronous with no ``await`` points, so it is atomic with
+    respect to other coroutines on the same event loop (no double-create).
+    """
+    global _pool
+    if _pool is None:
+        _pool = YtDlpProcessPool(_EXTRACTION_CONCURRENCY, YT_DLP_TIMEOUT)
+    return _pool
+
+
+async def shutdown_yt_dlp_pool() -> None:
+    """Shut down the worker pool (call on application shutdown)."""
+    global _pool
+    if _pool is not None:
+        await _pool.shutdown()
+        _pool = None
+
+
+async def reset_yt_dlp_pool() -> None:
+    """Shut down and clear the worker pool (used by tests to re-establish state)."""
+    global _pool
+    if _pool is not None:
+        await _pool.shutdown()
+        _pool = None
+
+
 def _extract_error_message(error_msg: str, fallback: str) -> str:
     """Extract the most relevant error line from error output."""
     for error_line in error_msg.split("\n"):
@@ -402,43 +654,17 @@ async def _check_throttle(stderr_text: str, service: str = "youtube") -> None:
         await record_response(service, 429)
 
 
-async def _extract_via_subprocess(
-    url: str,
-    output_template: str,
-    progress_callback: Callable[[dict], Awaitable[None]] | None = None,
-) -> dict:
+def _build_extract_request(url: str, output_template: str) -> dict:
+    """Build the per-job request payload dispatched to a pooled worker.
+
+    Encapsulates the platform-specific format chain, extractor args, cookies,
+    and output-field selection that previously lived inline in the per-call
+    extraction subprocess script.
     """
-    Extract media information and download media using yt-dlp.
-
-    Supports platform-specific format fallbacks and optionally reports download progress
-    through the callback.
-
-    Parameters:
-        url (str): Media URL to validate and extract.
-        output_template (str): Template for the downloaded media file path.
-        progress_callback (Callable[[dict], Awaitable[None]] | None): Callback that receives
-                progress updates when provided.
-
-    Returns:
-        dict: Extracted media information.
-
-    Raises:
-        SSRFError: If the URL resolves to a private or internal address.
-        TimeoutError: If extraction exceeds the configured timeout.
-        RuntimeError: If extraction fails or produces no usable output.
-    """
-    await _check_ssrf(url)
-
-    url_json = json.dumps(url)
-    output_template_json = json.dumps(output_template)
     platform = _get_platform(url)
-    platform_json = json.dumps(platform)
     cookies_opts = _build_cookies_opts()
-    cookies_opts_json = json.dumps(cookies_opts)
     fallback_chain = _PLATFORM_FORMAT_CHAINS.get(platform, FORMAT_FALLBACK_CHAIN)
-    fallback_chain_json = json.dumps(fallback_chain)
     extractor_args = _PLATFORM_EXTRACTOR_ARGS.get(platform, {})
-    extractor_args_json = json.dumps(extractor_args)
 
     if platform in _COOKIE_REQUIRED_PLATFORMS and not cookies_opts:
         logger.info(
@@ -448,198 +674,44 @@ async def _extract_via_subprocess(
             hint="Set YT_DLP_COOKIES_FILE or YT_DLP_COOKIES_BROWSER to enable cookies for this platform",
         )
 
-    output_fields_json = json.dumps(list(_OUTPUT_FIELDS))
+    return {
+        "url": url,
+        "output_template": output_template,
+        "platform": platform,
+        "fallback_chain": fallback_chain,
+        "extractor_args": extractor_args,
+        "cookies_opts": cookies_opts,
+        "output_fields": list(_OUTPUT_FIELDS),
+        "youtube_opts": platform == "youtube",
+    }
 
-    # Only inject youtube-specific options when building the script for YouTube.
-    # Tests assert that non-YouTube platform scripts do not contain YouTube-only keys.
-    # Embedding them as dict entries keeps the options inside the ydl_opts dict definition.
-    if platform == "youtube":
-        youtube_opts = (
-            '            "prefer_free_formats": True,\n            "check_formats": "missable",\n'
-        )
-    else:
-        youtube_opts = ""
 
-    extract_script = f"""
-import sys
-import json
-import yt_dlp
+async def _extract_via_subprocess(
+    url: str,
+    output_template: str,
+    progress_callback: Callable[[dict], Awaitable[None]] | None = None,
+) -> dict:
+    """Extract media using a pooled, persistent yt-dlp worker.
 
-url = {url_json}
-output_template = {output_template_json}
-platform = {platform_json}
-fallback_chain = {fallback_chain_json}
-extractor_args = {extractor_args_json}
-cookies_opts = {cookies_opts_json}
-output_fields = {output_fields_json}
+    Reuses a long-lived worker subprocess (which imports ``yt_dlp`` once) instead
+    of spawning a fresh ``python -c`` subprocess per job. See ``YtDlpProcessPool``
+    for the worker protocol, lifecycle, and timeout/kill semantics.
 
-if "cookiesfrombrowser" in cookies_opts and isinstance(cookies_opts["cookiesfrombrowser"], list):
-    cookies_opts["cookiesfrombrowser"] = tuple(cookies_opts["cookiesfrombrowser"])
+    Raises:
+        SSRFError: If the URL resolves to a private or internal address.
+        TimeoutError: If extraction exceeds the configured timeout.
+        RuntimeError: If extraction fails or produces no usable output.
+    """
+    await _check_ssrf(url)
+    request = _build_extract_request(url, output_template)
+    pool = _get_pool()
+    result, stderr_text = await pool.submit(request, progress_callback)
 
-last_error = None
-_last_progress_pct = -1.0
-
-def _progress_hook(d):
-    global _last_progress_pct
-    if d.get("status") == "downloading":
-        downloaded = d.get("downloaded_bytes", 0)
-        total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-        pct = (downloaded / total * 100) if total > 0 else 0
-        if pct - _last_progress_pct < 0.5:
-            return
-        _last_progress_pct = pct
-        print(json.dumps({{
-            "progress": True,
-            "percent": round(pct, 1),
-            "downloaded_bytes": downloaded,
-            "total_bytes": total,
-            "speed": d.get("speed"),
-            "eta": d.get("eta"),
-        }}), flush=True)
-
-for i, format_spec in enumerate(fallback_chain):
-    _last_progress_pct = -1.0
-    ydl_opts = {{
-        "format": format_spec["format"],
-        "format_sort": format_spec.get("format_sort", []),
-        "outtmpl": output_template,
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": True,
-        "socket_timeout": 60,
-        "retries": 3,
-        "progress_hooks": [_progress_hook],
-{youtube_opts}    }}
-    ydl_opts.update(cookies_opts)
-    if extractor_args:
-        ydl_opts["extractor_args"] = extractor_args
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if info is None:
-                last_error = "No video info returned"
-                continue
-            sanitized_info = ydl.sanitize_info(info)
-            filtered = {{k: sanitized_info.get(k) for k in output_fields if k in sanitized_info}}
-            print(json.dumps(filtered))
-            sys.exit(0)
-    except Exception as e:
-        err_str = str(e)
-        if "Requested format" in err_str and "not available" in err_str:
-            last_error = err_str
-            continue
-        print(json.dumps({{"error": err_str}}))
-        sys.exit(1)
-
-attempted_formats = [spec["format"] for spec in fallback_chain]
-print(json.dumps({{
-    "error": f"[{{platform}}] All formats failed. Last error: {{last_error}}. Attempted formats: {{attempted_formats}}"
-}}))
-sys.exit(1)
-"""
-    process = None
-    stderr_lines: list[str] = []
-    result: dict[str, Any] | None = None
-    error_result: dict[str, Any] | None = None
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-c",
-            extract_script,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-            limit=_STREAM_READER_LIMIT,
-        )
-
-        async def _read_stdout() -> None:
-            nonlocal result, error_result
-            if process.stdout is None:
-                return
-            async for line_bytes in process.stdout:
-                line = line_bytes.decode().strip()
-                if not line:
-                    continue
-                try:
-                    parsed = json.loads(line)
-                    if parsed.get("progress") and progress_callback:
-                        await progress_callback(parsed)
-                    elif "error" in parsed:
-                        error_result = parsed
-                    else:
-                        result = parsed
-                except json.JSONDecodeError:
-                    logger.warning("stdout_non_json_line", line=line[:200])
-
-        async def _read_stderr() -> None:
-            """
-            Collects the subprocess's standard error output as decoded lines.
-            """
-            if process.stderr is None:
-                return
-            async for line_bytes in process.stderr:
-                stderr_lines.append(line_bytes.decode().strip())
-
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(_read_stdout(), _read_stderr()),
-                timeout=YT_DLP_TIMEOUT,
-            )
-        except TimeoutError as e:
-            pgid = os.getpgid(process.pid)
-            # Broadcast SIGTERM to the entire process group
-            for sig in (signal.SIGTERM, signal.SIGCONT):
-                try:
-                    os.killpg(pgid, sig)
-                except (ProcessLookupError, OSError):
-                    pass
-
-            # Give brief grace for clean shutdown
-            try:
-                await asyncio.wait_for(process.wait(), timeout=3)
-            except TimeoutError:
-                pass
-
-            # Walk /proc for survivors — catches ffmpeg that detached from process group
-            await _walk_and_kill_orphaned_children(process)
-
-            # Final escalation: SIGKILL the process group
-            try:
-                os.killpg(pgid, signal.SIGKILL)
-            except (ProcessLookupError, OSError):
-                pass
-
-            try:
-                await asyncio.wait_for(process.wait(), timeout=3)
-            except TimeoutError:
-                pass
-
-            raise TimeoutError(f"yt-dlp extraction timed out after {YT_DLP_TIMEOUT}s") from e
-
-        stderr_text = "\n".join(stderr_lines)
+    if stderr_text:
         service = _service_from_url(url)
         await _check_throttle(stderr_text, service)
 
-        if error_result:
-            raise RuntimeError(f"yt-dlp extraction failed: {error_result['error']}")
-
-        if result is not None:
-            return result
-
-        if process.returncode != 0:
-            error_msg = stderr_text or "Unknown error"
-            error_msg = _extract_error_message(error_msg, "")
-            if not error_msg:
-                error_msg = "Unknown error"
-            raise RuntimeError(f"yt-dlp failed: {error_msg}")
-
-        raise RuntimeError("yt-dlp extraction completed but produced no usable output")
-
-    finally:
-        if process and process.returncode is None:
-            await _kill_process_group(process)
+    return result
 
 
 async def extract_media_url(
