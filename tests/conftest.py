@@ -126,22 +126,19 @@ def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-async def _cleanup_non_user_tables() -> AsyncGenerator[None, None]:
-    """Delete rows from non-user tables before each test.
+async def _cleanup_test_tables() -> AsyncGenerator[None, None]:
+    """Delete all table rows before each test to ensure test isolation.
 
-    Prevents MultipleResultsFound errors when tests query DownloadJob by sample_url
-    using .one(). User rows are preserved (tests rely on UUID-prefixed email isolation).
-
-    Runs before each test to ensure a clean slate for queries like:
-        select(DownloadJob).where(DownloadJob.url == sample_url).scalars().one()
+    With session-scoped table creation, truncating/deleting rows between tests
+    guarantees a clean database slate (no PK, unique, FK, or count leaks).
     """
-    from core.models import DownloadJob, Outbox
+    from core.models import DownloadJob, FailedJob, Outbox, User
 
     async with TestingSessionLocal() as session:
-        # Delete Outbox first (has FK to DownloadJob)
         await session.execute(delete(Outbox))
-        # Delete DownloadJob (the table causing .one() collisions via sample_url)
+        await session.execute(delete(FailedJob))
         await session.execute(delete(DownloadJob))
+        await session.execute(delete(User))
         await session.commit()
     yield
 
