@@ -1,9 +1,15 @@
+import pytest
+
 """Story 4.1 ownership guardrails for DownloadService."""
 
 import ast
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_PATH = PROJECT_ROOT / "app/services/download_service.py"
@@ -102,6 +108,7 @@ def test_routes_do_not_import_domain_infrastructure_owners() -> None:
 def test_static_dlq_routes_are_prioritized_before_job_id_routes() -> None:
     """Static DLQ routes are registered before generic job-id routes."""
     from app.api.routes.downloads import router
+
 
     route_paths = [getattr(route, "path", "") for route in router.routes]
     first_job_route = min(

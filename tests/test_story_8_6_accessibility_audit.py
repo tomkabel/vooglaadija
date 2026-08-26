@@ -1,13 +1,18 @@
+import pytest
+
 """Accessibility regression tests for Story 8.6."""
 
 import re
 from pathlib import Path
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from tests.conftest import create_test_user_and_login
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
