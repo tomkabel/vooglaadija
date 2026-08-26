@@ -149,7 +149,8 @@ See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 > docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
 > ```
 >
-> See [Standalone deployment (Caddy, no Coolify)](docs/PRODUCTION_DEPLOYMENT.md#standalone-deployment-caddy-no-coolify).
+> See
+> [Standalone deployment (Caddy, no Coolify)](docs/PRODUCTION_DEPLOYMENT.md#standalone-deployment-caddy-no-coolify).
 
 ### Local Development
 
