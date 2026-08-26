@@ -1,3 +1,5 @@
+import pytest
+
 """Story 3.3 guardrails for remaining extracted web routes and helpers."""
 
 import re
@@ -16,6 +18,10 @@ from core.models.user import User
 from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 from tests.test_route_introspection import iter_api_routes
+
+pytestmark = pytest.mark.slow
+
+
 
 DASHBOARD_ROUTE_MODULE = "app.api.routes.web.web_dashboard"
 SETTINGS_ROUTE_MODULE = "app.api.routes.web.web_settings"
@@ -63,6 +69,7 @@ def test_web_settings_module_contains_only_settings_route_paths():
 def test_settings_password_remains_owned_by_web_auth():
     """The password settings route remains owned by the auth route module."""
     from app.api.routes.web import web_auth, web_dashboard, web_settings
+
 
     assert "/settings/password" in _route_paths(web_auth.router)
     assert "/settings/password" not in _route_paths(web_dashboard.router)

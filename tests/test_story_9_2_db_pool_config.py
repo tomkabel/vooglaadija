@@ -1,3 +1,5 @@
+import pytest
+
 """Regression tests for Story 9.2 database pool configuration."""
 
 from pathlib import Path
@@ -8,6 +10,10 @@ import pytest
 import yaml
 
 from tests.test_config import _make_production_settings
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -97,6 +103,7 @@ def test_database_factory_omits_queue_pool_kwargs_for_sqlite_urls():
 async def test_database_factory_still_supports_sqlite_engine_creation():
     """The database engine factory still creates a SQLite async engine for tests."""
     import core.database as database_module
+
 
     configured_settings = _make_production_settings(
         secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",

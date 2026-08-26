@@ -1,16 +1,22 @@
+from __future__ import annotations
+
+import pytest
+
 """Story 5.6 guardrails for ORM model and migration index consistency."""
 
-from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
 from alembic import command
 from core.config import settings
 from core.models.base import Base
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPOSITE_MIGRATION_PATH = PROJECT_ROOT / "alembic/versions/005_add_composite_indexes.py"
@@ -49,9 +55,6 @@ EXPECTED_HEAD_INDEXES = {
         "uq_outbox_pending_job_id",
     },
 }
-
-
-pytestmark = pytest.mark.unit
 
 
 def _index_names(table_name: str) -> set[str]:

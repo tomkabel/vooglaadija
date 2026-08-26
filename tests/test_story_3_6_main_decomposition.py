@@ -1,3 +1,5 @@
+import pytest
+
 """Story 3.6 guardrails for app.main decomposition."""
 
 import importlib
@@ -15,6 +17,10 @@ from app.api.middleware.security_headers import add_security_headers
 from app.auth import create_access_token
 from app.main import app
 from core.config import settings
+
+pytestmark = pytest.mark.slow
+
+
 
 
 def _csp_sources(csp: str, directive: str) -> list[str]:
@@ -255,6 +261,7 @@ def test_expected_exception_handlers_are_registered() -> None:
 async def test_lifespan_cleans_up_worker_poller_when_context_raises(monkeypatch) -> None:
     """Lifespan shutdown cleanup still runs when serving exits through an exception."""
     from app.api import startup
+
 
     events = []
     poller = object()

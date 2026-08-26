@@ -1,3 +1,5 @@
+import pytest
+
 """Regression tests for Story 8.5 missing UI states."""
 
 import subprocess
@@ -6,12 +8,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from core.config import settings
 from tests.conftest import create_test_user_and_login
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

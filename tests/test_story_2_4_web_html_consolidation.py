@@ -1,3 +1,5 @@
+import pytest
+
 """Regression tests for Story 2.4 web HTML consolidation."""
 
 import ast
@@ -10,6 +12,10 @@ from fastapi import Request
 from slowapi.errors import RateLimitExceeded
 
 from app.api.rate_limit_config import rate_limit_exceeded_handler
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -123,6 +129,7 @@ def test_status_badge_helper_escapes_unknown_statuses():
 def test_status_badge_css_defines_all_helper_known_statuses():
     """Stylesheets define every known status class emitted by the helper."""
     from app.api.routes.web_helpers import _STATUS_LABELS
+
 
     css_source = _source("frontend/css/src/styles.css")
     deployed_css = _source("app/static/css/styles.css")

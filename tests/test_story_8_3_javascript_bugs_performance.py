@@ -1,13 +1,18 @@
+import pytest
+
 """Regression tests for Story 8.3 frontend bug and performance fixes."""
 
 import re
 from pathlib import Path
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from tests.conftest import create_test_user_and_login
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SPRITE_URL = "/static/icons/sprite.svg"

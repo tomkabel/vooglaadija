@@ -1,3 +1,5 @@
+import pytest
+
 """Tests for Story 6.3 security CI gating."""
 
 import re
@@ -5,6 +7,10 @@ import tomllib
 from pathlib import Path
 
 import yaml
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

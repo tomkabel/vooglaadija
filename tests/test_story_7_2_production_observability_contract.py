@@ -1,14 +1,19 @@
+import pytest
+
 """Tests for Story 7.2 production observability deployment contracts."""
 
 import re
 from pathlib import Path
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 from prometheus_client import CONTENT_TYPE_LATEST
 
 from app.main import app
 from worker.health import health_app
+
+pytestmark = pytest.mark.slow
+
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

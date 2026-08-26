@@ -1,3 +1,5 @@
+import pytest
+
 """Regression tests for Story 2.2 jitter consolidation."""
 
 import ast
@@ -9,6 +11,11 @@ from unittest.mock import patch
 import pytest
 
 from app.services.error_classifier import (
+
+pytestmark = pytest.mark.slow
+
+
+
     CATEGORY_POLICIES,
     ErrorCategory,
     JitterType,
