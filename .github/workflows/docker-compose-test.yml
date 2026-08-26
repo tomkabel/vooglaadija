@@ -53,6 +53,9 @@ jobs:
       - name: Build and start services
         run: |
           echo "Building and starting all services..."
+          # Bind-mounted volumes point at VPS HDD paths (/mnt/...); create
+          # them on the runner so docker compose can mount them.
+          mkdir -p /mnt/db_storage/postgres /mnt/new_storage/redis /mnt/new_storage/storage /mnt/new_storage/prometheus /mnt/new_storage/grafana /mnt/new_storage/backups
           docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build --wait --wait-timeout 300 || {
             echo "Docker compose failed, capturing diagnostics..."
             docker compose -f docker-compose.yml -f docker-compose.local.yml ps
