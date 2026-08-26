@@ -20,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.circuit_breaker import extract_media_with_circuit_breaker
 from app.services.error_classifier import get_attempt_timeout
+from app.services.llm_fallback import extract_with_llm_fallback, is_llm_fallback_available
 from app.services.pubsub_service import get_pubsub_service
 from app.services.throttle_predictor import get_risk_score, risk_check_and_warn
+from app.services.yt_dlp_service import extract_media_url
 from core.config import settings
 from core.database import get_async_session_factory
 from core.logging_config import get_logger
@@ -447,6 +449,99 @@ async def execute(
         raise
 
     except Exception as e:
+        # LLM fallback: when standard extraction fails and the feature is
+        # enabled, attempt LLM-assisted extraction to discover direct
+        # stream URLs from the page HTML.
+        if is_llm_fallback_available() and executor_kind == "youtube":
+            logger.info(
+                "llm_fallback_triggered",
+                job_id=str(job_id),
+                url=job.url,
+                original_error=str(e)[:200],
+            )
+            try:
+                llm_result = await extract_with_llm_fallback(job.url)
+                if llm_result.found and llm_result.url:
+                    logger.info(
+                        "llm_fallback_discovered_url",
+                        job_id=str(job_id),
+                        discovered_url=llm_result.url[:100],
+                        format=llm_result.format,
+                    )
+                    # Use yt-dlp's generic extractor to download from the
+                    # discovered direct URL. This hands off to the same
+                    # download pipeline (ffmpeg, format selection, etc.).
+                    file_path, file_name, title = await extract_media_with_circuit_breaker(
+                        llm_result.url,
+                        settings.storage_path,
+                        progress_callback=progress_callback,
+                    )
+                    # Use LLM title if yt-dlp didn't find one
+                    if not title and llm_result.title:
+                        title = llm_result.title
+
+                    await heartbeat(db, job_id)
+
+                    result = cast(
+                        CursorResult[Any],
+                        await db.execute(
+                            update(DownloadJob)
+                            .where(
+                                DownloadJob.id == job_id,
+                                DownloadJob.status == "processing",
+                            )
+                            .values(
+                                status="completed",
+                                file_path=file_path,
+                                file_name=file_name,
+                                title=title,
+                                completed_at=datetime.now(UTC),
+                                expires_at=datetime.now(UTC)
+                                + timedelta(hours=settings.file_expire_hours),
+                            ),
+                        ),
+                    )
+                    await db.commit()
+                    if result.rowcount == 0:
+                        cleanup_downloaded_file(file_path)
+                        logger.warning(
+                            "llm_fallback_job_already_requeued", job_id=str(job_id)
+                        )
+                        update_worker_state(
+                            status="running", current_job_started_at=None
+                        )
+                        return ExecutionResult(
+                            ExecutionStatus.CONSUMED, job_id, job=job
+                        )
+
+                    refreshed = await db.execute(
+                        select(DownloadJob).where(DownloadJob.id == job_id)
+                    )
+                    completed_job = refreshed.scalar_one_or_none()
+                    if completed_job:
+                        await publish_job_status(completed_job)
+
+                    update_worker_state(
+                        status="running", current_job_started_at=None
+                    )
+                    JOBS_COMPLETED.labels(status="success_llm_fallback").inc()
+                    logger.info(
+                        "llm_fallback_job_completed", job_id=str(job_id)
+                    )
+
+                    return ExecutionResult(
+                        ExecutionStatus.COMPLETED,
+                        job_id,
+                        job=completed_job or job,
+                        completed=True,
+                    )
+            except Exception as llm_err:
+                logger.warning(
+                    "llm_fallback_failed",
+                    job_id=str(job_id),
+                    error=str(llm_err)[:200],
+                )
+
         return ExecutionResult(ExecutionStatus.ERROR, job_id, job=job, error=e)
 
     finally:

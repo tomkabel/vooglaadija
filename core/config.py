@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     browser_downloader_timeout: int = 300
     browser_downloader_cb_use_redis: bool = False
 
+    # LLM fallback for unsupported or broken yt-dlp extractors.
+    # When enabled, jobs that fail standard yt-dlp extraction will trigger an
+    # LLM-assisted extraction pass that analyzes the page HTML for direct
+    # stream URLs (.mp4, .m3u8, .mpd) or JSON API endpoints.
+    llm_fallback_enabled: bool = False
+    llm_fallback_api_key: str = ""
+    llm_fallback_api_base: str = "https://openrouter.ai/api/v1"
+    llm_fallback_model: str = "google/gemini-2.0-flash-001"
+    llm_fallback_referer: str = ""
+    llm_fallback_timeout: int = 60
+
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
     db_password: str = ""
