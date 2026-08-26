@@ -740,12 +740,13 @@ skips = [
 # - Runtime-not-imported framework deps (loaded lazily at runtime):
 #   asyncpg (SQLAlchemy URL driver), bcrypt (passlib backend),
 #   email-validator (pydantic EmailStr), jinja2 (Jinja2Templates),
-#   python-multipart (FastAPI forms), yt-dlp (embedded subprocess script)
+#   python-multipart (FastAPI forms), yt-dlp (embedded subprocess script),
+#   curl-cffi (yt-dlp browser-impersonation HTTP backend, loaded via importlib)
 # - Deliberate CVE-pinning of transitive deps: ecdsa, cryptography, pygments,
 #   urllib3, idna, mako, pyasn1, authlib
 # - Test-exercised runtime deps (candidate removals if observability drops):
 #   orjson, tenacity
-per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp", "urllib3", "idna", "mako", "pyasn1", "authlib"] }
+per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp", "urllib3", "idna", "mako", "pyasn1", "authlib", "curl-cffi"] }
 # Module name differs from package name; required because the detached audit
 # env runs deptry without the project installed (no auto-detection possible).
 package_module_name_map = { "python-jose" = ["jose"] }
