@@ -4,6 +4,7 @@ import sys
 # CRITICAL: Set environment variables BEFORE any other imports
 os.environ["TESTING"] = "1"
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-not-for-production-use-32chars"
+os.environ["BCRYPT_ROUNDS"] = "4"  # min rounds for test speed (prod default: 12)
 
 # Determine unique database URL per xdist worker to avoid race conditions
 _worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
@@ -75,9 +76,14 @@ async def _session_cleanup() -> AsyncGenerator[None, None]:
     await test_engine.dispose()
 
 
-@pytest.fixture(scope="function", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 async def setup_database() -> AsyncGenerator[None, None]:
-    """Create tables before each test and drop after."""
+    """Create tables once per xdist worker, drop at end.
+
+    Tests rely on UUID-prefixed emails for user isolation (create_test_user_and_login),
+    per-worker DB files, and NullPool connections. Schema isolation per test is unnecessary
+    and costs ~270s for 972 tests (0.28s DDL x 2 ops x 972 tests).
+    """
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
