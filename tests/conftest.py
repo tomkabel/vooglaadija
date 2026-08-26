@@ -28,6 +28,7 @@ core.config.settings.database_url = _test_db_url
 from collections.abc import AsyncGenerator  # noqa: E402
 
 import pytest  # noqa: E402
+from sqlalchemy import delete  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -122,6 +123,27 @@ def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.api.dependencies.is_token_blacklisted", _not_blacklisted)
     monkeypatch.setattr("app.services.token_blacklist.reserve_token_jti", _reserve_ok)
+
+
+@pytest.fixture(autouse=True)
+async def _cleanup_non_user_tables() -> AsyncGenerator[None, None]:
+    """Delete rows from non-user tables before each test.
+
+    Prevents MultipleResultsFound errors when tests query DownloadJob by sample_url
+    using .one(). User rows are preserved (tests rely on UUID-prefixed email isolation).
+
+    Runs before each test to ensure a clean slate for queries like:
+        select(DownloadJob).where(DownloadJob.url == sample_url).scalars().one()
+    """
+    from core.models import DownloadJob, Outbox
+
+    async with TestingSessionLocal() as session:
+        # Delete Outbox first (has FK to DownloadJob)
+        await session.execute(delete(Outbox))
+        # Delete DownloadJob (the table causing .one() collisions via sample_url)
+        await session.execute(delete(DownloadJob))
+        await session.commit()
+    yield
 
 
 @pytest.fixture
