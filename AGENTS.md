@@ -3,14 +3,14 @@
 ## Two processes
 
 - **API**: `hatch run dev` (uvicorn `app.main:app` on :8000). Entry: `app/main.py`
-- **Worker**: `python -m worker.main` (separate process, consumes Redis queue via BRPOP). Entry: `worker/main.py`
+- **Worker**: `hatch run python -m worker.main` (separate process, consumes Redis queue via BRPOP). Entry: `worker/main.py`
 - Worker runs an internal health server on port 8082.
 
 ## Commands (all via `hatch`)
 
 ```bash
 hatch run dev              # Start API with hot reload
-python -m worker.main      # Start worker (separate terminal)
+hatch run python -m worker.main  # Start worker (separate terminal)
 hatch run db-migrate       # alembic upgrade head
 
 hatch run test:unit        # Unit tests (--ignore=tests/test_api, -n auto, skips slow)
@@ -18,8 +18,8 @@ hatch run test:integration # Integration tests (tests/test_api/, -n auto)
 hatch run test:all         # All tests (-n auto, skips slow by default)
 hatch run test:cov         # With XML + HTML + term coverage
 
-# Run full suite including slow regression tests (CI behavior)
-pytest -m '' -n auto       # all markers
+# Run full suite including slow regression tests (same as CI: -m '' overrides the default filter)
+hatch run test:unit -- -m '' -n auto   # all markers
 pytest -m slow             # only story regression tests
 
 hatch run lint:check       # ruff check
@@ -63,7 +63,7 @@ hatch run type:check       # mypy app/
 
 ## CI pipeline order (GitHub Actions)
 
-1. `lint` — ruff check, ruff format check, biome, markdownlint, prettier, yamllint, shellcheck
+1. `lint` — ruff check, ruff format check, lint:boundary, lint:lock-check, lint:deps, lint:dead-code, biome, markdownlint, prettier, yamllint, shellcheck
 2. `type-check` — mypy (needs lint)
 3. `unit-tests` — pytest with -n auto (needs lint, SQLite)
 4. `integration-tests` — pytest with real Postgres+Redis (needs lint, CI_INTEGRATION=true)
@@ -73,7 +73,7 @@ hatch run type:check       # mypy app/
 ## Key conventions (detailed in `.kilocode/rules/*.md`)
 
 - **API**: `/api/v1/` prefix, snake_case JSON, standardized error format with `error.code`/`error.message`
-- **Auth**: JWT (15min access, 7d refresh), bcrypt passwords, rate-limited auth endpoints
+- **Auth**: JWT (15-minute access tokens, 7-day refresh tokens), bcrypt passwords, rate-limited auth endpoints
 - **DB**: Async SQLAlchemy 2.0 style, UUID PKs, `created_at`/`updated_at` timestamps, Alembic migrations
 - **Testing**: pytest markers `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.slow`
 - **Docker**: Multi-stage builds, non-root user (1000:1000), health checks, resource limits
