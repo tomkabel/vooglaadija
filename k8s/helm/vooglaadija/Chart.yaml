@@ -1,0 +1,26 @@
+apiVersion: v2
+name: vooglaadija
+description: A Helm chart for Vooglaadija - asynchronous media link processor
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - vooglaadija
+  - downloader
+  - fastapi
+  - kubernetes
+home: https://github.com/tomkabel/vooglaadija
+sources:
+  - https://github.com/tomkabel/vooglaadija
+maintainers:
+  - name: tomkabel
+    url: https://github.com/tomkabel
+dependencies:
+  - name: postgresql
+    version: "15.5.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+  - name: redis
+    version: "20.0.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled

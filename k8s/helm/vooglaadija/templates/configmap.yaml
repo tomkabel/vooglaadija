@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vooglaadija.fullname" . }}-config
+  labels:
+    {{- include "vooglaadija.labels" . | nindent 4 }}
+data:
+  FEATURE_CHAOS_API_ENABLED: {{ .Values.featureFlags.chaosApiEnabled | quote }}
+  BROWSER_DOWNLOADER_ENABLED: {{ .Values.browserDownloader.enabled | quote }}
+  WORKER_GRACE_PERIOD: {{ .Values.worker.gracePeriod | quote }}
+  WORKER_ZOMBIE_THRESHOLD: {{ .Values.worker.zombieThreshold | quote }}
+  WORKER_MAX_RETRIES: {{ .Values.worker.maxRetries | quote }}

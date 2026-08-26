@@ -1,0 +1,133 @@
+# Production values for vooglaadija.
+# Overrides the default values.yaml for production deployment.
+# Usage: helm install vooglaadija ./k8s/helm/vooglaadija -f k8s/helm/vooglaadija/values-production.yaml
+
+# Database configuration - use external managed PostgreSQL in production
+db:
+  host: "prod-postgresql.default.svc.cluster.local"
+  port: "5432"
+  name: "vooglaadija"
+  user: "vooglaadija"
+  password: "__REPLACE_WITH_EXTERNAL_SECRET__"
+
+# Redis configuration - use external managed Redis in production
+redis:
+  host: "prod-redis-master.default.svc.cluster.local"
+  port: "6379"
+  password: "__REPLACE_WITH_EXTERNAL_SECRET__"
+
+# Use External Secrets Operator or Sealed Secrets in production
+existingSecret: "vooglaadija-secrets"
+
+# Disable subcharts for external managed services
+postgresql:
+  enabled: false
+redis:
+  enabled: false
+
+# API configuration - production overrides
+api:
+  replicaCount: 3
+  image:
+    tag: "latest"
+
+  ingress:
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+      nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 70
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+  persistence:
+    enabled: true
+    accessMode: ReadWriteOnce
+    size: 50Gi
+    storageClass: "fast-ssd"
+
+# Worker configuration - production overrides
+worker:
+  replicaCount: 2
+  image:
+    tag: "worker-latest"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 70
+    targetQueueDepth: "15"
+
+  resources:
+    limits:
+      cpu: 1500m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  persistence:
+    enabled: true
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    storageClass: "fast-ssd"
+
+# Browser Downloader - production overrides
+browserDownloader:
+  enabled: true
+  replicaCount: 2
+  image:
+    tag: "browser-downloader-latest"
+
+  concurrency: "3"
+  requestTimeout: "300"
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+# Monitoring - production overrides
+prometheus:
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  persistence:
+    size: 50Gi
+    storageClass: "fast-ssd"
+
+grafana:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  persistence:
+    size: 10Gi
+    storageClass: "fast-ssd"
