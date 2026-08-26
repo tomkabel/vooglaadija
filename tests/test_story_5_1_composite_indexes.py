@@ -1,14 +1,12 @@
-from __future__ import annotations
-
-import pytest
-
 """Story 5.1 migration guardrails for composite index hardening."""
 
+from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
@@ -16,7 +14,6 @@ from alembic import command
 from core.config import settings
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

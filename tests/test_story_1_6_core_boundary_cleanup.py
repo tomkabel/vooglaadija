@@ -1,15 +1,14 @@
-import pytest
-
 """Regression tests for Story 1.6 core boundary finalization."""
 
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from scripts import import_analysis
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

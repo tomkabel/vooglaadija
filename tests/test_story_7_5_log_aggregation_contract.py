@@ -1,5 +1,3 @@
-import pytest
-
 """Tests for Story 7.5 log aggregation contracts (json-file rotation)."""
 
 import json
@@ -7,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pytest
 import structlog
 import structlog.contextvars
 import yaml
@@ -14,7 +13,6 @@ import yaml
 from core.logging_config import configure_logging, get_logger
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

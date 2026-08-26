@@ -1,5 +1,3 @@
-import pytest
-
 """Story 4.2 ownership guardrails for UserService."""
 
 import ast
@@ -11,7 +9,6 @@ from app.main import app
 from tests.test_route_introspection import iter_api_routes
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +38,6 @@ def _imported_modules(path: Path) -> set[str]:
 def test_user_service_exists_and_exposes_required_api() -> None:
     """UserService exists and exposes the epic-required public methods."""
     from app.services.user_service import UserService
-
 
     for method_name in ("register", "change_password", "delete_account", "update_username"):
         assert callable(getattr(UserService, method_name))

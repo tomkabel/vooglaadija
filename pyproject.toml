@@ -458,14 +458,12 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Add custom markers
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "slow: marks tests as slow (deselect with '-m \\\"not slow\\\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
 ]
 # Minimum Python version
 minversion = "7.0"
-# Default args - skip slow tests in dev, use last-failed priority
-addopts = "-ra -q --lf --ff -m 'not slow'"
 
 # ============================================
 # COVERAGE CONFIGURATION

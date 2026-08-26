@@ -1,14 +1,12 @@
-import pytest
-
 """Tests for Story 7.4 Prometheus alerting rule contracts."""
 
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

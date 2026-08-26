@@ -1,5 +1,3 @@
-import pytest
-
 """Story 3.4 guardrails for processor claim and execution extraction."""
 
 import asyncio
@@ -14,8 +12,6 @@ from core.database import get_async_session_factory
 from core.models.download_job import DownloadJob
 
 pytestmark = pytest.mark.slow
-
-
 
 
 @pytest.mark.unit
@@ -175,7 +171,6 @@ async def test_processor_defers_jobs_when_executor_hits_open_circuit(db_session)
     from app.services.circuit_breaker import CircuitBreakerOpenError
     from core.database import get_async_session_factory
     from worker.processor import process_next_job
-
 
     job_id = uuid4()
     job = DownloadJob(

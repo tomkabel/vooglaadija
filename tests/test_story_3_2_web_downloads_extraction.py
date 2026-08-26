@@ -1,5 +1,3 @@
-import pytest
-
 """Story 3.2 guardrails for extracted web download routes."""
 
 import json
@@ -21,7 +19,6 @@ from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_
 from tests.test_route_introspection import iter_api_routes
 
 pytestmark = pytest.mark.slow
-
 
 
 DOWNLOAD_ROUTE_MODULE = "app.api.routes.web.web_downloads"
@@ -86,7 +83,6 @@ def test_web_download_routes_are_registered_once_on_aggregate_router():
 def test_web_downloads_module_does_not_own_non_download_routes():
     """The web_downloads module does not register auth, settings, chaos, or slides paths."""
     from app.api.routes.web import web_downloads
-
 
     route_paths = {
         route.path for route in web_downloads.router.routes if isinstance(route, APIRoute)

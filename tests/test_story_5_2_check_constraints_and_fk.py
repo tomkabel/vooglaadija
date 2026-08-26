@@ -1,21 +1,18 @@
-from __future__ import annotations
-
-import pytest
-
 """Story 5.2 migration guardrails for CHECK constraints and foreign key."""
 
+from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 from alembic.config import Config
 
 from alembic import command
 from core.config import settings
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

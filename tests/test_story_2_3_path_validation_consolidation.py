@@ -1,20 +1,15 @@
-from __future__ import annotations
-
-import pytest
-
-import pytest
-
 """Regression tests for Story 2.3 path validation consolidation."""
 
+from __future__ import annotations
 
 import ast
 import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 pytestmark = pytest.mark.slow
-
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -148,7 +143,6 @@ def test_validate_path_rejects_symlink_escape(tmp_path: Path) -> None:
 def test_validate_path_check_writable_rejects_unwritable_parent(tmp_path: Path) -> None:
     """check_writable=True raises PermissionError when the target parent is not writable."""
     from core.utils.security import validate_path
-
 
     downloads_dir = tmp_path / "downloads"
     downloads_dir.mkdir()

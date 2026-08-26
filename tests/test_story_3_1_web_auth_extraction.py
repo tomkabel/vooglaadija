@@ -1,5 +1,3 @@
-import pytest
-
 """Story 3.1 guardrails for extracted web auth routes."""
 
 import uuid
@@ -13,8 +11,6 @@ from app.main import app
 from tests.test_route_introspection import iter_api_routes
 
 pytestmark = pytest.mark.slow
-
-
 
 
 def _csrf_cookie(response) -> str:
@@ -33,7 +29,6 @@ def test_web_module_is_package_after_auth_extraction():
 def test_web_auth_module_contains_only_auth_route_paths():
     """The web_auth module registers auth routes and no download or settings-page routes."""
     from app.api.routes.web import web_auth
-
 
     route_paths = {route.path for route in web_auth.router.routes if isinstance(route, APIRoute)}
 
