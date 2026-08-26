@@ -1,12 +1,10 @@
-from __future__ import annotations
-
-import pytest
-
 """Story 5.6 guardrails for ORM model and migration index consistency."""
 
+from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
@@ -15,7 +13,6 @@ from core.config import settings
 from core.models.base import Base
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

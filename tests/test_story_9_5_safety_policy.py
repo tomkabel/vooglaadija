@@ -1,19 +1,16 @@
-from __future__ import annotations
-
-import pytest
-
 """Regression tests for Story 9.5 Safety suppression policy quality."""
 
+from __future__ import annotations
 
 import re
 import tomllib
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pytest
 import yaml
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

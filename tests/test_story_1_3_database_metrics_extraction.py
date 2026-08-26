@@ -1,5 +1,3 @@
-import pytest
-
 """Regression tests for Story 1.3 database and metrics extraction."""
 
 import ast
@@ -12,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 pytestmark = pytest.mark.slow
-
 
 
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
@@ -133,7 +130,6 @@ def test_core_database_uses_existing_core_model_metadata():
     """The canonical database module keeps the existing core model metadata."""
     from core.database import Base
     from core.models.base import Base as CoreBase
-
 
     assert Base is CoreBase
     assert Base.metadata is CoreBase.metadata

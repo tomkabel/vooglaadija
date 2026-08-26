@@ -1,5 +1,3 @@
-import pytest
-
 """Regression tests for Story 1.2 configuration extraction."""
 
 import importlib
@@ -11,7 +9,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 pytestmark = pytest.mark.slow
-
 
 
 _LEGACY_CONFIG_MODULE = ".".join(("app", "config"))
@@ -100,7 +97,6 @@ async def test_asgi_root_request_uses_core_config_singleton():
     import app.main as main_module
     import core.database as database_module
     from core.config import settings
-
 
     assert main_module.settings is settings
     assert database_module.settings is settings

@@ -1,12 +1,11 @@
-import pytest
-
 """Tests for Story 7.1 worker health container contract."""
 
 import re
 from pathlib import Path
 
-pytestmark = pytest.mark.slow
+import pytest
 
+pytestmark = pytest.mark.slow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

@@ -1,5 +1,3 @@
-import pytest
-
 """Regression tests for Story 2.1 dead-code cleanup."""
 
 import ast
@@ -10,7 +8,6 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -118,6 +115,5 @@ def test_yt_dlp_service_uses_canonical_storage_error():
     """yt_dlp_service exposes and raises the canonical StorageError class."""
     from app.services import yt_dlp_service
     from app.utils.exceptions import StorageError
-
 
     assert yt_dlp_service.StorageError is StorageError

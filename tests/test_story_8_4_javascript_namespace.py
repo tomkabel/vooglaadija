@@ -1,5 +1,3 @@
-import pytest
-
 """Regression tests for Story 8.4 JavaScript namespace consolidation."""
 
 import re
@@ -7,8 +5,9 @@ import subprocess
 import textwrap
 from pathlib import Path
 
-pytestmark = pytest.mark.slow
+import pytest
 
+pytestmark = pytest.mark.slow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

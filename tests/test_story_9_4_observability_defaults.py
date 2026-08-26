@@ -1,14 +1,12 @@
-import pytest
-
 """Tests for Story 9.4 observability feature-flag default consistency."""
 
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

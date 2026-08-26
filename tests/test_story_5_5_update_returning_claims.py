@@ -1,5 +1,3 @@
-import pytest
-
 """Story 5.5 guardrails for UPDATE RETURNING worker claim and reset paths."""
 
 import asyncio
@@ -17,8 +15,6 @@ from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
 
 pytestmark = pytest.mark.slow
-
-
 
 
 @pytest.mark.unit
@@ -241,7 +237,6 @@ async def test_zombie_requeue_writes_outbox_only_for_returned_stuck_jobs(db_sess
 async def test_reset_stuck_jobs_updates_only_stale_processing_and_publishes(db_session) -> None:
     """DLQ reset fails only stale processing jobs and publishes failure status."""
     from worker.dlq_manager import reset_stuck_jobs
-
 
     stuck_id = UUID("550e8400-e29b-41d4-a716-446655445511")
     recent_id = UUID("550e8400-e29b-41d4-a716-446655445512")

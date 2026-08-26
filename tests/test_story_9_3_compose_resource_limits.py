@@ -1,14 +1,12 @@
-import pytest
-
 """Regression tests for Story 9.3 Docker Compose resource limits."""
 
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

@@ -1,5 +1,3 @@
-import pytest
-
 """Tests for Story 6.6 secret-scanning guardrails."""
 
 import json
@@ -7,8 +5,9 @@ import re
 import tomllib
 from pathlib import Path
 
-pytestmark = pytest.mark.slow
+import pytest
 
+pytestmark = pytest.mark.slow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

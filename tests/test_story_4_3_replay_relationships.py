@@ -1,5 +1,3 @@
-import pytest
-
 """Story 4.3 relationship and replay-all guardrails."""
 
 import inspect as python_inspect
@@ -13,7 +11,6 @@ from core.models.failed_job import FailedJob
 from core.models.user import User
 
 pytestmark = pytest.mark.slow
-
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -103,7 +100,6 @@ def test_replay_all_route_remains_thin_delegate() -> None:
     """The REST replay-all endpoint delegates to DownloadService without owning DLQ logic."""
     from app.api.routes.downloads import replay_all_failed_jobs
     from app.services.download_service import DownloadService
-
 
     route_source = python_inspect.getsource(replay_all_failed_jobs)
 

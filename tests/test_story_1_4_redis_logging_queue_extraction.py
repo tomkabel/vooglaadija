@@ -1,5 +1,3 @@
-import pytest
-
 """Regression tests for Story 1.4 Redis, logging, and queue extraction."""
 
 import importlib
@@ -10,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 
 pytestmark = pytest.mark.slow
-
 
 
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
@@ -186,7 +183,6 @@ def test_reset_redis_client_without_current_event_loop_still_closes() -> None:
     import threading
 
     import core.redis_client as redis_module
-
 
     closed = False
 

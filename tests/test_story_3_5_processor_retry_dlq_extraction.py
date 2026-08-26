@@ -1,5 +1,3 @@
-import pytest
-
 """Story 3.5 guardrails for retry, DLQ, and outbox extraction."""
 
 import json
@@ -17,8 +15,6 @@ from core.models.failed_job import FailedJob
 from core.models.outbox import Outbox
 
 pytestmark = pytest.mark.slow
-
-
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -355,7 +351,6 @@ async def test_outbox_relay_handles_retry_payload_success_and_failure(db_session
 async def test_outbox_relay_clears_duplicate_retry_rows_after_verifying_redis(db_session) -> None:
     """Outbox relay marks retry rows already recovered to Redis as 'processed'."""
     from worker.outbox_relay import sync_outbox_to_queue
-
 
     user_id = uuid4()
     job_id = uuid4()

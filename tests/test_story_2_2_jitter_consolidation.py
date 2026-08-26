@@ -1,5 +1,3 @@
-import pytest
-
 """Regression tests for Story 2.2 jitter consolidation."""
 
 import ast
@@ -11,17 +9,14 @@ from unittest.mock import patch
 import pytest
 
 from app.services.error_classifier import (
-
-pytestmark = pytest.mark.slow
-
-
-
     CATEGORY_POLICIES,
     ErrorCategory,
     JitterType,
     RetryPolicy,
     calculate_delay,
 )
+
+pytestmark = pytest.mark.slow
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("app", "core", "worker", "tests", "scripts")
