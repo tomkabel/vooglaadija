@@ -160,12 +160,13 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml restart api   #
 ## Standalone deployment (Caddy, no Coolify)
 
 This VPS runs the stack **without** Coolify, using a standalone Caddy reverse proxy as the only
-public entry point. Caddy terminates TLS (a Cloudflare-origin self-signed cert) on ports 80/443 and
-forwards to `api:8000`. Cloudflare's orange-cloud proxy forwards visitor traffic to this origin on
-80/443, so **Caddy must be running or Cloudflare returns HTTP 521**.
+public entry point. Caddy terminates TLS (a Cloudflare-origin self-signed cert) on port 443, serves
+plain HTTP on port 80, and forwards both listeners to `api:8000`. Cloudflare's orange-cloud proxy
+forwards visitor traffic to this origin on 80/443, so **Caddy must be running or Cloudflare returns
+HTTP 521**.
 
 > ⚠️ The Caddy service is defined **only** in `docker-compose.caddy.yml`. It is an override that
-> must be passed on every `docker compose` invocation for this stack. Starting the base files alone
+> must be passed on every stack start, restart, and update invocation. Starting the base files alone
 > leaves nothing listening on 80/443 and breaks the site.
 
 ### Files

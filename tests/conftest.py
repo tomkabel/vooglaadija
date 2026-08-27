@@ -81,9 +81,10 @@ async def _session_cleanup() -> AsyncGenerator[None, None]:
 async def setup_database() -> AsyncGenerator[None, None]:
     """Create tables once per xdist worker, drop at end.
 
-    Tests rely on UUID-prefixed emails for user isolation (create_test_user_and_login),
-    per-worker DB files, and NullPool connections. Schema isolation per test is unnecessary
-    and costs ~270s for 972 tests (0.28s DDL x 2 ops x 972 tests).
+    Per-test isolation is provided by the autouse ``_cleanup_test_tables`` fixture,
+    which deletes all rows before each test. Combined with per-worker DB files and
+    NullPool connections, schema isolation per test is unnecessary and costs ~270s
+    for 972 tests (0.28s DDL x 2 ops x 972 tests).
     """
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
