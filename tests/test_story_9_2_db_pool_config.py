@@ -9,6 +9,9 @@ import yaml
 
 from tests.test_config import _make_production_settings
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

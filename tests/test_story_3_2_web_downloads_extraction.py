@@ -18,6 +18,9 @@ from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 from tests.test_route_introspection import iter_api_routes
 
+pytestmark = pytest.mark.slow
+
+
 DOWNLOAD_ROUTE_MODULE = "app.api.routes.web.web_downloads"
 DOWNLOAD_SERVICE_MODULE = "app.services.download_service"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

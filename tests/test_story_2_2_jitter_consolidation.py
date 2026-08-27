@@ -16,6 +16,8 @@ from app.services.error_classifier import (
     calculate_delay,
 )
 
+pytestmark = pytest.mark.slow
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("app", "core", "worker", "tests", "scripts")
 THIS_FILE = Path(__file__).name

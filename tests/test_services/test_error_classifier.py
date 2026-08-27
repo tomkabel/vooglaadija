@@ -26,8 +26,10 @@ from app.services.error_classifier import (
     [
         # Generic yt-dlp 403 — the classic transient throttling signature.
         (
-            "yt-dlp extraction failed: ERROR: unable to download video data: "
-            "HTTP Error 403: Forbidden",
+            (
+                "yt-dlp extraction failed: ERROR: unable to download video data: "
+                "HTTP Error 403: Forbidden"
+            ),
             ErrorCategory.TRANSIENT,
         ),
         # Bare 403 code.

@@ -13,6 +13,9 @@ from app.main import app
 from core.config import settings
 from tests.conftest import create_test_user_and_login
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -11,6 +11,8 @@ from sqlalchemy import select
 from core.database import get_async_session_factory
 from core.models.download_job import DownloadJob
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.mark.unit
 def test_worker_extraction_modules_import_directly() -> None:

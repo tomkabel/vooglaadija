@@ -8,6 +8,9 @@ import pytest
 
 from app.api.routes.web.web_helpers import templates
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
