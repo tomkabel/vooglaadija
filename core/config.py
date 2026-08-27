@@ -196,11 +196,25 @@ class Settings(BaseSettings):
         # Warm pool size is capped to avoid spawning too many long-lived
         # yt-dlp processes (each holds ~50-100MB resident + its own extractor
         # state). It must also not exceed the extraction semaphore's capacity,
-        # which bounds how many jobs can run at once anyway.
+        # which bounds how many jobs can run at once anyway. The semaphore
+        # lives in yt_dlp_service (not Settings) and defaults to
+        # WORKER_CONCURRENCY, so a pool larger than the extraction cap would
+        # start resident processes that can never be checked out.
         self._validate_minimum("YT_DLP_POOL_SIZE", self.yt_dlp_pool_size, 1)
         if self.yt_dlp_pool_size > 16:
+            raise ValueError(f"Invalid YT_DLP_POOL_SIZE: {self.yt_dlp_pool_size!r} must be <= 16")
+        try:
+            extraction_concurrency = int(
+                os.environ.get("YT_DLP_EXTRACTION_CONCURRENCY", str(self.worker_concurrency))
+            )
+        except (TypeError, ValueError):
+            extraction_concurrency = self.worker_concurrency
+        extraction_concurrency = max(1, extraction_concurrency)
+        if self.yt_dlp_pool_size > extraction_concurrency:
             raise ValueError(
-                f"Invalid YT_DLP_POOL_SIZE: {self.yt_dlp_pool_size!r} must be <= 16"
+                f"Invalid YT_DLP_POOL_SIZE: {self.yt_dlp_pool_size!r} must be <= "
+                f"YT_DLP_EXTRACTION_CONCURRENCY ({extraction_concurrency}) — pool "
+                "slots are limited by the extraction semaphore"
             )
 
     def _validate_worker_concurrency(self) -> None:

@@ -30,17 +30,16 @@ stays identical to the inline path.
 
 import json
 import sys
+from collections.abc import Callable
 
 import yt_dlp
 
 # Mirror of app.services.yt_dlp_service._OUTPUT_FIELDS — the fields forwarded
 # from the sanitized_info dict back to the caller.
-_OUTPUT_FIELDS = frozenset(
-    {"title", "ext", "duration", "webpage_url", "thumbnail"}
-)
+_OUTPUT_FIELDS = frozenset({"title", "ext", "duration", "webpage_url", "thumbnail"})
 
 
-def _run_extract(job: dict, progress_hook=None) -> dict | None:
+def _run_extract(job: dict, progress_hook: Callable[[dict], None] | None = None) -> dict | None:
     """Execute an extract job; return the filtered sanitized_info dict or raise.
 
     Uses a single yt-dlp ``extract_info`` call with a "/" - separated native
@@ -85,9 +84,7 @@ def _run_extract(job: dict, progress_hook=None) -> dict | None:
         if info is None:
             raise RuntimeError(f"[{job.get('platform', 'unknown')}] No video info returned")
         sanitized = ydl.sanitize_info(info)
-        return {
-            k: sanitized.get(k) for k in _OUTPUT_FIELDS if k in sanitized
-        }
+        return {k: sanitized.get(k) for k in _OUTPUT_FIELDS if k in sanitized}
 
 
 def _run_metadata(job: dict) -> dict | None:
@@ -116,15 +113,25 @@ def _run_metadata(job: dict) -> dict | None:
         return {"title": title}
 
 
-def _progress_printer(job_id: str):
-    """Return a yt-dlp progress hook that forwards JSON lines to stdout."""
+def _progress_printer(job_id: str) -> Callable[[dict], None]:
+    """Return a yt-dlp progress hook that forwards JSON lines to stdout.
+
+    Mirrors the inline path's throttle: progress is only emitted on >=0.5%
+    steps, so per-chunk hook invocations don't flood the stdout pipe or the
+    pub/sub channel the parent forwards to.
+    """
+    last_pct = -1.0
 
     def _hook(d: dict) -> None:
+        nonlocal last_pct
         if d.get("status") != "downloading":
             return
         downloaded = d.get("downloaded_bytes", 0)
         total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
         pct = (downloaded / total * 100) if total > 0 else 0
+        if pct - last_pct < 0.5:
+            return
+        last_pct = pct
         _emit(
             {
                 "job_id": job_id,
@@ -141,11 +148,14 @@ def _progress_printer(job_id: str):
 
 
 def _emit(obj: dict) -> None:
+    """Write one newline-delimited JSON line to stdout and flush."""
     sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()
 
 
 def main() -> int:
+    """Run the driver event loop: emit the ready handshake, then process stdin
+    jobs until EOF, returning the exit code."""
     # Signal the pool that yt_dlp imported successfully.
     _emit({"_worker_ready": True})
 
@@ -156,7 +166,11 @@ def main() -> int:
         try:
             job = json.loads(line)
         except json.JSONDecodeError:
-            _emit({"error": "invalid_job_json"})
+            # No job_id to correlate against, so emit the diagnostic on stderr:
+            # a stdout line without a job_id would be dropped by the parent's
+            # run_job filter and leave the caller waiting for a response.
+            sys.stderr.write(f"invalid_job_json: {line[:200]}\n")
+            sys.stderr.flush()
             continue
 
         job_id = job.get("job_id", "")

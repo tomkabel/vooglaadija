@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -35,25 +36,25 @@ THROTTLE_PATTERN = re.compile(r"HTTP Error 429", re.IGNORECASE)
 # separated format string in a single call, so we encode the whole chain there
 # and issue ONE extract_info. The trailing `/best` / `/worst` give yt-dlp
 # built-in fallback when the merged combos are unavailable.
-YOUTUBE_FORMAT = (
-    "bestvideo*+bestaudio/best/res:1080+h264"
-    " / bestvideo+bestaudio/best"
-    " / worstvideo*+bestaudio/best/res:720"
-    " / best"
-    " / worst"
-)
+#
+# `format_sort` (below) carries the resolution/codec preference; bare
+# `res:N`/codec-name tokens are format-ID selectors, not filters, so no
+# `res:1080+h264`-style fragments appear here.
+YOUTUBE_FORMAT = "bestvideo*+bestaudio / bestvideo+bestaudio / worstvideo*+bestaudio / best / worst"
 YOUTUBE_FORMAT_SORT = ["res:1080", "codec:h264"]
 
 # Progressive-first variant (used when YT_DLP_PREFER_PROGRESSIVE is enabled):
 # try a single-stream (no ffmpeg merge) progressive file *before* the merged
 # combos. Lighter CPU/storage and smaller failure surface, but YouTube
 # progressive mp4 caps ~720p, so this trades resolution ceiling for weight.
+# `[protocol!*=dash]` excludes every DASH protocol (http_dash_segments and
+# variants) — the bare `dash` string is never used as a protocol value.
 YOUTUBE_FORMAT_PROGRESSIVE = (
-    "best[ext=mp4][protocol!=dash]"
-    " / best[protocol!=dash]"
-    " / bestvideo*+bestaudio/best/res:1080+h264"
-    " / bestvideo+bestaudio/best"
-    " / worstvideo*+bestaudio/best/res:720"
+    "best[ext=mp4][protocol!*=dash]"
+    " / best[protocol!*=dash]"
+    " / bestvideo*+bestaudio"
+    " / bestvideo+bestaudio"
+    " / worstvideo*+bestaudio"
     " / best"
     " / worst"
 )
@@ -76,6 +77,7 @@ def _format_spec_for(platform: str) -> tuple[str, list[str]]:
         return YOUTUBE_FORMAT, YOUTUBE_FORMAT_SORT
     return GENERIC_FORMAT, GENERIC_FORMAT_SORT
 
+
 # Max bytes for a single stdout line from the yt-dlp subprocess.
 # YouTube video metadata JSON can exceed the default 64KB StreamReader limit
 # when a video has many format variants, causing LimitOverrunError.
@@ -91,9 +93,15 @@ _metadata_semaphore = asyncio.Semaphore(5)
 
 # Semaphore to limit concurrent yt-dlp extraction subprocesses (download + format negotiation).
 # Each extraction subprocess consumes ~50-100MB RAM during format negotiation and download
-# — 2 concurrent avoids OOM on constrained hosts.
-# Configurable via YT_DLP_EXTRACTION_CONCURRENCY env var (default 2).
-_EXTRACTION_CONCURRENCY = max(1, int(os.environ.get("YT_DLP_EXTRACTION_CONCURRENCY", "2")))
+# — N concurrent avoids OOM on constrained hosts.
+# Defaults to the worker's concurrency so the effective extraction capacity
+# matches WORKER_CONCURRENCY unless explicitly overridden; overridable via the
+# YT_DLP_EXTRACTION_CONCURRENCY env var (default follows worker_concurrency).
+_EXTRACTION_CONCURRENCY_DEFAULT = max(1, int(getattr(settings, "worker_concurrency", 2) or 2))
+_EXTRACTION_CONCURRENCY = max(
+    1,
+    int(os.environ.get("YT_DLP_EXTRACTION_CONCURRENCY", _EXTRACTION_CONCURRENCY_DEFAULT)),
+)
 _EXTRACTION_SEMAPHORE = asyncio.Semaphore(_EXTRACTION_CONCURRENCY)
 
 
@@ -155,8 +163,8 @@ async def resolve_video_title(url: str) -> str | None:
         }
         try:
             await pool.ensure_started()
-            result = await pool.run_job(job, job_timeout=YT_DLP_METADATA_TIMEOUT)
-            raw = result.get("title") if isinstance(result, dict) else None
+            pool_result = await pool.run_job(job, job_timeout=YT_DLP_METADATA_TIMEOUT)
+            raw = pool_result.get("title") if isinstance(pool_result, dict) else None
             if isinstance(raw, str) and raw:
                 return raw
             return None
@@ -476,6 +484,10 @@ class YtDlpProcessPool:
     The pool is crash-tolerant: if a driver process dies, its slot is marked dead
     and the next checkout spawns a replacement. Callers treat pool unavailability
     as a signal to fall back to the per-job subprocess path.
+
+    Process startup/handshake happens *outside* the pool lock (reserved via the
+    ``starting`` flag) so one slow handshake cannot stall ``_release`` or other
+    checkouts; ``ensure_started`` starts slots concurrently via ``asyncio.gather``.
     """
 
     def __init__(
@@ -488,89 +500,176 @@ class YtDlpProcessPool:
         self._startup_timeout = startup_timeout
         self._driver_module = driver_module
         self._lock = asyncio.Lock()
-        # Each slot: {"proc": Process|None, "ready": bool, "busy": bool}
-        self._slots: list[dict] = [{"proc": None, "ready": False, "busy": False} for _ in range(self._size)]
+        # Each slot: {"proc": Process|None, "ready": bool, "busy": bool,
+        #             "starting": bool, "stderr_task": Task|None, "stderr_lines": list[str]}
+        self._slots: list[dict] = [
+            {
+                "proc": None,
+                "ready": False,
+                "busy": False,
+                "starting": False,
+                "stderr_task": None,
+                "stderr_lines": [],
+            }
+            for _ in range(self._size)
+        ]
         self._started = False
 
+    async def _drain_stderr(self, slot: dict) -> None:
+        """Continuously consume a slot's stderr, retaining recent lines.
+
+        The driver's stderr pipe is never otherwise read; a process that lives
+        for hours and accumulates yt-dlp warnings/tracebacks would otherwise
+        block on a full pipe buffer (~64KB) mid-job. Retained lines also give
+        the throttle detector (``_check_throttle``) back its 429 evidence.
+        """
+        proc = slot.get("proc")
+        if proc is None or proc.stderr is None:
+            return
+        try:
+            async for line_bytes in proc.stderr:
+                line = line_bytes.decode(errors="replace").strip()
+                if not line:
+                    continue
+                slot["stderr_lines"].append(line)
+                if len(slot["stderr_lines"]) > 200:
+                    del slot["stderr_lines"][:-200]
+                logger.debug("warm_pool_stderr", line=line[:200])
+        except (asyncio.CancelledError, ValueError):
+            pass
+
+    async def _stop_stderr_reader(self, slot: dict) -> None:
+        """Cancel and await a slot's background stderr reader, if any."""
+        task = slot.get("stderr_task")
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        slot["stderr_task"] = None
+
     async def _start_slot(self, slot: dict) -> bool:
-        """Spawn and readiness-check one driver process. Returns True on success."""
+        """Spawn and readiness-check one driver process. Returns True on success.
+
+        The slot is reserved with the ``starting`` flag so concurrent callers
+        never double-spawn it; the spawn/handshake itself runs outside the lock.
+        """
+        if slot["starting"]:
+            return False
+        slot["starting"] = True
         try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                self._driver_module,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-                limit=_STREAM_READER_LIMIT,
-            )
-        except OSError:
-            return False
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-m",
+                    self._driver_module,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                    limit=_STREAM_READER_LIMIT,
+                )
+            except OSError:
+                return False
 
-        slot["proc"] = proc
-        slot["ready"] = False
+            slot["proc"] = proc
+            slot["ready"] = False
+            slot["stderr_lines"] = []
+            slot["stderr_task"] = asyncio.create_task(self._drain_stderr(slot))
 
-        # Wait for the driver's {"_worker_ready": true} handshake.
-        try:
-            line_bytes = await asyncio.wait_for(
-                proc.stdout.readline(), timeout=self._startup_timeout
-            )
-        except (TimeoutError, ValueError):
-            # No handshake in time — kill and treat as dead.
-            await _kill_process_group(proc, graceful=True)
-            slot["proc"] = None
-            return False
+            # The driver was spawned with stdout=PIPE, so the stream is always
+            # present; the guard keeps mypy happy and the behaviour explicit.
+            if proc.stdout is None:
+                await _kill_process_group(proc, graceful=True)
+                await self._stop_stderr_reader(slot)
+                slot["proc"] = None
+                return False
 
-        if not line_bytes:
-            # Process exited before ready.
-            await _kill_process_group(proc, graceful=True)
-            slot["proc"] = None
-            return False
+            # Wait for the driver's {"_worker_ready": true} handshake.
+            try:
+                line_bytes = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=self._startup_timeout
+                )
+            except (TimeoutError, ValueError):
+                # No handshake in time — kill and treat as dead.
+                await _kill_process_group(proc, graceful=True)
+                await self._stop_stderr_reader(slot)
+                slot["proc"] = None
+                return False
 
-        try:
-            handshake = json.loads(line_bytes.decode().strip())
-        except json.JSONDecodeError:
-            handshake = {}
+            if not line_bytes:
+                # Process exited before ready.
+                await _kill_process_group(proc, graceful=True)
+                await self._stop_stderr_reader(slot)
+                slot["proc"] = None
+                return False
 
-        if not handshake.get("_worker_ready"):
-            await _kill_process_group(proc, graceful=True)
-            slot["proc"] = None
-            return False
+            try:
+                handshake = json.loads(line_bytes.decode().strip())
+            except json.JSONDecodeError:
+                handshake = {}
 
-        slot["ready"] = True
-        return True
+            if not handshake.get("_worker_ready"):
+                await _kill_process_group(proc, graceful=True)
+                await self._stop_stderr_reader(slot)
+                slot["proc"] = None
+                return False
+
+            slot["ready"] = True
+            return True
+        finally:
+            slot["starting"] = False
 
     async def ensure_started(self) -> None:
-        """Start all slots (idempotent). Best-effort: dead slots are simply left None."""
+        """Start all slots concurrently (idempotent). Best-effort: dead slots simply stay None."""
         if self._started:
             return
         async with self._lock:
             if self._started:
                 return
-            for slot in self._slots:
-                await self._start_slot(slot)
             self._started = True
+        # Spawn/handshake outside the lock so a slow slot can't stall
+        # _checkout/_release for the rest of the pool; concurrent so startup
+        # cost is one handshake, not N serialized ones.
+        await asyncio.gather(*(self._start_slot(slot) for slot in self._slots))
 
     def available_count(self) -> int:
+        """Return the number of ready, idle driver slots."""
         return sum(1 for s in self._slots if s["proc"] is not None and s["ready"] and not s["busy"])
 
     async def _checkout(self) -> dict | None:
         """Return a free, ready slot, spawning replacements for dead ones.
 
         Returns None if no slot is currently usable (caller should fall back).
+        The (re)spawn happens outside the lock so a slow handshake doesn't
+        block releases/other checkouts; the ``starting`` reservation flag keeps
+        concurrent checkouts from double-spawning a slot.
         """
         async with self._lock:
             for slot in self._slots:
-                if slot["busy"]:
+                if slot["busy"] or slot["starting"]:
                     continue
                 proc = slot["proc"]
-                if proc is None or proc.returncode is not None or not slot["ready"]:
-                    # Try to (re)start this slot.
-                    if not await self._start_slot(slot):
-                        continue
-                slot["busy"] = True
-                return slot
+                if proc is not None and proc.returncode is None and slot["ready"]:
+                    slot["busy"] = True
+                    return slot
+            pending = None
+            for slot in self._slots:
+                if not slot["busy"] and not slot["starting"]:
+                    pending = slot
+                    break
+        if pending is None:
+            return None
+        if not await self._start_slot(pending):
+            return None
+        async with self._lock:
+            if (
+                pending["ready"]
+                and pending["proc"] is not None
+                and not pending["busy"]
+                and not pending["starting"]
+            ):
+                pending["busy"] = True
+                return pending
         return None
 
     async def _release(self, slot: dict) -> None:
@@ -588,19 +687,24 @@ class YtDlpProcessPool:
         job: dict,
         job_timeout: float,
         progress_callback: Callable[[dict], Awaitable[None]] | None = None,
+        service: str = "youtube",
     ) -> dict:
         """Run one job on a pooled driver. Raises on failure so callers can fall back.
 
         Reads stdout lines for this job_id until a terminal ``result``/``error``
         line arrives. Progress lines are relayed to ``progress_callback``.
         On timeout, applies the same process-group kill semantics as the
-        per-job path (SIGTERM grace -> SIGKILL + orphan walk).
+        per-job path (SIGTERM grace -> SIGKILL + orphan walk). ``job_timeout``
+        is a wall-clock deadline for the whole job — progress output does not
+        reset it. Stderr drained during the job is checked for throttle signals.
         """
         slot = await self._checkout()
         if slot is None or slot["proc"] is None:
             raise RuntimeError("yt-dlp warm pool has no available slot")
         proc = slot["proc"]
         job_id = job.get("job_id", "")
+        stderr_mark = len(slot.get("stderr_lines", []))
+        deadline = asyncio.get_running_loop().time() + job_timeout
 
         try:
             proc.stdin.write((json.dumps(job) + "\n").encode())
@@ -609,8 +713,12 @@ class YtDlpProcessPool:
             result: dict | None = None
             error: str | None = None
             while True:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    await self._kill_busy_slot(slot, proc)
+                    raise TimeoutError(f"yt-dlp warm-pool job timed out after {job_timeout}s")
                 try:
-                    line_bytes = await asyncio.wait_for(proc.stdout.readline(), timeout=job_timeout)
+                    line_bytes = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
                 except TimeoutError:
                     await self._kill_busy_slot(slot, proc)
                     raise TimeoutError(
@@ -623,18 +731,34 @@ class YtDlpProcessPool:
                 try:
                     parsed = json.loads(line_bytes.decode().strip())
                 except json.JSONDecodeError:
-                    logger.warning("warm_pool_stdout_non_json", line=line_bytes[:200].decode(errors="replace"))
+                    logger.warning(
+                        "warm_pool_stdout_non_json", line=line_bytes[:200].decode(errors="replace")
+                    )
                     continue
                 if parsed.get("job_id") != job_id:
                     continue
                 if parsed.get("progress") and progress_callback:
-                    await progress_callback(parsed)
+                    try:
+                        await progress_callback(parsed)
+                    except Exception:
+                        # A failing progress callback must not release the slot
+                        # while its driver is still mid-download: kill it so no
+                        # other job interleaves stdout lines or races the same
+                        # output file, then re-raise.
+                        await self._kill_busy_slot(slot, proc)
+                        raise
                 elif "error" in parsed:
                     error = parsed["error"]
                     break
                 elif "result" in parsed:
                     result = parsed["result"]
                     break
+
+            # Relay 429 signals from this job's stderr so the preemptive
+            # throttle predictor keeps its signal on the pooled path.
+            stderr_text = "\n".join(slot.get("stderr_lines", [])[stderr_mark:])
+            if stderr_text:
+                await _check_throttle(stderr_text, service)
 
             if error is not None:
                 raise RuntimeError(f"yt-dlp extraction failed: {error}")
@@ -645,7 +769,14 @@ class YtDlpProcessPool:
             await self._release(slot)
 
     async def _kill_busy_slot(self, slot: dict, proc: asyncio.subprocess.Process) -> None:
-        """Apply SIGTERM -> SIGKILL + orphan walk against a busy driver's group."""
+        """Apply SIGTERM -> SIGKILL + orphan walk against a busy driver's group.
+
+        Marks the slot dead on *every* exit path (including a vanished process
+        or a wait that times out): a wedged or dying process must never return
+        to rotation with ``ready`` still True.
+        """
+        slot["ready"] = False
+        slot["proc"] = None
         try:
             pgid = os.getpgid(proc.pid)
         except (ProcessLookupError, OSError):
@@ -678,6 +809,8 @@ class YtDlpProcessPool:
                 slot["proc"] = None
                 slot["ready"] = False
             self._started = False
+        for slot in self._slots:
+            await self._stop_stderr_reader(slot)
 
 
 # Module-level singleton, created lazily from settings so importing this module
@@ -979,6 +1112,12 @@ async def extract_media_url(
     # Use ONLY the UUID for the filesystem path — never the title
     output_template = os.path.join(download_dir, f"{file_id}.%(ext)s")
 
+    # SSRF gate runs before ANY extraction path — including the warm pool,
+    # which sends the URL straight to a driver process. The API routes only
+    # validate scheme/hostname, so this is the last line of defense against
+    # private/internal targets regardless of which extraction path is used.
+    await _check_ssrf(url)
+
     # Run via subprocess so it can be killed on timeout. The extraction semaphore
     # bounds total concurrent extraction (pool slots + inline) to avoid OOM from
     # N concurrent ~50-100MB yt-dlp/ffmpeg processes.
@@ -1005,7 +1144,10 @@ async def extract_media_url(
             try:
                 await pool.ensure_started()
                 info = await pool.run_job(
-                    job, job_timeout=YT_DLP_TIMEOUT, progress_callback=progress_callback
+                    job,
+                    job_timeout=YT_DLP_TIMEOUT,
+                    progress_callback=progress_callback,
+                    service=_service_from_url(url),
                 )
             except Exception as exc:
                 logger.warning(

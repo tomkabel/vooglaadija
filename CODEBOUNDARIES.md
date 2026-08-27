@@ -15,7 +15,9 @@ the API process and the worker process.
 - `worker/` must not import `app/api/`, `app/schemas/`, route dependencies, web-specific modules,
   ORM model shims, config shims, database shims, metrics shims, logging shims, or Redis-client
   shims.
-- `yt_dlp` is importable only from `app/services/yt_dlp_service.py` (anti-corruption layer).
+- `yt_dlp` is importable only from `app/services/yt_dlp_service.py` (anti-corruption layer);
+  `app/services/yt_dlp_worker_driver.py` is the warm-pool yt-dlp execution boundary and is exempt
+  the same way (ruff TID251 per-file ignore + boundary-verifier ACL exemption).
 
 ## Enforcement
 

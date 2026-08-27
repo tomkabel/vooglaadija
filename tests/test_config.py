@@ -565,6 +565,30 @@ class TestYtDlpWarmPoolConfig:
                 yt_dlp_pool_size=64,
             )
 
+    def test_warm_pool_size_must_not_exceed_extraction_concurrency(self):
+        """A pool larger than the extraction semaphore would start unused
+        resident driver processes (issue #162 review)."""
+        with pytest.raises(
+            (ValidationError, ValueError),
+            match="YT_DLP_EXTRACTION_CONCURRENCY",
+        ):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=2,
+                yt_dlp_pool_size=4,
+            )
+
+    def test_warm_pool_size_allowed_within_extraction_capacity(self):
+        """Raising extraction concurrency permits a proportionally sized pool."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            worker_concurrency=8,
+            yt_dlp_pool_size=4,
+        )
+        assert s.yt_dlp_pool_size == 4
+
     def test_prefer_progressive_off_by_default(self):
         """Merged-combo 1080p stays the default; progressive is opt-in (#170)."""
         s = _make_production_settings(

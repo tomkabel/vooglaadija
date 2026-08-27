@@ -171,7 +171,11 @@ services:
     # WORKER_REPLICAS * WORKER_CONCURRENCY).
     environment:
       <<: *common-env
-      WORKER_ID: ${HOSTNAME:-worker-1}
+      # No static WORKER_ID: `${HOSTNAME:-worker-1}` interpolates the compose
+      # host's value once and hands the SAME id to every replica, so scaled
+      # replicas overwrite one another's `worker:health:*` key. Instead the
+      # worker derives its id from the container's runtime hostname (unique per
+      # replica) and falls back to WORKER_ID if an operator sets it explicitly.
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}

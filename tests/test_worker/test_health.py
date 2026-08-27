@@ -90,17 +90,37 @@ class TestGetRedisUrl:
 class TestGetWorkerId:
     """Tests for get_worker_id function."""
 
-    def test_get_worker_id_default(self):
-        """Test default worker ID when env not set."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = get_worker_id()
-            assert result == "worker-1"
-
     def test_get_worker_id_from_env(self):
         """Test worker ID from WORKER_ID env var."""
         with patch.dict(os.environ, {"WORKER_ID": "my-custom-worker"}):
             result = get_worker_id()
             assert result == "my-custom-worker"
+
+    def test_get_worker_id_uses_container_hostname(self):
+        """With WORKER_ID unset, the runtime container hostname is used so scaled
+        replicas get distinct IDs instead of overwriting the same health key."""
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("worker.health.socket.gethostname", return_value="worker-abc123"),
+        ):
+            assert get_worker_id() == "worker-abc123"
+
+    def test_get_worker_id_prefers_hostname_env(self):
+        """HOSTNAME (Docker sets it to the container ID) wins over gethostname."""
+        with (
+            patch.dict(os.environ, {"HOSTNAME": "container-xyz"}, clear=True),
+            patch("worker.health.socket.gethostname", return_value="ignored"),
+        ):
+            assert get_worker_id() == "container-xyz"
+
+    def test_get_worker_id_fallback_default(self):
+        """Without WORKER_ID or a usable hostname, fall back to worker-1."""
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("worker.health.socket.gethostname", return_value=""),
+        ):
+            result = get_worker_id()
+            assert result == "worker-1"
 
 
 class TestStartHealthServer:

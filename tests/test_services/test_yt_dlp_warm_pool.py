@@ -8,12 +8,60 @@ They are kept small and time-boxed to avoid slow CI.
 from __future__ import annotations
 
 import asyncio
-import os
 
 import pytest
 
 from app.services import yt_dlp_service
 from app.services.yt_dlp_service import YtDlpProcessPool, _get_pool
+
+
+class _FakeStream:
+    """Minimal asyncio stream stand-in (readline/drain/write)."""
+
+    def __init__(self, lines: list[bytes] | None = None):
+        self._lines = list(lines or [])
+
+    async def readline(self):
+        if not self._lines:
+            return b""
+        return self._lines.pop(0)
+
+    async def drain(self):
+        return None
+
+    def write(self, data) -> None:
+        return None
+
+
+class _FakeProc:
+    def __init__(self, out_lines: list[bytes]):
+        self.stdout = _FakeStream(out_lines)
+        self.stderr = _FakeStream([])
+        self.stdin = _FakeStream([])
+        self.returncode = None
+        self.pid = 424242
+
+    async def wait(self):
+        return 0
+
+
+class _ChattyStream:
+    """A stdout stream that always yields progress lines (never EOF)."""
+
+    async def readline(self):
+        return b'{"job_id": "j1", "progress": true, "percent": 99.9}\n'
+
+    async def drain(self):
+        return None
+
+    def write(self, data) -> None:
+        return None
+
+
+class _ChattyProc(_FakeProc):
+    def __init__(self):
+        super().__init__([])
+        self.stdout = _ChattyStream()
 
 
 # Ensure the pool is genuinely exercised (not skipped via the TESTING guard).
@@ -35,28 +83,32 @@ async def test_pool_starts_and_handshakes():
 
 @pytest.mark.asyncio
 async def test_pool_runs_metadata_job():
-    """The pool resolves a title (metadata mode) via the warm driver."""
+    """The pool runs a metadata job through the warm driver (offline protocol test).
+
+    Uses the guaranteed-unresolvable ``.invalid`` TLD so the driver returns a
+    typed error quickly without contacting any real service — the stdin/stdout
+    round-trip is what's under test, not YouTube.
+    """
     pool = YtDlpProcessPool(size=1, startup_timeout=60.0)
     try:
         await pool.ensure_started()
         # A synthetic but well-formed job exercises the driver's JSON round-trip
-        # and progress/result parsing without hitting the network.
+        # (handshake -> stdin job -> stdout result/error) without the network.
         job = {
             "job_id": "meta-1",
             "mode": "metadata",
-            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "url": "https://unresolvable.invalid/video",
             "platform": "youtube",
             "cookies_opts": {},
         }
-        # The driver will attempt a real network fetch; we only assert the
-        # protocol works (result or a typed error) rather than specific output.
         try:
             result = await pool.run_job(job, job_timeout=60.0)
+            # A networked driver could still theoretically resolve; accept a dict.
             assert isinstance(result, dict)
-        except RuntimeError as exc:
-            # Network-blocked CI environments return a typed error rather than
-            # crashing — that still proves the pool + driver plumbing works.
-            assert "yt-dlp" in str(exc).lower() or "failed" in str(exc).lower()
+        except (RuntimeError, TimeoutError) as exc:
+            # The driver returns a typed error for the unresolvable host, which
+            # still proves the pool + driver plumbing works.
+            assert "yt-dlp" in str(exc).lower()
     finally:
         await pool.shutdown()
 
@@ -85,35 +137,22 @@ async def test_pool_dead_slot_respawns_on_next_checkout():
 
 
 @pytest.mark.asyncio
-async def test_get_pool_disabled_under_testing():
+async def test_get_pool_disabled_under_testing(monkeypatch):
     """_get_pool returns None when TESTING is set, forcing the inline path."""
-    monkeypatch_testing = os.environ.get("TESTING")
-    os.environ["TESTING"] = "1"
-    try:
-        assert _get_pool() is None
-    finally:
-        if monkeypatch_testing is None:
-            os.environ.pop("TESTING", None)
-        else:
-            os.environ["TESTING"] = monkeypatch_testing
+    monkeypatch.setenv("TESTING", "1")
+    assert _get_pool() is None
 
 
 @pytest.mark.asyncio
-async def test_get_pool_singleton_and_fallback_flag():
+async def test_get_pool_singleton_and_fallback_flag(monkeypatch):
     """_get_pool respects the warm-pool disabled setting."""
     from core.config import settings as _settings
 
-    # Force-disabled: returns None and records no failure.
-    _settings.yt_dlp_warm_pool = False
-    try:
-        # Clear any cached singleton so the setting is re-read.
-        yt_dlp_service._pool = None
-        yt_dlp_service._pool_failed = False
-        assert _get_pool() is None
-    finally:
-        _settings.yt_dlp_warm_pool = True
-        yt_dlp_service._pool = None
-        yt_dlp_service._pool_failed = False
+    monkeypatch.setattr(_settings, "yt_dlp_warm_pool", False)
+    # Clear any cached singleton so the setting is re-read.
+    monkeypatch.setattr(yt_dlp_service, "_pool", None)
+    monkeypatch.setattr(yt_dlp_service, "_pool_failed", False)
+    assert _get_pool() is None
 
 
 @pytest.mark.asyncio
@@ -124,3 +163,48 @@ async def test_driver_module_is_importable():
     assert hasattr(yt_dlp_worker_driver, "main")
     assert hasattr(yt_dlp_worker_driver, "_run_extract")
     assert hasattr(yt_dlp_worker_driver, "_run_metadata")
+
+
+@pytest.mark.asyncio
+async def test_run_job_progress_callback_failure_kills_slot():
+    """A raising progress callback kills the slot instead of releasing it busy."""
+    pool = YtDlpProcessPool(size=1)
+    proc = _FakeProc(
+        [
+            b'{"job_id": "j1", "progress": true, "percent": 10.0}\n',
+            b'{"job_id": "j1", "result": {"title": "x"}}\n',
+        ]
+    )
+    slot = pool._slots[0]
+    slot["proc"] = proc
+    slot["ready"] = True
+
+    async def boom(_parsed):
+        raise RuntimeError("pubsub hiccup")
+
+    with pytest.raises(RuntimeError, match="pubsub hiccup"):
+        await pool.run_job({"job_id": "j1"}, job_timeout=5.0, progress_callback=boom)
+
+    # The slot must be dead (not released ready), so no other job can
+    # interleave with the still-running driver or race the same output file.
+    assert slot["ready"] is False
+    assert slot["proc"] is None
+    assert slot["busy"] is False
+
+
+@pytest.mark.asyncio
+async def test_run_job_wall_clock_deadline_bounds_chatty_job():
+    """job_timeout is a total wall-clock deadline, not a per-line inactivity
+    timeout — a download emitting progress lines must not run forever."""
+    pool = YtDlpProcessPool(size=1)
+    proc = _ChattyProc()
+    slot = pool._slots[0]
+    slot["proc"] = proc
+    slot["ready"] = True
+
+    start = asyncio.get_running_loop().time()
+    with pytest.raises(TimeoutError, match="timed out"):
+        await pool.run_job({"job_id": "j1"}, job_timeout=0.15)
+    assert asyncio.get_running_loop().time() - start < 2.0
+    assert slot["ready"] is False
+    assert slot["proc"] is None

@@ -122,10 +122,17 @@ class TestFormatSpecFor:
 
         fmt, _sort = _format_spec_for("youtube")
         assert fmt == YOUTUBE_FORMAT
-        assert "bestvideo*+bestaudio/best/best/res:1080+h264" not in fmt  # sanity
-        assert "bestvideo*+bestaudio/best/res:1080+h264" in fmt
+        assert "bestvideo*+bestaudio" in fmt
+        assert "bestvideo+bestaudio" in fmt
+        assert "worstvideo*+bestaudio" in fmt
+        assert " / best" in fmt
+        assert " / worst" in fmt
+        # The old chain enshrined dead format-ID selectors (`res:1080+h264`,
+        # `res:720`) that yt-dlp treats as literal format IDs; assert they are gone.
+        assert "res:1080+h264" not in fmt
+        assert "res:720" not in fmt
 
-    def test_youtube_progressive_enabled_uses_progressive_first(self) -> None:
+    def test_youtube_progressive_enabled_uses_progressive_first(self, monkeypatch) -> None:
         """When the setting is on, YouTube returns the progressive-first chain."""
         from app.services.yt_dlp_service import (
             YOUTUBE_FORMAT_PROGRESSIVE,
@@ -133,22 +140,99 @@ class TestFormatSpecFor:
             settings,
         )
 
-        original = settings.yt_dlp_prefer_progressive
-        settings.yt_dlp_prefer_progressive = True
-        try:
-            fmt, _sort = _format_spec_for("youtube")
-            assert fmt == YOUTUBE_FORMAT_PROGRESSIVE
-            # Progressive single-stream entry leads; merged combos come after.
-            assert fmt.startswith("best[ext=mp4][protocol!=dash]")
-            assert "bestvideo*+bestaudio/best/res:1080+h264" in fmt
-        finally:
-            settings.yt_dlp_prefer_progressive = original
+        monkeypatch.setattr(settings, "yt_dlp_prefer_progressive", True)
+        fmt, _sort = _format_spec_for("youtube")
+        assert fmt == YOUTUBE_FORMAT_PROGRESSIVE
+        # Progressive single-stream entry leads; DASH is excluded with the
+        # substring filter (`protocol!*=dash`), since bare `dash` is never a
+        # real yt-dlp protocol value.
+        assert fmt.startswith("best[ext=mp4][protocol!*=dash]")
+        assert "[protocol!*=dash]" in fmt
+        assert "bestvideo*+bestaudio" in fmt
+        assert "res:1080+h264" not in fmt
+        assert "res:720" not in fmt
 
     def test_non_youtube_always_single_stream(self) -> None:
         from app.services.yt_dlp_service import _format_spec_for
 
         fmt, _sort = _format_spec_for("tiktok")
         assert fmt == "best"
+
+
+class TestFormatSpecValidity:
+    """The format chains are parseable by yt-dlp and select as intended.
+
+    The warm-pool tests only cover metadata mode, so these guard the format
+    strings against malformed or ineffective selectors — the dead
+    ``res:1080+h264`` / ``res:720`` fragments used to be enshrined in the
+    contract tests without ever being executed against yt-dlp (issues #169/#170).
+    """
+
+    @staticmethod
+    def _parse_segments(fmt: str) -> list[str]:
+        return [seg.strip() for seg in fmt.split("/") if seg.strip()]
+
+    @pytest.mark.parametrize(
+        "fmt",
+        ["YOUTUBE_FORMAT", "YOUTUBE_FORMAT_PROGRESSIVE", "GENERIC_FORMAT"],
+    )
+    def test_every_segment_parses(self, fmt: str) -> None:
+        """Every '/'-separated fallback segment must be a valid yt-dlp selector."""
+        import yt_dlp
+
+        from app.services import yt_dlp_service
+
+        spec = getattr(yt_dlp_service, fmt)
+        for segment in self._parse_segments(spec):
+            yt_dlp.YoutubeDL().build_format_selector(segment)  # raises if invalid
+
+    def test_no_dead_format_id_fragments(self) -> None:
+        """Bare `res:N`/codec-name tokens are format IDs, not filters."""
+        from app.services.yt_dlp_service import YOUTUBE_FORMAT, YOUTUBE_FORMAT_PROGRESSIVE
+
+        for fmt in (YOUTUBE_FORMAT, YOUTUBE_FORMAT_PROGRESSIVE):
+            assert "res:1080+h264" not in fmt
+            assert "res:720" not in fmt
+
+    def test_progressive_chain_excludes_dash_protocols(self) -> None:
+        """`[protocol!*=dash]` skips http_dash_segments and picks a progressive mp4."""
+        import yt_dlp
+
+        selector = yt_dlp.YoutubeDL().build_format_selector("best[ext=mp4][protocol!*=dash]")
+        formats = [
+            {
+                "format_id": "dash",
+                "ext": "mp4",
+                "protocol": "http_dash_segments",
+                "vcodec": "vp9",
+                "acodec": "none",
+                "height": 1080,
+                "width": 1920,
+                "tbr": 2000,
+            },
+            {
+                "format_id": "prog",
+                "ext": "mp4",
+                "protocol": "https",
+                "vcodec": "avc1",
+                "acodec": "mp4a",
+                "height": 720,
+                "width": 1280,
+                "tbr": 2500,
+            },
+            {
+                "format_id": "webm",
+                "ext": "webm",
+                "protocol": "https",
+                "vcodec": "vp9",
+                "acodec": "opus",
+                "height": 480,
+                "width": 854,
+                "tbr": 800,
+            },
+        ]
+        selected = selector({"id": "x", "formats": formats})
+        assert [f["format_id"] for f in selected] == ["prog"]
 
 
 class TestExtractMediaUrl:
@@ -675,12 +759,15 @@ class TestFormatFallbackChain:
         native yt-dlp format string with '/' fallback (issue #169: previously a
         per-spec loop that only ever ran the first entry)."""
         # Every segment of the merged-combo chain must appear in the single format value.
-        assert "bestvideo*+bestaudio/best/res:1080+h264" in captured_script
-        assert "bestvideo+bestaudio/best" in captured_script
-        assert "worstvideo*+bestaudio/best/res:720" in captured_script
+        assert "bestvideo*+bestaudio" in captured_script
+        assert "bestvideo+bestaudio" in captured_script
+        assert "worstvideo*+bestaudio" in captured_script
         # The native '/' separators wire the whole chain as yt-dlp's own fallback.
         assert " / best" in captured_script
         assert " / worst" in captured_script
+        # The old chain enshrined dead format-ID selectors — assert they're gone.
+        assert "res:1080+h264" not in captured_script
+        assert "res:720" not in captured_script
         # format_sort still biases toward 1080p/h264 on the first segment.
         assert '"res:1080"' in captured_script
         assert '"codec:h264"' in captured_script
@@ -710,9 +797,11 @@ class TestFormatFallbackChain:
         extract_info call (issue #169). There is no longer a per-format Python
         loop that only caught one narrow error string."""
         assert '"format":' in captured_script
-        assert "bestvideo*+bestaudio/best/res:1080+h264" in captured_script
+        assert "bestvideo*+bestaudio" in captured_script
         assert " / best" in captured_script
         assert " / worst" in captured_script
+        assert "res:1080+h264" not in captured_script
+        assert "res:720" not in captured_script
         # Degradation is yt-dlp's responsibility now: no hand-rolled loop that
         # only continued on 'Requested format ... not available'.
         assert "for i, format_spec" not in captured_script

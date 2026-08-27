@@ -429,7 +429,8 @@ class TestWorkerConcurrencyPool:
 
     @pytest.mark.unit
     async def test_loop_processes_multiple_jobs_concurrently(self):
-        """With WORKER_CONCURRENCY>1 the loop dispatches several jobs at once."""
+        """With WORKER_CONCURRENCY>1 the loop dispatches several jobs at once
+        and refills the pool after completed tasks are reaped."""
         import importlib
 
         import worker.main
@@ -438,6 +439,7 @@ class TestWorkerConcurrencyPool:
 
         from worker.main import main, settings, shutdown_event
 
+        original_concurrency = worker.main.settings.worker_concurrency
         worker.main.settings.worker_concurrency = 3
         # avoid re-reading the attribute from a different settings instance
         settings.worker_concurrency = 3
@@ -450,12 +452,16 @@ class TestWorkerConcurrencyPool:
         # Track concurrency: count tasks alive inside process_next_job.
         active = 0
         max_active = 0
+        started_jobs: list[str] = []
         dispatch_gate = asyncio.Event()
+        started_event = asyncio.Event()
 
         async def fake_process_next_job(job_id=None):
             nonlocal active, max_active
             active += 1
             max_active = max(max_active, active)
+            started_jobs.append(str(job_id))
+            started_event.set()
             # Let the loop dispatch more jobs before this one finishes.
             await dispatch_gate.wait()
             active -= 1
@@ -471,12 +477,28 @@ class TestWorkerConcurrencyPool:
                 return ("download_queue", job_ids[n])
             return None
 
-        # After the pool has had a chance to fill, release the gate and trigger a
-        # graceful shutdown so main() drains in-flight jobs and returns.
+        # Let the initial batch fill the pool and block on the gate, then
+        # release it; wait for a replenished job (job-3) to start — proving
+        # _reap_in_flight refills the pool — before signalling shutdown.
         async def trigger_shutdown_later():
-            await asyncio.sleep(0.3)
+            deadline = asyncio.get_running_loop().time() + 5.0
+            while max_active < 3 and asyncio.get_running_loop().time() < deadline:
+                started_event.clear()
+                try:
+                    await asyncio.wait_for(started_event.wait(), timeout=0.5)
+                except TimeoutError:
+                    pass
             dispatch_gate.set()
+            while (
+                "job-3" not in started_jobs and asyncio.get_running_loop().time() < deadline + 5.0
+            ):
+                started_event.clear()
+                try:
+                    await asyncio.wait_for(started_event.wait(), timeout=0.5)
+                except TimeoutError:
+                    pass
             worker.main._signal_handler()
+            dispatch_gate.set()
 
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock(return_value=True)
@@ -500,18 +522,23 @@ class TestWorkerConcurrencyPool:
                 patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
                 patch("worker.main.cleanup_expired_jobs", new_callable=AsyncMock, return_value=0),
                 patch("worker.main.requeue_stuck_jobs", new_callable=AsyncMock, return_value=0),
-                patch("worker.main._drain_circuit_deferred", new_callable=AsyncMock, return_value=0),
+                patch(
+                    "worker.main._drain_circuit_deferred", new_callable=AsyncMock, return_value=0
+                ),
             ):
                 await main()
         finally:
             if not shutdown_task.done():
                 shutdown_task.cancel()
-            worker.main.settings.worker_concurrency = 2
-            settings.worker_concurrency = 2
+            worker.main.settings.worker_concurrency = original_concurrency
+            settings.worker_concurrency = original_concurrency
             shutdown_event.clear()
             worker.main.shutdown_requested_at = None
 
         # The loop must have run more than one job at a time.
         assert max_active >= 2, f"max concurrent jobs observed: {max_active}"
         assert max_active <= 3, f"concurrency exceeded limit: {max_active}"
-
+        # The pool must have been refilled after the initial batch completed
+        # (a regression in _reap_in_flight would leave job-3..job-5 unprocessed).
+        assert "job-3" in started_jobs, f"pool was not refilled; started: {started_jobs}"
+        assert len(started_jobs) >= 4, f"not enough jobs dispatched: {started_jobs}"
