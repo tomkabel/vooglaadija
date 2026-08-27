@@ -152,7 +152,7 @@ jobs:
         run: uv tool install hatch==${{ env.HATCH_VERSION }}
 
       - name: Run unit tests with coverage
-        run: hatch run test:unit
+        run: hatch run test:unit -- -m ''
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
@@ -242,7 +242,7 @@ jobs:
       - name: Run API integration tests
         env:
           CI_INTEGRATION: 'true'
-        run: hatch run test:integration
+        run: hatch run test:integration -- -m ''
 
       - name: Upload integration coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2

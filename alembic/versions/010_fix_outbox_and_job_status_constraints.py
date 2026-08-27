@@ -81,7 +81,7 @@ def upgrade() -> None:
         # Any rows already carrying a now-forbidden value are reconciled so the
         # rebuilt constraint validates immediately.
         op.execute(
-            sa.text(f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({outbox_in})")
+            sa.text(f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({outbox_in})")  # noqa: S608
         )
 
 

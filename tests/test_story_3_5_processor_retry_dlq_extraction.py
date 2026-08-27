@@ -14,6 +14,8 @@ from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
 from core.models.outbox import Outbox
 
+pytestmark = pytest.mark.slow
+
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:

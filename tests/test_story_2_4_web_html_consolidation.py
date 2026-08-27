@@ -11,6 +11,9 @@ from slowapi.errors import RateLimitExceeded
 
 from app.api.rate_limit_config import rate_limit_exceeded_handler
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

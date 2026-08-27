@@ -9,6 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_SOURCE_ROOTS = ("app", "core", "worker")
 

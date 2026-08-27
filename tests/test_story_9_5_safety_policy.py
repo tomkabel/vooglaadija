@@ -7,7 +7,11 @@ import tomllib
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.slow
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = PROJECT_ROOT / ".safety-policy.yml"
