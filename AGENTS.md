@@ -35,7 +35,7 @@ hatch run type:check       # mypy app/
 - `create_test_user_and_login(client)` helper in `conftest.py` for auth tests.
 - Integration tests (`CI_INTEGRATION=true`) hit real postgres/redis — only run in CI.
 - **Default test run skips `@pytest.mark.slow` tests** (230 regression story tests). Run `pytest -m slow` or `hatch run test:all --no-cov -m ''` for full suite.
-- **Fast feedback loop**: pytest runs last-failed tests first (`--lf --ff`), then passes. Delete `.pytest_cache/` to reset.
+- **Fast feedback loop**: pytest runs last-failed tests first (`--ff`), then passes. Delete `.pytest_cache/` to reset.
 
 ## Frontend
 
