@@ -5,7 +5,7 @@ consumer can deserialize, using the in-memory seam instead of a live Redis
 instance (Feathers: seams for network-free contract testing).
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from uuid import UUID
 
 import pytest
@@ -60,17 +60,15 @@ async def test_production_serialization_matches_seam():
     from core.queue import enqueue_job
 
     job_id = UUID("12345678-1234-5678-1234-567812345678")
-    recorded: list[tuple[str, str]] = []
-    mock_redis = MagicMock()
-    mock_redis.lpush = AsyncMock(side_effect=lambda key, payload: recorded.append((key, payload)))
+    recorded: list[tuple[str, str | None, str | None]] = []
 
-    with patch("core.queue.redis_client", mock_redis):
+    def mock_send(task_name, args=None, queue=None):
+        recorded.append((task_name, args[0] if args else None, queue))
+
+    with patch("core.queue._celery_send_task", side_effect=mock_send):
         await enqueue_job(job_id)
 
-    assert recorded == [("download_queue", str(job_id))]
-    queue = MemoryQueue()
-    await queue.enqueue(recorded[0][1])
-    assert normalize_job_id(await queue.pop_next()) == job_id
+    assert recorded == [("worker.celery_tasks.process_download", str(job_id), "downloads")]
 
 
 @pytest.mark.unit
