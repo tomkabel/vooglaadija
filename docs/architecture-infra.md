@@ -63,4 +63,4 @@ Image tags: commit SHA + version tag (+ `latest` for auto-deploys).
 - No new privileges
 - Health checks on all services
 - Resource limits configured
-- Secrets stored in `./.env` (mode 600), never in the repo
+- Secrets stored in `./.env` (mode 600), never committed to version control

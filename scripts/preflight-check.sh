@@ -130,10 +130,20 @@ check_port_conflicts() {
     fi
   done
 
-  # Ports 80/443: warn if occupied by a non-Caddy process (Caddy needs them for TLS)
+  # Ports 80/443: warn if occupied by a non-Caddy process (Caddy needs them for TLS).
+  # Merely having a Caddy container is not proof of ownership — verify the Caddy
+  # container actually publishes the specific port before suppressing the warning.
   for port in 80 443; do
     if ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN; then
-      if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(vooglaadija-)?caddy'; then
+      local caddy_owns=false cid
+      while IFS= read -r cid; do
+        [[ -z "$cid" ]] && continue
+        if docker port "$cid" "$port/tcp" >/dev/null 2>&1; then
+          caddy_owns=true
+          break
+        fi
+      done < <(docker ps --filter "name=caddy" --filter "status=running" --format '{{.ID}}' 2>/dev/null || true)
+      if ! $caddy_owns; then
         log_warn "Port $port is in use — Caddy will need it for TLS."
       fi
     fi

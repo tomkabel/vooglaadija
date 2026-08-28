@@ -7,7 +7,11 @@ gzip-compressed custom-format `.dump` archives) at 02:00 with a 7-day retention
 (`BACKUP_RETENTION_DAYS`). Dumps land in `infra/backup/backup-data/`.
 
 ```bash
-# Local stack / standalone production
+# Local stack (base + local override; loopback debug ports only)
+docker compose -f docker-compose.yml -f docker-compose.local.yml --profile backup up -d
+
+# Standalone production — also mounts the Caddy override, which binds host
+# ports 80/443 and requires the bootstrap-generated certs/ directory:
 docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml --profile backup up -d
 ```
 

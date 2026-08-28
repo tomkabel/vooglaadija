@@ -23,7 +23,6 @@ from typing import ClassVar
 from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.utils import ExtractorError, url_or_none
 
-
 # Delfi article URLs: https://www.delfi.ee/artikkel/<id>/<slug>
 _VALID_HOSTS = r"(?:[A-Za-z0-9-]+\.)*delfi\.ee"
 
@@ -33,6 +32,16 @@ _JWPLAYER_RE = re.compile(
     r"cdn\.jwplayer\.com(?:\\u002F|/)+manifests(?:\\u002F|/)+([A-Za-z0-9]+)\.m3u8",
     re.IGNORECASE,
 )
+
+# Media UUID: the portal-player placeholder div (``media-video-<uuid>``) and
+# the NUXT payload (``data-id=<uuid>`` next to the manifest) expose it. The
+# div and the manifest travel separately in the page, so the UUID that sits
+# next to a manifest is the one that belongs to that video.
+_UUID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+_MEDIA_DIV_RE = re.compile(r"media-video-([0-9a-f-]{36})", re.IGNORECASE)
 
 
 class DelfiIE(InfoExtractor):
@@ -53,6 +62,7 @@ class DelfiIE(InfoExtractor):
     ]
 
     def _real_extract(self, url):
+        """Download the article page and return the embedded video metadata."""
         article_id = self._match_id(url)
         webpage = self._download_webpage(url, article_id)
 
@@ -91,32 +101,33 @@ class DelfiIE(InfoExtractor):
     # -- helpers ---------------------------------------------------------
 
     def _parse_media(self, webpage: str):
-        """Return (manifest_url, video_id) or (None, None)."""
-        for portal_div in re.finditer(r'<div[^>]*\bid=["\']media-video-([0-9a-f-]{36})["\'][^>]*>', webpage):
-            div_id = portal_div.group(1)
-            div_start = portal_div.start()
-            div_end = portal_end(div_start, webpage)
-            div_html = webpage[div_start:div_end]
-            jw = _JWPLAYER_RE.search(div_html)
-            if jw:
-                return ("https://cdn.jwplayer.com/manifests/%s.m3u8" % jw.group(1), div_id)
-        return (None, None)
+        """Return (manifest_url, video_id) or (None, None).
 
+        The manifest URL and the media UUID travel separately in the article
+        markup: the UUID is exposed by the ``<div id="media-video-<uuid>">``
+        portal-player placeholder, while the manifest sits in the NUXT JSON
+        payload, which carries a ``data-id=<uuid>`` attribute right next to the
+        manifest URL. Both can appear several times on multi-video pages, so
+        the manifest and the UUID are correlated by proximity (the payload's
+        ``data-id`` wins; the placeholder div is the fallback).
+        """
+        jw = _JWPLAYER_RE.search(webpage)
+        if not jw:
+            return (None, None)
 
-def div_end(start: int, html: str) -> int:
-    """Return the index past the closing </div> of the opened div at `start`."""
-    depth = 0
-    pos = start
-    while pos < len(html):
-        m = re.search(r'<(/?div)(?:\s[^>]*)?\s*/?>', html[pos:], re.IGNORECASE)
-        if not m:
-            break
-        pos += m.end()
-        if m.group(1).lower() == 'div':
-            if html[m.start() + 1] == '/':
-                depth -= 1
-                if depth < 0:
-                    return pos
-            else:
-                depth += 1
-    return len(html)
+        manifest_url = f"https://cdn.jwplayer.com/manifests/{jw.group(1)}.m3u8"
+
+        # The NUXT payload embeds the media UUID right after the manifest
+        # (``...manifests/<id>.m3u8", ..., "<div data-id=<uuid>...``). Grab it
+        # from a short window so it is the UUID *of this manifest* on
+        # multi-video pages, not the first placeholder div in the document.
+        media_id = None
+        nearby = _UUID_RE.search(webpage[jw.start() : jw.start() + 500])
+        if nearby:
+            media_id = nearby.group(0)
+        else:
+            div = _MEDIA_DIV_RE.search(webpage)
+            if div:
+                media_id = div.group(1)
+
+        return (manifest_url, media_id)

@@ -42,6 +42,13 @@ APP_NAME="vooglaadija"
 NON_INTERACTIVE=false
 FORCE=false
 SKIP_DNS="${SKIP_DNS:-false}"
+# Normalize to a boolean before the shell-condition checks below so values
+# like `1`, `true`, `yes` and `on` are accepted without being executed.
+case "$SKIP_DNS" in
+  1|true|TRUE|True|yes|Yes|on|On) SKIP_DNS=true ;;
+  ""|0|false|FALSE|False|no|No|off|Off) SKIP_DNS=false ;;
+  *) die "Invalid SKIP_DNS value: '$SKIP_DNS' (use 1/true to skip, 0/false to provision)" ;;
+esac
 
 # Repo root = parent of the deploy/ directory this script lives in.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -235,30 +242,45 @@ except Exception:
 
   log_info "Matched Cloudflare zone: ${zone_name:-$DEPLOY_DOMAIN}"
 
-  # Ensure apex + wildcard A records point to this server (create if missing)
+  # Ensure apex + wildcard A records point to this server (create if missing).
+  # Records are created *proxied* (orange cloud) so Cloudflare terminates TLS
+  # with its public edge certificate — that is what the public https://<domain>
+  # health check validates. A grey-clouded (direct) record would expose the
+  # self-signed origin certificate to the check and make bootstrap fail.
   for name in "$DEPLOY_DOMAIN" "*.$DEPLOY_DOMAIN"; do
-    local records
+    local records record_id
     records=$(cloudflare_api GET "/zones/${zone_id}/dns_records?type=A&name=${name}" || true)
-    local matches
-    matches=$(printf '%s' "$records" | python3 -c "
+    record_id=$(printf '%s' "$records" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
     hits = [r for r in d.get('result', []) if r.get('content') == sys.argv[1]]
-    print(len(hits))
+    if hits:
+        print(hits[0]['id'] + '|' + str(hits[0].get('proxied', False)))
+    else:
+        print('')
 except Exception:
-    print('0')
+    print('')
 " "$PUBLIC_IP")
-    if [[ "$matches" -ge 1 ]]; then
-      log_info "DNS OK: $name → $PUBLIC_IP"
+    if [[ -n "$record_id" ]]; then
+      local rid rproxied
+      rid="${record_id%%|*}"
+      rproxied="${record_id#*|}"
+      if [[ "$rproxied" == "True" ]]; then
+        log_info "DNS OK: $name → $PUBLIC_IP (proxied)"
+      else
+        log_info "DNS record '$name' exists but is grey-clouded — enabling the Cloudflare proxy (orange cloud)..."
+        cloudflare_api PATCH "/zones/${zone_id}/dns_records/${rid}" '{"proxied":true}' >/dev/null || true
+        log_info "Proxy enabled for $name"
+      fi
     else
       log_warn "No A record found for '$name' pointing to $PUBLIC_IP."
-      if confirm "Create A record '$name' → $PUBLIC_IP in Cloudflare?"; then
+      if confirm "Create A record '$name' → $PUBLIC_IP in Cloudflare (proxied)?"; then
         local created
         created=$(cloudflare_api POST "/zones/${zone_id}/dns_records" \
-          "{\"type\":\"A\",\"name\":\"${name}\",\"content\":\"${PUBLIC_IP}\",\"ttl\":120,\"proxied\":false}" || true)
+          "{\"type\":\"A\",\"name\":\"${name}\",\"content\":\"${PUBLIC_IP}\",\"ttl\":120,\"proxied\":true}" || true)
         if printf '%s' "$created" | grep -q '"success":true'; then
-          log_info "Created DNS record: $name → $PUBLIC_IP"
+          log_info "Created DNS record: $name → $PUBLIC_IP (proxied)"
         else
           log_warn "Failed to create DNS record for '$name':"
           printf '%s\n' "$created" | head -c 400
@@ -345,6 +367,8 @@ setup_environment() {
 
   if [[ -f "$env_file" ]]; then
     log_info "Existing .env found — preserving secrets (DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY)."
+    # Never leave the file world-readable: it holds DB/Redis/JWT secrets.
+    chmod 600 "$env_file"
     # Ensure the domain is current for CORS / Caddy regardless of re-runs.
     if grep -q '^DEPLOY_DOMAIN=' "$env_file"; then
       sed -i "s|^DEPLOY_DOMAIN=.*|DEPLOY_DOMAIN=${DEPLOY_DOMAIN}|" "$env_file"
@@ -428,8 +452,8 @@ setup_caddy() {
 # ${DEPLOY_DOMAIN} is on Cloudflare. Caddy serves a TLS cert Cloudflare accepts
 # so the connection from Cloudflare -> this origin is encrypted. Set Cloudflare
 # SSL/TLS mode to "Full" (or "Full (strict)" with a Cloudflare Origin CA cert —
-# this self-signed cert is enough for "Full"). Plain HTTP :80 is also served so
-# "Flexible" mode works too.
+# this self-signed cert is enough for "Full"). Plain HTTP :80 redirects to
+# HTTPS so credentials are never accepted over cleartext.
 #
 # (If you later drop the Cloudflare proxy / grey-cloud the DNS, change the tls
 #  block to \`tls internal\` and Caddy will auto-issue a real Let's Encrypt cert.)
@@ -448,10 +472,11 @@ ${DEPLOY_DOMAIN} {
 	}
 }
 
-# Plain HTTP listener: Cloudflare Flexible mode tunnels through :80.
-# Direct IP visitors or health checks that hit http://:80 reach the app here.
+# Plain HTTP listener: redirect every request to HTTPS. Direct IP visitors or
+# health checks that hit http://:80 are sent to https://<domain> instead of
+# being served plaintext (Cloudflare "Full" mode talks to :443, not :80).
 :80 {
-	reverse_proxy api:8000
+	redir https://{host}{uri}
 }
 EOF
   log_info "Caddyfile written for ${DEPLOY_DOMAIN}"
@@ -473,12 +498,15 @@ deploy_and_verify() {
   fi
 
   # Local health first (decouples verification from Cloudflare/DNS propagation).
-  log_info "Waiting for local health (http://127.0.0.1/health via Caddy)..."
+  # The origin certificate is self-signed, so this loop uses -k and pins the
+  # Host header to DEPLOY_DOMAIN so Caddy routes to the HTTPS site block.
+  log_info "Waiting for local health (https://127.0.0.1/health via Caddy, self-signed origin cert)..."
   local i code
   for i in $(seq 1 36); do
-    code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1/health 2>/dev/null || echo "000")
+    code=$(curl -sSk --max-time 5 -o /dev/null -w '%{http_code}' \
+      -H "Host: ${DEPLOY_DOMAIN}" https://127.0.0.1/health 2>/dev/null || echo "000")
     if [[ "$code" == "200" ]]; then
-      log_info "✓ Local health check passed (HTTP 200)"
+      log_info "✓ Local health check passed (HTTPS 200 via the origin cert)"
       break
     fi
     [[ $((i % 6)) -eq 0 ]] && log_info "  waiting for the stack (${i}/36, HTTP $code)..."
@@ -489,13 +517,16 @@ deploy_and_verify() {
     return 1
   fi
 
-  # Public check (through Cloudflare when proxied).
-  log_info "Waiting for https://${DEPLOY_DOMAIN}/health (TLS cert + Cloudflare; can take a minute)..."
+  # Public check. With proxied DNS records Cloudflare terminates TLS using its
+  # public edge certificate, so normal certificate validation is used (no -k).
+  # The check only requires the DNS record to resolve to this origin — set
+  # Cloudflare SSL/TLS mode to "Full" so the edge accepts the origin cert.
+  log_info "Waiting for https://${DEPLOY_DOMAIN}/health (TLS + Cloudflare; can take a minute)..."
   for i in $(seq 1 30); do
     local body
-    code=$(curl -sSk --max-time 10 -o /dev/null -w '%{http_code}' "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || echo "000")
+    code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || echo "000")
     if [[ "$code" == "200" ]]; then
-        body=$(curl -fsSk --max-time 10 "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || true)
+      body=$(curl -fsS --max-time 10 "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || true)
       if printf '%s' "$body" | grep -q '"healthy"'; then
         log_info "✓ Public health check passed: https://${DEPLOY_DOMAIN}/health"
         return 0
@@ -504,7 +535,9 @@ deploy_and_verify() {
     [[ $((i % 6)) -eq 0 ]] && log_info "  waiting for public health (${i}/30, HTTP $code)..."
     sleep 10
   done
-  log_warn "Public health check did not pass within 5 minutes (local check passed, so the app is up — check DNS/Cloudflare)."
+  log_warn "Public health check did not pass within 5 minutes (the local check passed, so the app is up)."
+  log_warn "Verify the DNS record for ${DEPLOY_DOMAIN} resolves to $PUBLIC_IP and is proxied (orange cloud),"
+  log_warn "and that Cloudflare SSL/TLS mode is 'Full' (self-signed origin cert)."
   return 1
 }
 

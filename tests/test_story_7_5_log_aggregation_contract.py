@@ -111,8 +111,23 @@ def test_local_override_builds_and_exposes_debug_ports():
 
     assert services["api"]["build"]["target"] == "api"
     assert services["worker"]["build"]["target"] == "worker"
-    assert "127.0.0.1:18000:8000" in services["api"]["ports"]
+    assert "127.0.0.1:8000:8000" in services["api"]["ports"]
     assert "127.0.0.1:5432:5432" in services["db"]["ports"]
+
+
+@pytest.mark.unit
+def test_local_override_keeps_cookie_secure_conditional():
+    """The local override must not hardcode COOKIE_SECURE=False.
+
+    bootstrap.sh loads this file into the production compose list, so a
+    hardcoded 'False' would strip the Secure flag from production cookies.
+    The override stays conditional: production .env sets COOKIE_SECURE=True
+    (compose interpolation resolves it), local dev without the var gets False.
+    """
+    config = _load_yaml_file("docker-compose.local.yml")
+    services = config["services"]
+
+    assert services["api"]["environment"]["COOKIE_SECURE"] == "${COOKIE_SECURE:-False}"
 
 
 @pytest.mark.unit

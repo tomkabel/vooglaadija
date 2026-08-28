@@ -31,6 +31,7 @@ class TestValidUrl:
         ],
     )
     def test_matches_article_urls(self, url):
+        """All delfi.ee article URL shapes are recognized."""
         assert DelfiIE.suitable(url)
 
     @pytest.mark.parametrize(
@@ -44,6 +45,7 @@ class TestValidUrl:
         ],
     )
     def test_rejects_non_article_urls(self, url):
+        """Non-article and foreign URLs are not matched."""
         assert not DelfiIE.suitable(url)
 
 
@@ -55,9 +57,11 @@ class TestMediaParsing:
 
     @pytest.fixture()
     def extractor(self):
+        """Return an extractor instance for the parse tests."""
         return DelfiIE()
 
     def _page(self, with_video: bool = True) -> str:
+        """Build an article-page fixture, optionally embedding a video."""
         head = (
             '<html><head>'
             '<meta property="og:title" content="VIDEO ja FOTOD | Nimekiri lukus">'
@@ -77,17 +81,39 @@ class TestMediaParsing:
         return head + body + "</body></html>"
 
     def test_extracts_manifest_and_media_id(self, extractor):
+        """The manifest URL and the media UUID are extracted from the page."""
         manifest, media_id = extractor._parse_media(self._page())
-        assert manifest == "https://cdn.jwplayer.com/manifests/%s.m3u8" % self.MANIFEST_ID
+        assert manifest == f"https://cdn.jwplayer.com/manifests/{self.MANIFEST_ID}.m3u8"
         assert media_id == self.MEDIA_ID
 
     def test_returns_none_when_no_video(self, extractor):
+        """A page without an embedded video returns (None, None)."""
         assert extractor._parse_media(self._page(with_video=False)) == (None, None)
 
     def test_handles_plain_slashes_too(self, extractor):
+        """Plain (unescaped) manifest slashes are parsed as well."""
         page = (
             '<div id="media-video-' + self.MEDIA_ID + '"></div>'
-            "https://cdn.jwplayer.com/manifests/%s.m3u8" % self.MANIFEST_ID
+            f"https://cdn.jwplayer.com/manifests/{self.MANIFEST_ID}.m3u8"
         )
-        manifest, _ = extractor._parse_media(page)
-        assert manifest == "https://cdn.jwplayer.com/manifests/%s.m3u8" % self.MANIFEST_ID
+        manifest, media_id = extractor._parse_media(page)
+        assert manifest == f"https://cdn.jwplayer.com/manifests/{self.MANIFEST_ID}.m3u8"
+        assert media_id == self.MEDIA_ID
+
+    def test_matches_media_id_to_manifest_on_multi_video_page(self, extractor):
+        """The media UUID next to the first manifest wins over the first div."""
+        # The manifest travels in the NUXT payload with the media UUID as a
+        # nearby data-id; a page with several videos must pair the *first*
+        # manifest with the UUID that belongs to it, not the first placeholder.
+        first_media = "11111111-2222-3333-4444-555555555555"
+        second_media = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        page = (
+            '<div id="media-video-' + first_media + '"></div>'
+            f'<script>window.__NUXT__={{config:{{media:'
+            f'"https:\\u002F\\u002Fcdn.jwplayer.com\\u002Fmanifests\\u002F{self.MANIFEST_ID}.m3u8",'
+            f'"\\u003Cdiv data-id={second_media} data-type=VIDEO}}'
+            "</script>"
+        )
+        manifest, media_id = extractor._parse_media(page)
+        assert manifest == f"https://cdn.jwplayer.com/manifests/{self.MANIFEST_ID}.m3u8"
+        assert media_id == second_media

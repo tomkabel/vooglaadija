@@ -14,10 +14,11 @@ services:
       dockerfile: Dockerfile
       target: api
     environment:
-      # Local dev runs over plain HTTP, so cookies must not require HTTPS.
-      # This overrides any COOKIE_SECURE=True from the base file or .env;
-      # production (standalone Caddy) uses COOKIE_SECURE=True from .env.
-      COOKIE_SECURE: 'False'
+      # Local dev runs over plain HTTP, so cookies do not require HTTPS unless
+      # the operator opts in. Keep this override conditional: production writes
+      # COOKIE_SECURE=True into .env via the bootstrap, and compose interpolation
+      # resolves that value here, so production cookies stay Secure-flagged.
+      COOKIE_SECURE: ${COOKIE_SECURE:-False}
     ports:
       # Caddy reverse-proxies to `api:8000` over the internal compose network.
       # The host port matches what CI expects so health-check curls hit :8000.
