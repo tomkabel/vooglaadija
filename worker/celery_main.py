@@ -76,14 +76,17 @@ def start_worker() -> None:
         loglevel=loglevel,
     )
 
+    # Flower drives the worker over Celery's pidbox remote-control queue
+    # (heartbeat, enable_events, inspect, ...). --without-heartbeat leaves
+    # Consumer.event_dispatcher unset, so a heartbeat/enable_events control
+    # command from Flower crashes with AttributeError: 'NoneType' object has
+    # no attribute 'send'/'groups' instead of replying — keep heartbeat (and
+    # gossip/mingle, which pidbox/events also depend on) enabled.
     argv = [
         "worker",
         "--loglevel=" + loglevel,
         "--queues=" + queues,
         f"--concurrency={concurrency}",
-        "--without-heartbeat",
-        "--without-gossip",
-        "--without-mingle",
     ]
 
     celery_app.worker_main(argv)
