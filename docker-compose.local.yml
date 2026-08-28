@@ -19,7 +19,7 @@ services:
     ports:
       - '127.0.0.1:8000:8000'
 
-  celery-worker:
+  worker:
     image: vooglaadija-api:local
     build:
       context: .
