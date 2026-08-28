@@ -8,9 +8,6 @@ from unittest.mock import patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-pytestmark = pytest.mark.slow
-
-
 _LEGACY_CONFIG_MODULE = ".".join(("app", "config"))
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
 _BOUNDARY_CHECKER = Path("scripts/import_analysis.py")
@@ -24,7 +21,6 @@ _EXPECTED_ALEMBIC_VERSION_FILES = {
     "007_add_check_constraints_and_fk.py",
     "008_add_last_error_to_download_jobs.py",
     "009_add_outbox_pending_unique_index.py",
-    "010_fix_outbox_and_job_status_constraints.py",
 }
 
 

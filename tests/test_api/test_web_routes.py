@@ -1250,9 +1250,6 @@ class TestCreateDownloadForm:
                     "app.services.download_service.enqueue_job", new_callable=AsyncMock
                 ) as mock_enqueue,
             ):
-                # Title resolution is deferred to the worker (resolved during
-                # extraction and streamed to the client over pub/sub), so the
-                # create path no longer calls resolve_video_title synchronously.
                 mock_title.return_value = "Canonical HTMX row"
                 mock_enqueue.return_value = None
 
@@ -1278,10 +1275,7 @@ class TestCreateDownloadForm:
         assert create_response.status_code == 200
         assert '<div class="download-row" data-job-id="' in create_response.text
         assert 'class="status-badge status-pending"' in create_response.text
-        # Title is deferred, so the rendered partial falls back to the URL
-        # (job.title or job.url) and must not show the (unresolved) mock title.
-        assert "Canonical HTMX row" not in create_response.text
-        assert sample_url in create_response.text
+        assert "Canonical HTMX row" in create_response.text
 
     @pytest.mark.asyncio
     async def test_create_download_htmx_validation_error_returns_inline_error_fragment(self):

@@ -6,9 +6,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OBSERVABILITY_FLAGS = ("FEATURE_METRICS_ENABLED", "FEATURE_TRACING_ENABLED")
 DEPLOYMENT_HANDOFF_FILES = (

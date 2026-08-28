@@ -80,7 +80,7 @@ check_env_file() {
 check_port_conflicts() {
   log_step "Ports: checking for conflicts"
 
-  # Local override binds these to loopback; Coolify's Caddy owns 80/443 in prod.
+  # Local override binds these to loopback; Caddy owns 80/443 in prod.
   local ports=("3000:Grafana" "9090:Prometheus" "8000:API" "5432:Postgres" "6380:Redis" "8082:Worker")
   local conflict_found=false
 
@@ -130,11 +130,11 @@ check_port_conflicts() {
     fi
   done
 
-  # Ports 80/443: warn if occupied by a non-Coolify process (Coolify proxy uses them)
+  # Ports 80/443: warn if occupied by a non-Caddy process (Caddy needs them for TLS)
   for port in 80 443; do
     if ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN; then
-      if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^coolify-proxy$'; then
-        log_warn "Port $port is in use — Coolify's proxy will need it for TLS."
+      if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(vooglaadija-)?caddy'; then
+        log_warn "Port $port is in use — Caddy will need it for TLS."
       fi
     fi
   done

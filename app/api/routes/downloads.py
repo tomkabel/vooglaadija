@@ -115,13 +115,8 @@ async def create_download(
     db: DbSession,
 ) -> DownloadResponse:
     """Create a new download job for the authenticated user."""
-    # Defer title resolution: the worker already captures the title during
-    # extraction (job_executor.execute -> publish_job_status) and streams it to
-    # the client over pub/sub. Resolving it synchronously here would block the
-    # HTTP request for up to YT_DLP_METADATA_TIMEOUT (15s) and spawn a redundant
-    # yt-dlp subprocess per submission.
     service = DownloadService(db, current_user.id)
-    job = await service.create(data.url, resolve_title=False)
+    job = await service.create(data.url)
     await service.best_effort_enqueue(job.id)
     return _job_to_response(job)
 

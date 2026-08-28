@@ -23,10 +23,6 @@ FORBIDDEN_WORKER_APP_PREFIXES = (
 # facade. Enforced here (not only via ruff TID251) because TID251's
 # per-file-ignores for worker/** would otherwise lift the ban for worker code.
 YT_DLP_ACL_MODULE = "app/services/yt_dlp_service.py"
-# The warm-pool driver is the yt-dlp execution boundary (sibling to the
-# facade): it imports yt_dlp once and is fed jobs over stdin. It carries the
-# same TID251 ACL exemption in pyproject.toml, so it is exempt here too.
-YT_DLP_ACL_EXEMPT_MODULES = ("app/services/yt_dlp_worker_driver.py",)
 YT_DLP_PACKAGE = "yt_dlp"
 # No-shim rule (CODEBOUNDARIES.md "Removed Compatibility Shims"): these
 # re-export modules were deleted when core/ was extracted. Recreating one hides
@@ -152,7 +148,7 @@ def yt_dlp_acl_reason(path: Path, project_root: Path | None = None) -> str | Non
     relative = (
         path.relative_to(project_root).as_posix() if project_root is not None else path.as_posix()
     )
-    if relative == YT_DLP_ACL_MODULE or relative in YT_DLP_ACL_EXEMPT_MODULES:
+    if relative == YT_DLP_ACL_MODULE:
         return None
     for reference in import_references(path):
         if reference.module == YT_DLP_PACKAGE or reference.module.startswith(f"{YT_DLP_PACKAGE}."):

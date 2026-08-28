@@ -5,9 +5,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_PATH = PROJECT_ROOT / "app/services/download_service.py"
 REST_ROUTE_PATH = PROJECT_ROOT / "app/api/routes/downloads.py"

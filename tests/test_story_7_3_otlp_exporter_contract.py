@@ -7,9 +7,6 @@ from typing import Any
 import pytest
 import yaml
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

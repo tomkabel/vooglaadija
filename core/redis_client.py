@@ -11,7 +11,7 @@ so connections are reused rather than created per call.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import cast
 
 import redis.asyncio as aioredis
 
@@ -113,13 +113,13 @@ def reset_redis_client() -> None:
         if live is None:
             continue
 
-        close_fn = getattr(live, "close", None)
-        if not callable(close_fn):
+        close = getattr(live, "close", None)
+        if not callable(close):
             continue
 
-        async def _close(fn: Any = close_fn) -> None:
+        async def _close() -> None:
             try:
-                await fn()
+                await close()
             except Exception:
                 logger.warning("redis_reset_close_failed", exc_info=True)
 

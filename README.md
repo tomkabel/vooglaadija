@@ -127,10 +127,10 @@ See the [Terms of Service](/web/terms) for full details.
 
 ### Production (any VPS — plug-n-play)
 
-Pull the repo onto any VPS and run the bootstrap. It asks for your domain and a Cloudflare API
-token, then provisions Docker + Coolify, auto-issues a wildcard TLS certificate (Let's Encrypt via
-Cloudflare DNS-01, auto-renewed), deploys the production Docker Compose stack and wires up
-continuous deployment from GitHub:
+Pull the repo onto any VPS and run the bootstrap. It asks for your domain and an optional
+Cloudflare API token, then provisions Docker, generates production secrets into `./.env`,
+sets up the Caddyfile + TLS origin cert and deploys the full stack behind a standalone Caddy
+reverse proxy (ports 80/443) — no Coolify:
 
 ```bash
 git clone https://github.com/tomkabel/vooglaadija.git
@@ -140,8 +140,8 @@ sudo ./deploy/bootstrap.sh
 
 See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 
-> **This VPS (youtube.tomabel.ee) uses a standalone Caddy proxy, not Coolify.** The documented
-> `docker compose ... -f docker-compose.local.yml up -d` command above starts only the app — it
+> **This VPS (youtube.tomabel.ee) uses a standalone Caddy proxy.** The
+> `docker compose ... -f docker-compose.local.yml up -d` command below starts only the app — it
 > omits the public entry point. On this server the stack must be started with the Caddy override or
 > Cloudflare returns HTTP 521:
 >
@@ -149,8 +149,7 @@ See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 > docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
 > ```
 >
-> See
-> [Standalone deployment (Caddy, no Coolify)](docs/PRODUCTION_DEPLOYMENT.md#standalone-deployment-caddy-no-coolify).
+> See [Production deployment guide](docs/PRODUCTION_DEPLOYMENT.md) for the full standalone flow.
 
 ### Local Development
 
@@ -255,7 +254,7 @@ codes.
 | [docs/API.md](docs/API.md)                                     | Full API reference with auth requirements, status codes, and schemas |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                   | System architecture and component responsibilities                   |
 | [docs/ARCHITECTURE-STANDARD.md](docs/ARCHITECTURE-STANDARD.md) | Executable architecture standard (fitness functions)                 |
-| [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) | Plug-n-play VPS deployment with wildcard TLS + Coolify CD            |
+| [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) | Plug-n-play VPS deployment with standalone Caddy TLS                 |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)                   | Development workflow, tests, and code standards                      |
 | [docs/OPS.md](docs/OPS.md)                                     | Environment variables, deployment, and troubleshooting               |
 
@@ -279,7 +278,7 @@ bloat, combining duplication, and flagging over-engineering against the architec
 | PostgreSQL     | Database                                   |
 | Redis          | Queue and cache                            |
 | Docker         | Containerization                           |
-| Caddy          | Reverse proxy + wildcard TLS (via Coolify) |
+| Caddy          | Reverse proxy + TLS (standalone)   |
 | Tailwind CSS   | Frontend styling                           |
 | Prometheus     | Metrics                                    |
 | sse-starlette  | Real-time updates                          |
@@ -310,7 +309,7 @@ bloat, combining duplication, and flagging over-engineering against the architec
 
 ```mermaid
 flowchart TD
-    Client([Client]) -->|HTTP/S| proxy[Caddy proxy<br/>(Coolify, wildcard TLS)]
+    Client([Client]) -->|HTTP/S| proxy[Caddy proxy<br/>(standalone, TLS)]
     proxy -->|Proxy| api[FastAPI API]
     api -->|SQL| db[(PostgreSQL)]
     api -->|Queue| redis[(Redis)]
@@ -323,9 +322,9 @@ flowchart TD
 
 The API server handles authentication, job management, HTMX rendering, SSE streaming, and
 observability. The worker consumes jobs from Redis, extracts media via yt-dlp, and manages file
-lifecycle. Production deployments run on any VPS via Coolify (see
-[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)); its Caddy proxy terminates TLS with
-an auto-renewed wildcard certificate. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
+lifecycle. Production deployments run on any VPS behind a standalone Caddy reverse proxy (see
+[docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)); Caddy terminates TLS with an origin
+certificate for Cloudflare. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
 diagram and component details.
 
 ---

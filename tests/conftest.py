@@ -4,7 +4,6 @@ import sys
 # CRITICAL: Set environment variables BEFORE any other imports
 os.environ["TESTING"] = "1"
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing-only-not-for-production-use-32chars"
-os.environ["BCRYPT_ROUNDS"] = "4"  # min rounds for test speed (prod default: 12)
 
 # Determine unique database URL per xdist worker to avoid race conditions
 _worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
@@ -28,7 +27,6 @@ core.config.settings.database_url = _test_db_url
 from collections.abc import AsyncGenerator  # noqa: E402
 
 import pytest  # noqa: E402
-from sqlalchemy import delete  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -77,15 +75,9 @@ async def _session_cleanup() -> AsyncGenerator[None, None]:
     await test_engine.dispose()
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 async def setup_database() -> AsyncGenerator[None, None]:
-    """Create tables once per xdist worker, drop at end.
-
-    Per-test isolation is provided by the autouse ``_cleanup_test_tables`` fixture,
-    which deletes all rows before each test. Combined with per-worker DB files and
-    NullPool connections, schema isolation per test is unnecessary and costs ~270s
-    for 972 tests (0.28s DDL x 2 ops x 972 tests).
-    """
+    """Create tables before each test and drop after."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -124,24 +116,6 @@ def _disable_token_blacklist_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.api.dependencies.is_token_blacklisted", _not_blacklisted)
     monkeypatch.setattr("app.services.token_blacklist.reserve_token_jti", _reserve_ok)
-
-
-@pytest.fixture(autouse=True)
-async def _cleanup_test_tables() -> AsyncGenerator[None, None]:
-    """Delete all table rows before each test to ensure test isolation.
-
-    With session-scoped table creation, truncating/deleting rows between tests
-    guarantees a clean database slate (no PK, unique, FK, or count leaks).
-    """
-    from core.models import DownloadJob, FailedJob, Outbox, User
-
-    async with TestingSessionLocal() as session:
-        await session.execute(delete(Outbox))
-        await session.execute(delete(FailedJob))
-        await session.execute(delete(DownloadJob))
-        await session.execute(delete(User))
-        await session.commit()
-    yield
 
 
 @pytest.fixture

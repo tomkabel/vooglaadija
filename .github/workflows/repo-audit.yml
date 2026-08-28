@@ -136,7 +136,7 @@ jobs:
         run: echo "$(pwd)/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run unit tests with coverage (hotspot x coverage correlation)
-        run: hatch run test:unit -- -m ''
+        run: hatch run test:unit
 
       - name: Run weekly audit
         # Advisory: a failure here must not block the issue update or artifact

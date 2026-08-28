@@ -7,9 +7,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = ("app", "core", "worker", "tests", "scripts", "alembic")
 THIS_FILE = Path(__file__).name

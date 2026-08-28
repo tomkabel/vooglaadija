@@ -5,9 +5,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD_JS = PROJECT_ROOT / "app/static/js/dashboard.js"
 

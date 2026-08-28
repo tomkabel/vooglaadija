@@ -1,6 +1,7 @@
 """Story 1.1 API tests for core model persistence."""
 
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -20,29 +21,31 @@ async def test_download_api_persists_jobs_with_core_models(db_session: AsyncSess
     password = "testpassword123"
     video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-    # Title resolution is deferred to the worker (resolved during extraction and
-    # streamed to the client over pub/sub), so the API returns the job without a
-    # title immediately. Resolve the create path without stubbing the title.
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        register_response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        login_response = await client.post(
-            "/api/v1/auth/login",
-            json={"email": email, "password": password},
-        )
-        token = login_response.json()["access_token"]
+    with patch(
+        "app.services.download_service.resolve_video_title",
+        new_callable=AsyncMock,
+    ) as mock_resolve_title:
+        mock_resolve_title.return_value = "Core Model Video"
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            register_response = await client.post(
+                "/api/v1/auth/register",
+                json={"email": email, "password": password},
+            )
+            login_response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": email, "password": password},
+            )
+            token = login_response.json()["access_token"]
 
-        create_response = await client.post(
-            "/api/v1/downloads",
-            json={"url": video_url},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        list_response = await client.get(
-            "/api/v1/downloads",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+            create_response = await client.post(
+                "/api/v1/downloads",
+                json={"url": video_url},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            list_response = await client.get(
+                "/api/v1/downloads",
+                headers={"Authorization": f"Bearer {token}"},
+            )
 
     assert register_response.status_code == 201
     assert create_response.status_code == 201
@@ -50,8 +53,7 @@ async def test_download_api_persists_jobs_with_core_models(db_session: AsyncSess
 
     created = create_response.json()
     job_id = uuid.UUID(created["id"])
-    # Title is deferred: not fetched synchronously at create time.
-    assert created["title"] is None
+    assert created["title"] == "Core Model Video"
     assert list_response.json()["pagination"]["total"] == 1
 
     user_result = await db_session.execute(select(User).where(User.email == email))
@@ -62,7 +64,7 @@ async def test_download_api_persists_jobs_with_core_models(db_session: AsyncSess
     assert job.user_id == user.id
     assert job.url == video_url
     assert job.status == "pending"
-    assert job.title is None
+    assert job.title == "Core Model Video"
 
     outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
     outbox = outbox_result.scalars().one()

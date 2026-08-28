@@ -12,9 +12,6 @@ from alembic import command
 from core.config import settings
 from core.models.base import Base
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPOSITE_MIGRATION_PATH = PROJECT_ROOT / "alembic/versions/005_add_composite_indexes.py"
 ORIGINAL_JOB_INDEX_MIGRATION_PATH = (
@@ -52,6 +49,9 @@ EXPECTED_HEAD_INDEXES = {
         "uq_outbox_pending_job_id",
     },
 }
+
+
+pytestmark = pytest.mark.unit
 
 
 def _index_names(table_name: str) -> set[str]:

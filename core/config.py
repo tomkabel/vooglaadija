@@ -45,7 +45,6 @@ _DB_POOL_DEFAULTS = {
 
 
 def _is_testing_enabled() -> bool:
-    """Return True when the TESTING env flag is set (any truthy spelling)."""
     return os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
 
 
@@ -81,24 +80,6 @@ class Settings(BaseSettings):
     browser_downloader_endpoint: str = "http://browser-downloader:3000"
     browser_downloader_timeout: int = 300
     browser_downloader_cb_use_redis: bool = False
-
-    # Worker job-processing concurrency. The worker main loop runs up to this
-    # many downloads in parallel (bounded in-flight task pool) instead of one at
-    # a time. Each in-flight job opens its own DB session, so the DB pool for the
-    # worker must be at least this large (see db_pool defaults + WORKER_DB_* env).
-    worker_concurrency: int = 2
-
-    # yt-dlp warm subprocess pool. Instead of spawning `python -c "import yt_dlp"`
-    # for every job (hundreds of ms of interpreter + import cold start per call),
-    # a small pool of long-lived Python processes imports yt_dlp once and is fed
-    # jobs over stdin. Disabling falls back to the per-job subprocess path.
-    yt_dlp_warm_pool: bool = True
-    yt_dlp_pool_size: int = 2
-    # When True, YouTube downloads try a single progressive stream (no ffmpeg
-    # merge) *before* the merged combos. Lighter CPU/storage and lower failure
-    # surface, at the cost of a lower resolution ceiling (YouTube progressive
-    # mp4 caps ~720p). Default False preserves the current 1080p-merged behavior.
-    yt_dlp_prefer_progressive: bool = False
 
     # Used to construct DATABASE_URL if not set directly
     db_user: str = "postgres"
@@ -138,8 +119,6 @@ class Settings(BaseSettings):
 
         self._validate_ports()
         self._validate_db_pool_settings()
-        self._validate_worker_concurrency()
-        self._validate_yt_dlp_pool()
         self._build_database_url()
         self._validate_secret_key()
         self._validate_cors()
@@ -157,7 +136,6 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _parse_db_pool_integer(cls, value: object, info: ValidationInfo) -> int:
-        """Coerce a DB pool setting to int, falling back to the testing default."""
         field_name = info.field_name
         if field_name is None:
             raise ValueError("Invalid DB pool setting: field name unavailable")
@@ -175,7 +153,6 @@ class Settings(BaseSettings):
         raise ValueError(f"Invalid {env_name}: {value!r} must be an integer")
 
     def _apply_testing_defaults(self) -> "Settings":
-        """Apply test-friendly defaults (in-memory DB, plain-HTTP cookies)."""
         if not self.database_url:
             self.database_url = "sqlite+aiosqlite:///:memory:"
         if not self.redis_url:
@@ -186,73 +163,22 @@ class Settings(BaseSettings):
         return self
 
     def _validate_ports(self) -> None:
-        """Validate DB and Redis port settings."""
         self._validate_port("DB_PORT", self.db_port)
         self._validate_port("REDIS_PORT", self.redis_port)
 
     def _validate_db_pool_settings(self) -> None:
-        """Validate DB pool size/overflow/timeout/recycle minimums."""
         self._validate_minimum("DB_POOL_SIZE", self.db_pool_size, 1)
         self._validate_minimum("DB_MAX_OVERFLOW", self.db_max_overflow, 0)
         self._validate_minimum("DB_POOL_TIMEOUT", self.db_pool_timeout, 1)
         self._validate_minimum("DB_POOL_RECYCLE", self.db_pool_recycle, 1)
 
-    def _validate_yt_dlp_pool(self) -> None:
-        """Validate warm-pool size bounds and its coupling to extraction concurrency."""
-        # Warm pool size is capped to avoid spawning too many long-lived
-        # yt-dlp processes (each holds ~50-100MB resident + its own extractor
-        # state). It must also not exceed the extraction semaphore's capacity,
-        # which bounds how many jobs can run at once anyway. The semaphore
-        # lives in yt_dlp_service (not Settings) and defaults to
-        # WORKER_CONCURRENCY, so a pool larger than the extraction cap would
-        # start resident processes that can never be checked out.
-        self._validate_minimum("YT_DLP_POOL_SIZE", self.yt_dlp_pool_size, 1)
-        if self.yt_dlp_pool_size > 16:
-            raise ValueError(f"Invalid YT_DLP_POOL_SIZE: {self.yt_dlp_pool_size!r} must be <= 16")
-        try:
-            extraction_concurrency = int(
-                os.environ.get("YT_DLP_EXTRACTION_CONCURRENCY", str(self.worker_concurrency))
-            )
-        except (TypeError, ValueError):
-            extraction_concurrency = self.worker_concurrency
-        extraction_concurrency = max(1, extraction_concurrency)
-        if self.yt_dlp_pool_size > extraction_concurrency:
-            raise ValueError(
-                f"Invalid YT_DLP_POOL_SIZE: {self.yt_dlp_pool_size!r} must be <= "
-                f"YT_DLP_EXTRACTION_CONCURRENCY ({extraction_concurrency}) — pool "
-                "slots are limited by the extraction semaphore"
-            )
-
-    def _validate_worker_concurrency(self) -> None:
-        """Validate worker concurrency bounds and the DB-pool coupling guard."""
-        # Allow up to 32 parallel downloads; beyond that the host is likely to be
-        # CPU/RAM-bound (each yt-dlp/ffmpeg process uses ~50-100MB + 1+ core
-        # during negotiation) and the DB pool would need to be sized accordingly.
-        self._validate_minimum("WORKER_CONCURRENCY", self.worker_concurrency, 1)
-        if self.worker_concurrency > 32:
-            raise ValueError(
-                f"Invalid WORKER_CONCURRENCY: {self.worker_concurrency!r} must be <= 32"
-            )
-        # The worker opens one DB session per in-flight job (process_next_job
-        # creates its own session), plus overhead for maintenance tasks. Guard
-        # against a config that would starve the pool and serialize on checkout.
-        required_pool = self.worker_concurrency + 2
-        if self.db_pool_size + self.db_max_overflow < required_pool:
-            raise ValueError(
-                f"Invalid worker config: DB_POOL_SIZE({self.db_pool_size}) + "
-                f"DB_MAX_OVERFLOW({self.db_max_overflow}) must be >= "
-                f"WORKER_CONCURRENCY({self.worker_concurrency}) + 2 for the worker"
-            )
-
     @staticmethod
     def _validate_minimum(name: str, value: int, minimum: int) -> None:
-        """Reject an integer setting that is below its allowed minimum."""
         if value < minimum:
             raise ValueError(f"Invalid {name}: {value!r} must be >= {minimum}")
 
     @staticmethod
     def _validate_port(name: str, value: str) -> None:
-        """Reject a port setting that is not an integer in 1-65535."""
         try:
             port = int(value)
         except (TypeError, ValueError) as exc:
@@ -323,7 +249,6 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _validate_cors_origin(origin: str) -> None:
-        """Reject a CORS origin that is not an origin-only http(s) URL."""
         try:
             parsed = urlparse(origin)
             port = parsed.port
@@ -347,7 +272,6 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid CORS origin: {origin!r}")
 
     def _resolve_storage(self) -> None:
-        """Resolve and ensure the storage directory exists and is writable."""
         path = Path(self.storage_path).expanduser().resolve()
         try:
             path.mkdir(parents=True, exist_ok=True)

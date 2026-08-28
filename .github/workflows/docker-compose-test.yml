@@ -46,10 +46,6 @@ jobs:
       # ============================================
       # 2. BUILD & START SERVICES
       # ============================================
-      - name: Create host volume mount directories
-        run: |
-          sudo mkdir -p /mnt/db_storage/postgres /mnt/new_storage/redis /mnt/new_storage/storage /mnt/new_storage/prometheus /mnt/new_storage/grafana /mnt/new_storage/backups
-
       - name: Build and start services
         run: |
           echo "Building and starting all services..."

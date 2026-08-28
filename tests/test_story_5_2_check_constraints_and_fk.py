@@ -12,9 +12,6 @@ from alembic.config import Config
 from alembic import command
 from core.config import settings
 
-pytestmark = pytest.mark.slow
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = PROJECT_ROOT / "alembic/versions/007_add_check_constraints_and_fk.py"
 

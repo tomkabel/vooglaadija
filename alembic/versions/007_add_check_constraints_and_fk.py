@@ -58,11 +58,11 @@ def _pre_check_data(bind: sa.engine.Connection) -> None:
     # lifecycle value is reset to ``pending`` so the relay can re-deliver it.
     in_clause = ", ".join(f"'{s}'" for s in _OUTBOX_STATUSES)
     result = bind.execute(
-        sa.text(f"SELECT COUNT(*) FROM outbox WHERE status NOT IN ({in_clause})")  # noqa: S608
+        sa.text(f"SELECT COUNT(*) FROM outbox WHERE status NOT IN ({in_clause})")
     ).scalar()
     if result and result > 0:
         bind.execute(
-            sa.text(f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({in_clause})")  # noqa: S608
+            sa.text(f"UPDATE outbox SET status = 'pending' WHERE status NOT IN ({in_clause})")
         )
 
     # Clean orphaned outbox entries (job_id points to non-existent download_job)

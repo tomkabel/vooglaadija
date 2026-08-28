@@ -278,7 +278,7 @@ SCENE 8: Trade-offs and what we did not build.
 1. Submit a job via API.
 1. Start screen recording (OBS).
 1. Terminal 1: `watch -n 1 'psql -c "SELECT id, status FROM download_jobs WHERE id = ..."'`
-1. Terminal 2: `docker compose kill worker` (the worker service is auto-named `vooglaadija-worker-N`; `docker kill ytprocessor-worker` no longer applies since the static container_name was removed to allow `WORKER_REPLICAS` scaling)
+1. Terminal 2: `docker kill ytprocessor-worker`
 1. Manually trigger the sweeper or wait for the 15-minute interval.
 1. Terminal 1 shows status flip from `PROCESSING` to `PENDING`.
 1. Stop recording.

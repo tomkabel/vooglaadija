@@ -72,9 +72,7 @@ class TestPubSubService:
             "error": None,
         }
 
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=mock_redis_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=mock_redis_client):
             result = await service.publish_job_status(user_id, job_data)
 
         assert result == 1
@@ -94,9 +92,7 @@ class TestPubSubService:
             "progress": {"percent": 42, "speed": "1.2MiB/s", "eta": "00:10"},
         }
 
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=mock_redis_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=mock_redis_client):
             result = await service.publish_job_progress(user_id, job_data)
 
         assert result == 1
@@ -118,9 +114,7 @@ class TestPubSubService:
             "status": "completed",
         }
 
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=mock_redis_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=mock_redis_client):
             result = await service.publish_job_status(user_id, job_data)
 
         assert result == 3
@@ -128,9 +122,7 @@ class TestPubSubService:
     @pytest.mark.asyncio
     async def test_health_check_success(self, service, mock_redis_client):
         """Test health check when Redis is available."""
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=mock_redis_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=mock_redis_client):
             result = await service.health_check()
 
         assert result is True
@@ -141,9 +133,7 @@ class TestPubSubService:
         """Test health check when Redis is unavailable."""
         mock_redis_client.ping = AsyncMock(side_effect=ConnectionError("Connection refused"))
 
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=mock_redis_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=mock_redis_client):
             result = await service.health_check()
 
         assert result is False
@@ -152,7 +142,7 @@ class TestPubSubService:
     async def test_get_client_returns_shared_core_client(self, service, mock_redis_client):
         """Test get_client returns the shared core Redis client."""
         with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client",
+            "app.services.pubsub_service.get_redis_client",
             return_value=mock_redis_client,
         ) as mock_get_redis_client:
             result = await service.get_client()
@@ -163,9 +153,7 @@ class TestPubSubService:
     @pytest.mark.asyncio
     async def test_close_does_not_close_shared_client(self, service, mock_redis_client):
         """Test closing PubSubService does not close the shared Redis client."""
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=mock_redis_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=mock_redis_client):
             assert await service.get_client() is mock_redis_client
 
         await service.close()
@@ -368,9 +356,7 @@ class TestGlobalInstance:
         shared_client = MagicMock()
         shared_client.close = AsyncMock()
 
-        with patch(
-            "app.services.pubsub_service.get_pubsub_redis_client", return_value=shared_client
-        ):
+        with patch("app.services.pubsub_service.get_redis_client", return_value=shared_client):
             assert await service.get_client() is shared_client
             await close_pubsub_service()
 

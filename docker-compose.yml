@@ -4,22 +4,22 @@
 # This is the SINGLE source of truth for the application stack.
 #
 # Deployment:
-#   - Production (recommended): deploy/bootstrap.sh provisions Docker + Coolify on
-#     any VPS, deploys this file via Coolify, assigns the domain to the api service
-#     and auto-provisions a wildcard TLS certificate (Cloudflare DNS-01 challenge,
-#     auto-renewed by Coolify's Caddy proxy).
+#   - Production (recommended): deploy/bootstrap.sh provisions Docker on any
+#     VPS, generates secrets into ./.env, sets up the Caddyfile + TLS origin
+#     cert and deploys this file together with docker-compose.local.yml and
+#     docker-compose.caddy.yml (standalone Caddy reverse proxy, no Coolify).
 #   - Local development:
 #       cp .env.example .env   # set secrets
 #       docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 #
 # Design notes (2026 best practices):
-#   - No custom networks: Coolify creates and manages the network. Custom networks
-#     break Coolify routing (containers end up on two networks; proxy may pick the
-#     wrong IP -> intermittent 504s).
-#   - No host port bindings here: the reverse proxy (Coolify's Caddy) is the only
-#     public entry point. Debug ports live in docker-compose.local.yml.
-#   - api/worker are registry-first: images are built in CI and pushed to GHCR
-#     (.github/workflows/docker.yml); the server only pulls them (never builds).
+#   - No custom networks: the default compose network is used; the standalone
+#     Caddy service (docker-compose.caddy.yml) joins it and forwards to api:8000.
+#   - No host port bindings here: Caddy (docker-compose.caddy.yml) is the only
+#     public entry point on ports 80/443. Debug ports live in
+#     docker-compose.local.yml (loopback only).
+#   - api/worker can pull registry images (GHCR, built in CI) or build locally
+#     via docker-compose.local.yml build targets.
 #   - Profiles: 'monitoring' (Prometheus + Grafana), 'backup' (PostgreSQL dumps).
 #   - json-file logging with rotation on every service (no host plugin required).
 # ============================================
@@ -160,24 +160,13 @@ services:
   # Worker — background job processor (yt-dlp)
   # ==========================================
   worker:
-    # NOTE: no static container_name — it blocks `deploy.replicas` (Compose
-    # requires unique names per replica). The container is named
-    # `vooglaadija-worker-N` automatically; inter-service comms and Prometheus
-    # use the service name `worker`, so removing this is safe.
+    container_name: ytprocessor-worker
     image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
     restart: unless-stopped
-    # Scale out by setting WORKER_REPLICAS>1 in the environment (each replica
-    # runs the bounded concurrency pool from #160, so total parallelism is
-    # WORKER_REPLICAS * WORKER_CONCURRENCY).
     environment:
       <<: *common-env
-      # No static WORKER_ID: `${HOSTNAME:-worker-1}` interpolates the compose
-      # host's value once and hands the SAME id to every replica, so scaled
-      # replicas overwrite one another's `worker:health:*` key. Instead the
-      # worker derives its id from the container's runtime hostname (unique per
-      # replica) and falls back to WORKER_ID if an operator sets it explicitly.
+      WORKER_ID: ${HOSTNAME:-worker-1}
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
       # Phase 2: route TikTok/Instagram/Twitter to the browser-downloader
@@ -202,17 +191,13 @@ services:
         max-size: '10m'
         max-file: '3'
     deploy:
-      replicas: ${WORKER_REPLICAS:-1}
       resources:
-        # Raised from 0.75 CPU / 512M to back the concurrency pool (#160/#161):
-        # ~2 concurrent yt-dlp/ffmpeg jobs need ~1-1.5 CPU and ~1-1.5 GB during
-        # format negotiation. A single replica now sustains WORKER_CONCURRENCY=2.
         limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
+          cpus: '0.75'
           memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     healthcheck:
       test:
         [
