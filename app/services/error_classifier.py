@@ -192,6 +192,11 @@ _FORMAT_PATTERNS = [
     re.compile(r"format is not available", re.IGNORECASE),
     re.compile(r"Requested format.*not available", re.IGNORECASE),
     re.compile(r"All formats failed", re.IGNORECASE),
+    # Emitted by the single-pass format fallback (issue #169) when yt-dlp
+    # returns no info object at all — the format_unavailable signal must not
+    # degrade to UNKNOWN just because the new native-format path no longer
+    # prints the old "All formats failed" summary.
+    re.compile(r"No video info returned", re.IGNORECASE),
 ]
 
 _TIMEOUT_PATTERNS = [

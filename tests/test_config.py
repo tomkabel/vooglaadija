@@ -481,3 +481,126 @@ class TestSettingsProductionValidation:
             database_url="postgresql+asyncpg://u:p@localhost/db",
         )
         assert len(s.secret_key) >= 64
+
+
+class TestWorkerConcurrencyConfig:
+    """WORKER_CONCURRENCY validation and DB-pool coupling."""
+
+    def test_worker_concurrency_default_is_two(self):
+        """Default worker concurrency enables a small parallel pool out of the box."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+        assert s.worker_concurrency == 2
+
+    def test_worker_concurrency_accepts_valid_range(self):
+        """Concurrency within [1, 32] is accepted."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            worker_concurrency=8,
+            db_pool_size=12,
+            db_max_overflow=4,
+        )
+        assert s.worker_concurrency == 8
+
+    def test_worker_concurrency_below_one_rejected(self):
+        """Concurrency must be at least 1."""
+        with pytest.raises((ValidationError, ValueError), match="Invalid WORKER_CONCURRENCY"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=0,
+            )
+
+    def test_worker_concurrency_above_max_rejected(self):
+        """Concurrency above 32 is rejected."""
+        with pytest.raises((ValidationError, ValueError), match="Invalid WORKER_CONCURRENCY"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=64,
+                db_pool_size=80,
+                db_max_overflow=20,
+            )
+
+    def test_worker_concurrency_requires_sufficient_db_pool(self):
+        """Worker concurrency must be backed by a DB pool of at least N+2."""
+        with pytest.raises((ValidationError, ValueError), match="for the worker"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=6,
+                db_pool_size=4,
+                db_max_overflow=0,
+            )
+
+
+class TestYtDlpWarmPoolConfig:
+    """YT_DLP_WARM_POOL / YT_DLP_POOL_SIZE validation (#162)."""
+
+    def test_warm_pool_enabled_by_default(self):
+        """The warm pool is on by default to kill the per-job import cold start."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+        assert s.yt_dlp_warm_pool is True
+        assert s.yt_dlp_pool_size == 2
+
+    def test_warm_pool_size_below_one_rejected(self):
+        with pytest.raises((ValidationError, ValueError), match="Invalid YT_DLP_POOL_SIZE"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                yt_dlp_pool_size=0,
+            )
+
+    def test_warm_pool_size_above_max_rejected(self):
+        with pytest.raises((ValidationError, ValueError), match="Invalid YT_DLP_POOL_SIZE"):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                yt_dlp_pool_size=64,
+            )
+
+    def test_warm_pool_size_must_not_exceed_extraction_concurrency(self):
+        """A pool larger than the extraction semaphore would start unused
+        resident driver processes (issue #162 review)."""
+        with pytest.raises(
+            (ValidationError, ValueError),
+            match="YT_DLP_EXTRACTION_CONCURRENCY",
+        ):
+            _make_production_settings(
+                secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+                database_url="postgresql+asyncpg://u:p@localhost/db",
+                worker_concurrency=2,
+                yt_dlp_pool_size=4,
+            )
+
+    def test_warm_pool_size_allowed_within_extraction_capacity(self):
+        """Raising extraction concurrency permits a proportionally sized pool."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            worker_concurrency=8,
+            yt_dlp_pool_size=4,
+        )
+        assert s.yt_dlp_pool_size == 4
+
+    def test_prefer_progressive_off_by_default(self):
+        """Merged-combo 1080p stays the default; progressive is opt-in (#170)."""
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+        )
+        assert s.yt_dlp_prefer_progressive is False
+
+    def test_prefer_progressive_can_be_enabled(self):
+        s = _make_production_settings(
+            secret_key="a-valid-secret-key-that-is-at-least-32-chars-long",
+            database_url="postgresql+asyncpg://u:p@localhost/db",
+            yt_dlp_prefer_progressive=True,
+        )
+        assert s.yt_dlp_prefer_progressive is True

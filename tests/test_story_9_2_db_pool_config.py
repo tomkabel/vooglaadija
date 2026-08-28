@@ -157,3 +157,34 @@ def test_env_example_documents_db_pool_tuning_knobs():
     assert "# DB_POOL_RECYCLE=1800" in env_example
     assert "# WORKER_DB_POOL_SIZE=3" in env_example
     assert "# WORKER_DB_MAX_OVERFLOW=2" in env_example
+
+
+@pytest.mark.unit
+def test_worker_has_no_static_container_name_for_replicas():
+    """The worker must not pin a static container_name, or `deploy.replicas` breaks."""
+    services = _load_yaml_file("docker-compose.yml")["services"]
+    assert "container_name" not in services["worker"], (
+        "worker must not set container_name; it blocks horizontal scaling via WORKER_REPLICAS"
+    )
+
+
+@pytest.mark.unit
+def test_worker_deploy_backs_concurrency_with_resources_and_replicas():
+    """Worker deploy exposes a replicas knob and enough CPU/RAM for the pool."""
+    worker = _load_yaml_file("docker-compose.yml")["services"]["worker"]
+
+    assert worker["deploy"]["replicas"] == "${WORKER_REPLICAS:-1}"
+    limits = worker["deploy"]["resources"]["limits"]
+    # 2 CPU / 2 GB backs the default WORKER_CONCURRENCY=2 pool (#160/#161).
+    assert limits["cpus"] == "2.0"
+    assert limits["memory"] == "2G"
+    reservations = worker["deploy"]["resources"]["reservations"]
+    assert reservations["cpus"] == "0.5"
+    assert reservations["memory"] == "512M"
+
+
+@pytest.mark.unit
+def test_env_example_documents_worker_replicas_knob():
+    """The env template documents the horizontal-scaling knob."""
+    env_example = _read_project_file(".env.example")
+    assert "# WORKER_REPLICAS=1" in env_example

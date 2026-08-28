@@ -14,6 +14,17 @@ from worker.main import cleanup_expired_jobs
 _DOWNLOADS_DIR = f"{settings.storage_path}/downloads"
 
 
+def _make_mock_session_factory():
+    """Return a mock async session factory where SELECT 1 succeeds."""
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(return_value=None)
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_factory = MagicMock(return_value=mock_cm)
+    return mock_factory
+
+
 class TestCleanupExpiredJobs:
     """Tests for cleanup_expired_jobs function."""
 
@@ -207,16 +218,6 @@ class TestWorkerMainStartup:
     entering the processing loop. These tests exercise those early-exit paths.
     """
 
-    def _make_mock_session_factory(self):
-        """Return a mock async session factory where SELECT 1 succeeds."""
-        mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=None)
-        mock_cm = AsyncMock()
-        mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_factory = MagicMock(return_value=mock_cm)
-        return mock_factory
-
     @pytest.mark.unit
     async def test_main_raises_when_redis_ping_fails(self):
         """main() must propagate exceptions when Redis is unreachable at startup."""
@@ -283,7 +284,7 @@ class TestWorkerMainStartup:
         mock_redis.eval = AsyncMock(return_value=[])
         mock_redis.brpop = AsyncMock(return_value=None)
 
-        mock_factory = self._make_mock_session_factory()
+        mock_factory = _make_mock_session_factory()
 
         mock_health_server = MagicMock()
 
@@ -323,7 +324,7 @@ class TestWorkerMainStartup:
         mock_redis.eval = AsyncMock(return_value=[])
         mock_redis.brpop = AsyncMock(return_value=None)
 
-        mock_factory = self._make_mock_session_factory()
+        mock_factory = _make_mock_session_factory()
 
         with (
             patch("worker.main.redis_client", mock_redis),
@@ -421,3 +422,123 @@ class TestWorkerMainStartup:
 
         assert cancelled.is_set()
         assert task.cancelled()
+
+
+class TestWorkerConcurrencyPool:
+    """The worker main loop runs up to WORKER_CONCURRENCY jobs in parallel."""
+
+    @pytest.mark.unit
+    async def test_loop_processes_multiple_jobs_concurrently(self):
+        """With WORKER_CONCURRENCY>1 the loop dispatches several jobs at once
+        and refills the pool after completed tasks are reaped."""
+        import importlib
+
+        import worker.main
+
+        importlib.reload(worker.main)
+
+        from worker.main import main, settings, shutdown_event
+
+        original_concurrency = worker.main.settings.worker_concurrency
+        worker.main.settings.worker_concurrency = 3
+        # avoid re-reading the attribute from a different settings instance
+        settings.worker_concurrency = 3
+
+        shutdown_event.clear()
+        worker.main.shutdown_requested_at = None
+
+        job_ids = [f"job-{i}" for i in range(6)]
+
+        # Track concurrency: count tasks alive inside process_next_job.
+        active = 0
+        max_active = 0
+        started_jobs: list[str] = []
+        dispatch_gate = asyncio.Event()
+        started_event = asyncio.Event()
+
+        async def fake_process_next_job(job_id=None):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            started_jobs.append(str(job_id))
+            started_event.set()
+            # Let the loop dispatch more jobs before this one finishes.
+            await dispatch_gate.wait()
+            active -= 1
+            return True
+
+        # brpop returns queued jobs then blocks (returns None forever after).
+        brpop_calls = {"n": 0}
+
+        async def fake_brpop(queue, timeout=2):
+            n = brpop_calls["n"]
+            brpop_calls["n"] += 1
+            if n < len(job_ids):
+                return ("download_queue", job_ids[n])
+            return None
+
+        # Let the initial batch fill the pool and block on the gate, then
+        # release it; wait for a replenished job (job-3) to start — proving
+        # _reap_in_flight refills the pool — before signalling shutdown.
+        async def trigger_shutdown_later():
+            deadline = asyncio.get_running_loop().time() + 5.0
+            while max_active < 3 and asyncio.get_running_loop().time() < deadline:
+                started_event.clear()
+                try:
+                    await asyncio.wait_for(started_event.wait(), timeout=0.5)
+                except TimeoutError:
+                    pass
+            dispatch_gate.set()
+            while (
+                "job-3" not in started_jobs and asyncio.get_running_loop().time() < deadline + 5.0
+            ):
+                started_event.clear()
+                try:
+                    await asyncio.wait_for(started_event.wait(), timeout=0.5)
+                except TimeoutError:
+                    pass
+            worker.main._signal_handler()
+            dispatch_gate.set()
+
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(return_value=True)
+        mock_redis.eval = AsyncMock(return_value=[])
+        mock_redis.brpop = fake_brpop
+
+        mock_factory = _make_mock_session_factory()
+        mock_health_server = MagicMock()
+
+        shutdown_task = asyncio.create_task(trigger_shutdown_later())
+        try:
+            with (
+                patch("worker.main.redis_client", mock_redis),
+                patch("worker.main.get_async_session_factory", return_value=mock_factory),
+                patch("worker.main.process_next_job", fake_process_next_job),
+                patch("worker.main.start_health_server", return_value=mock_health_server),
+                patch("worker.main.stop_health_server"),
+                patch("worker.main.close_health_redis_client", new_callable=AsyncMock),
+                patch("worker.main.update_worker_state"),
+                patch("worker.main.write_health_async", new_callable=AsyncMock),
+                patch("worker.main.sync_outbox_to_queue", new_callable=AsyncMock),
+                patch("worker.main.cleanup_expired_jobs", new_callable=AsyncMock, return_value=0),
+                patch("worker.main.requeue_stuck_jobs", new_callable=AsyncMock, return_value=0),
+                patch(
+                    "worker.main._drain_circuit_deferred", new_callable=AsyncMock, return_value=0
+                ),
+            ):
+                await main()
+        finally:
+            if not shutdown_task.done():
+                shutdown_task.cancel()
+            worker.main.settings.worker_concurrency = original_concurrency
+            settings.worker_concurrency = original_concurrency
+            shutdown_event.clear()
+            worker.main.shutdown_requested_at = None
+
+        # The loop must have run more than one job at a time.
+        assert max_active >= 2, f"max concurrent jobs observed: {max_active}"
+        assert max_active <= 3, f"concurrency exceeded limit: {max_active}"
+        # The pool must have been refilled after the initial batch completed
+        # (a regression in _reap_in_flight would leave job-3..job-5 unprocessed).
+        assert "job-3" in started_jobs, f"pool was not refilled; started: {started_jobs}"
+        assert len(started_jobs) >= 4, f"not enough jobs dispatched: {started_jobs}"

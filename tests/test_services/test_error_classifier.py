@@ -87,6 +87,30 @@ def test_known_permanent_categories_remain_non_retryable():
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "error_str",
+    [
+        "Requested format is not available",
+        "[youtube] All formats failed. Last error: Requested format is not available",
+        # Emitted by the single-pass format fallback (issue #169) when yt-dlp
+        # returns no info object at all; must stay format_unavailable, not UNKNOWN.
+        "[youtube] No video info returned",
+        "[tiktok] No video info returned",
+    ],
+)
+def test_format_failure_signals_route_to_format_unavailable(error_str):
+    """Exhausted format chains keep classifying as FORMAT_UNAVAILABLE (0 retries).
+
+    This guards the #169 rewrite: the old per-spec loop emitted an
+    "All formats failed" summary that matched the classifier; the native
+    single-pass chain must not silently degrade these to UNKNOWN.
+    """
+    result = classify_error(error_str)
+    assert result.category == ErrorCategory.FORMAT_UNAVAILABLE
+    assert is_non_retryable(result.category)
+
+
+@pytest.mark.unit
 def test_transient_category_retains_retry_budget():
     policy = CATEGORY_POLICIES[ErrorCategory.TRANSIENT]
     assert policy.max_retries == 3

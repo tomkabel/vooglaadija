@@ -3,37 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import signal
 import tempfile
 import uuid
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import app.services.yt_dlp_service as yt_dlp_service
-from app.services.yt_dlp_service import (
-    YtDlpProcessPool,
-    _WorkerJobError,
-    _build_extract_request,
-    _extract_via_subprocess,
-    _get_platform,
-    _terminate_worker_on_timeout,
-    extract_media_url,
-    reset_yt_dlp_pool,
-)
-from app.services.yt_dlp_worker import make_ydl_opts
+from app.services.yt_dlp_service import _get_platform, extract_media_url
 from app.utils.exceptions import StorageError
 from app.utils.validators import is_youtube_url
-
-
-@pytest.fixture(autouse=True)
-async def _reset_pool() -> Generator[None, None, None]:
-    """Ensure the module-level worker pool is fresh for every test."""
-    await reset_yt_dlp_pool()
-    yield
-    await reset_yt_dlp_pool()
 
 
 class TestIsYoutubeUrl:
@@ -103,16 +83,6 @@ class _AsyncLineStream:
         return self._lines.pop(0)
 
 
-class _HangStream:
-    """Async stream that never yields, to simulate a hung worker read."""
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self) -> bytes:
-        await asyncio.sleep(1000)
-
-
 def _make_process(
     *,
     stdout: list[bytes] | None = None,
@@ -122,48 +92,14 @@ def _make_process(
 ) -> AsyncMock:
     """Create a subprocess mock for the streaming extraction implementation."""
     mock_process = AsyncMock()
-    stdout_lines = (
-        stdout if stdout is not None else [b'{"title": "T", "ext": "mp4", "_stderr": ""}\n']
-    )
+    stdout_lines = stdout if stdout is not None else [b'{"title": "T", "ext": "mp4"}\n']
     stderr_lines = stderr if stderr is not None else []
     mock_process.stdout = _AsyncLineStream(stdout_lines)
     mock_process.stderr = _AsyncLineStream(stderr_lines)
     mock_process.returncode = returncode
     mock_process.pid = pid
     mock_process.wait = AsyncMock(return_value=0 if returncode is None else returncode)
-    stdin = MagicMock()
-    stdin.write = MagicMock()
-    stdin.drain = AsyncMock()
-    mock_process.stdin = stdin
     return mock_process
-
-
-def _make_fake_worker(
-    stdout_lines: list[bytes] | None = None,
-    *,
-    pid: int = 12345,
-    hang: bool = False,
-    returncode: int | None = None,
-    process: AsyncMock | None = None,
-) -> object:
-    """Build a minimal worker-shaped object for YtDlpProcessPool._run_on_worker."""
-
-    class _FakeWorker:
-        pass
-
-    worker = _FakeWorker()
-    worker.stdout = _HangStream() if hang else _AsyncLineStream(stdout_lines or [])
-    stdin = MagicMock()
-    stdin.write = MagicMock()
-    stdin.drain = AsyncMock()
-    worker.stdin = stdin
-    if process is None:
-        process = AsyncMock()
-        process.pid = pid
-        process.returncode = returncode
-        process.wait = AsyncMock(return_value=0)
-    worker.process = process
-    return worker
 
 
 def _discard_awaitable(awaitable) -> None:
@@ -172,6 +108,131 @@ def _discard_awaitable(awaitable) -> None:
         awaitable.cancel()
     elif hasattr(awaitable, "close"):
         awaitable.close()
+
+
+class TestFormatSpecFor:
+    """_format_spec_for honors YT_DLP_PREFER_PROGRESSIVE (#170)."""
+
+    def test_youtube_default_uses_merged_chain(self) -> None:
+        """Default (progressive off) returns the merged-combo YouTube chain."""
+        from app.services.yt_dlp_service import (
+            YOUTUBE_FORMAT,
+            _format_spec_for,
+        )
+
+        fmt, _sort = _format_spec_for("youtube")
+        assert fmt == YOUTUBE_FORMAT
+        assert "bestvideo*+bestaudio" in fmt
+        assert "bestvideo+bestaudio" in fmt
+        assert "worstvideo*+bestaudio" in fmt
+        assert " / best" in fmt
+        assert " / worst" in fmt
+        # The old chain enshrined dead format-ID selectors (`res:1080+h264`,
+        # `res:720`) that yt-dlp treats as literal format IDs; assert they are gone.
+        assert "res:1080+h264" not in fmt
+        assert "res:720" not in fmt
+
+    def test_youtube_progressive_enabled_uses_progressive_first(self, monkeypatch) -> None:
+        """When the setting is on, YouTube returns the progressive-first chain."""
+        from app.services.yt_dlp_service import (
+            YOUTUBE_FORMAT_PROGRESSIVE,
+            _format_spec_for,
+            settings,
+        )
+
+        monkeypatch.setattr(settings, "yt_dlp_prefer_progressive", True)
+        fmt, _sort = _format_spec_for("youtube")
+        assert fmt == YOUTUBE_FORMAT_PROGRESSIVE
+        # Progressive single-stream entry leads; DASH is excluded with the
+        # substring filter (`protocol!*=dash`), since bare `dash` is never a
+        # real yt-dlp protocol value.
+        assert fmt.startswith("best[ext=mp4][protocol!*=dash]")
+        assert "[protocol!*=dash]" in fmt
+        assert "bestvideo*+bestaudio" in fmt
+        assert "res:1080+h264" not in fmt
+        assert "res:720" not in fmt
+
+    def test_non_youtube_always_single_stream(self) -> None:
+        from app.services.yt_dlp_service import _format_spec_for
+
+        fmt, _sort = _format_spec_for("tiktok")
+        assert fmt == "best"
+
+
+class TestFormatSpecValidity:
+    """The format chains are parseable by yt-dlp and select as intended.
+
+    The warm-pool tests only cover metadata mode, so these guard the format
+    strings against malformed or ineffective selectors — the dead
+    ``res:1080+h264`` / ``res:720`` fragments used to be enshrined in the
+    contract tests without ever being executed against yt-dlp (issues #169/#170).
+    """
+
+    @staticmethod
+    def _parse_segments(fmt: str) -> list[str]:
+        return [seg.strip() for seg in fmt.split("/") if seg.strip()]
+
+    @pytest.mark.parametrize(
+        "fmt",
+        ["YOUTUBE_FORMAT", "YOUTUBE_FORMAT_PROGRESSIVE", "GENERIC_FORMAT"],
+    )
+    def test_every_segment_parses(self, fmt: str) -> None:
+        """Every '/'-separated fallback segment must be a valid yt-dlp selector."""
+        import yt_dlp
+
+        from app.services import yt_dlp_service
+
+        spec = getattr(yt_dlp_service, fmt)
+        for segment in self._parse_segments(spec):
+            yt_dlp.YoutubeDL().build_format_selector(segment)  # raises if invalid
+
+    def test_no_dead_format_id_fragments(self) -> None:
+        """Bare `res:N`/codec-name tokens are format IDs, not filters."""
+        from app.services.yt_dlp_service import YOUTUBE_FORMAT, YOUTUBE_FORMAT_PROGRESSIVE
+
+        for fmt in (YOUTUBE_FORMAT, YOUTUBE_FORMAT_PROGRESSIVE):
+            assert "res:1080+h264" not in fmt
+            assert "res:720" not in fmt
+
+    def test_progressive_chain_excludes_dash_protocols(self) -> None:
+        """`[protocol!*=dash]` skips http_dash_segments and picks a progressive mp4."""
+        import yt_dlp
+
+        selector = yt_dlp.YoutubeDL().build_format_selector("best[ext=mp4][protocol!*=dash]")
+        formats = [
+            {
+                "format_id": "dash",
+                "ext": "mp4",
+                "protocol": "http_dash_segments",
+                "vcodec": "vp9",
+                "acodec": "none",
+                "height": 1080,
+                "width": 1920,
+                "tbr": 2000,
+            },
+            {
+                "format_id": "prog",
+                "ext": "mp4",
+                "protocol": "https",
+                "vcodec": "avc1",
+                "acodec": "mp4a",
+                "height": 720,
+                "width": 1280,
+                "tbr": 2500,
+            },
+            {
+                "format_id": "webm",
+                "ext": "webm",
+                "protocol": "https",
+                "vcodec": "vp9",
+                "acodec": "opus",
+                "height": 480,
+                "width": 854,
+                "tbr": 800,
+            },
+        ]
+        selected = selector({"id": "x", "formats": formats})
+        assert [f["format_id"] for f in selected] == ["prog"]
 
 
 class TestExtractMediaUrl:
@@ -291,61 +352,69 @@ class TestExtractMediaUrl:
 
     @pytest.mark.asyncio
     async def test_extract_media_url_yt_dlp_options(
-        self, temp_storage_path: Path, sample_url: str, monkeypatch
+        self, temp_storage_path: Path, sample_url: str
     ) -> None:
-        """Verify the worker pool spawns persistent workers with correct options.
-
-        The pool lazily spawns one long-lived worker per concurrency slot using
-        ``python <yt_dlp_worker.py>`` (not a per-call ``python -c`` script).
-        """
-        # Force a single-worker pool so exactly one spawn occurs.
-        monkeypatch.setattr(yt_dlp_service, "_EXTRACTION_CONCURRENCY", 1)
-        await reset_yt_dlp_pool()
-
+        """Verify the asyncio.create_subprocess_exec call uses correct options."""
         captured_calls: list = []
-        captured_procs: list = []
 
-        def mock_subprocess_exec(*args, **kwargs):
+        async def mock_subprocess_exec(*args, **kwargs):
             captured_calls.append({"args": args, "kwargs": kwargs})
-            proc = _make_process(
-                stdout=[b'{"title": "Test", "ext": "mp4", "_stderr": ""}\n'],
-                returncode=None,
-            )
-            captured_procs.append(proc)
-            return proc
+            return _make_process(stdout=[b'{"title": "Test", "ext": "mp4"}\n'])
 
         with (
             patch(
-                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
-                mock_subprocess_exec,
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec", mock_subprocess_exec
             ),
             patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
             patch("app.services.yt_dlp_service.os.path.isfile", return_value=True),
         ):
             await extract_media_url(sample_url, str(temp_storage_path))
 
-            # One worker spawned for the single-slot pool.
+            # Verify create_subprocess_exec was called
             assert len(captured_calls) == 1
             call_kwargs = captured_calls[0]["kwargs"]
-            # Persistent worker is launched as a dedicated script file.
+            # Verify start_new_session=True is passed for proper process group handling
             assert call_kwargs.get("start_new_session") is True
+            # Verify stdout and stderr pipes are configured
             assert call_kwargs.get("stdout") == asyncio.subprocess.PIPE
-            # stderr is redirected to DEVNULL so the persistent worker never
-            # blocks on a full pipe; per-job diagnostics come back via stdout.
-            assert call_kwargs.get("stderr") == asyncio.subprocess.DEVNULL
-            args = captured_calls[0]["args"]
-            assert args[0] == yt_dlp_service.sys.executable
-            assert args[1].endswith("yt_dlp_worker.py")
+            assert call_kwargs.get("stderr") == asyncio.subprocess.PIPE
 
-            # The request payload written to the worker contains the format chain.
-            import json
+    @pytest.mark.asyncio
+    async def test_extract_media_url_timeout_propagates(
+        self, temp_storage_path: Path, sample_url: str
+    ) -> None:
+        """Verify asyncio.TimeoutError is raised when extraction times out."""
 
-            written = captured_procs[0].stdin.write.call_args.args[0]
-            written_text = written.decode() if isinstance(written, bytes) else written
-            request = json.loads(written_text)
-            assert request["url"] == sample_url
-            assert "fallback_chain" in request
-            assert request["youtube_opts"] is True
+        call_count = 0
+        real_wait_for = asyncio.wait_for
+
+        async def mock_wait_for(coro, timeout=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call (stream readers) times out
+                _discard_awaitable(coro)
+                raise TimeoutError("timed out")
+            else:
+                # Subsequent calls (cleanup: process.wait()) use real wait_for
+                return await real_wait_for(coro, timeout=timeout)
+
+        mock_process = _make_process(stdout=[b'{"title": "Test", "ext": "mp4"}\n'], pid=1234)
+
+        async def mock_subprocess_exec(*args, **kwargs):
+            return mock_process
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec", mock_subprocess_exec
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+            patch("app.services.yt_dlp_service.asyncio.wait_for", mock_wait_for),
+            patch("app.services.yt_dlp_service.os.getpgid", return_value=1234),
+            patch("app.services.yt_dlp_service.os.killpg"),
+        ):
+            with pytest.raises(asyncio.TimeoutError):
+                await extract_media_url(sample_url, str(temp_storage_path))
 
     @pytest.mark.asyncio
     async def test_extract_media_url_makedirs_failure(
@@ -354,8 +423,7 @@ class TestExtractMediaUrl:
         """Verify StorageError is raised when download directory creation fails."""
         with (
             patch(
-                "app.services.yt_dlp_service.os.makedirs",
-                side_effect=OSError("Permission denied"),
+                "app.services.yt_dlp_service.os.makedirs", side_effect=OSError("Permission denied")
             ),
         ):
             with pytest.raises(StorageError) as exc_info:
@@ -391,335 +459,76 @@ class TestExtractMediaUrl:
         ):
             with pytest.raises(StorageError) as exc_info:
                 await extract_media_url(sample_url, str(temp_storage_path))
-            assert "Path traversal detected" in str(exc_info.value)
+
+        assert "Path traversal detected" in str(exc_info.value)
 
 
-class TestBuildExtractRequest:
-    """Tests for the per-job request payload built for pooled workers."""
+# Helper functions for TestExtractViaSubprocessTimeoutHandling
+def create_mock_wait_for_timeout_first_call():
+    call_count = 0
+    real_wait_for = asyncio.wait_for
 
-    def test_youtube_request_contains_full_chain(self) -> None:
-        req = _build_extract_request("https://www.youtube.com/watch?v=abc", "/tmp/out")
-        assert req["url"] == "https://www.youtube.com/watch?v=abc"
-        assert req["output_template"] == "/tmp/out"
-        assert req["platform"] == "youtube"
-        assert req["youtube_opts"] is True
-        assert req["fallback_chain"] == yt_dlp_service.FORMAT_FALLBACK_CHAIN
-        assert req["extractor_args"] == {
-            "youtube": {"player_client": ["tv", "web", "default", "mobile"]}
-        }
-        assert set(req["output_fields"]) == yt_dlp_service._OUTPUT_FIELDS
-
-    def test_tiktok_request_excludes_youtube_opts(self) -> None:
-        req = _build_extract_request("https://www.tiktok.com/@u/video/1", "/tmp/out")
-        assert req["platform"] == "tiktok"
-        assert req["youtube_opts"] is False
-        assert req["extractor_args"] == {}
-        assert req["fallback_chain"] == yt_dlp_service._GENERIC_FORMAT_CHAIN
-        # YouTube-only format options must not be present.
-        assert "bestvideo*+bestaudio/best" not in req["fallback_chain"][0]["format"]
-
-    def test_instagram_request_excludes_youtube_opts(self) -> None:
-        req = _build_extract_request("https://www.instagram.com/reel/test/", "/tmp/out")
-        assert req["platform"] == "instagram"
-        assert req["youtube_opts"] is False
-        assert req["extractor_args"] == {}
-
-    def test_request_is_json_serializable(self) -> None:
-        import json
-
-        req = _build_extract_request("https://example.com/video", "/tmp/out")
-        # Demonstrates the request is sent over the worker pipe as a JSON line.
-        assert json.loads(json.dumps(req)) == req
-
-
-class TestWorkerMakeYdlOpts:
-    """Tests for the yt-dlp option builder used inside the persistent worker."""
-
-    def test_youtube_opts_include_prefer_free_formats(self) -> None:
-        req = _build_extract_request("https://www.youtube.com/watch?v=abc", "/tmp/out")
-        opts = make_ydl_opts(req, req["fallback_chain"][0])
-        assert opts["prefer_free_formats"] is True
-        assert opts["check_formats"] == "missable"
-        assert opts["extractor_args"] == {
-            "youtube": {"player_client": ["tv", "web", "default", "mobile"]}
-        }
-
-    def test_youtube_opts_format_chain_entries(self) -> None:
-        req = _build_extract_request("https://www.youtube.com/watch?v=abc", "/tmp/out")
-        opts = make_ydl_opts(req, req["fallback_chain"][0])
-        assert "res:1080" in opts["format_sort"]
-        assert "codec:h264" in opts["format_sort"]
-
-    def test_non_youtube_opts_exclude_youtube_only(self) -> None:
-        req = _build_extract_request("https://www.tiktok.com/@u/video/1", "/tmp/out")
-        opts = make_ydl_opts(req, req["fallback_chain"][0])
-        assert "prefer_free_formats" not in opts
-        assert "check_formats" not in opts
-        assert "extractor_args" not in opts
-
-    def test_cookiesfrombrowser_list_becomes_tuple(self) -> None:
-        req = {
-            "output_template": "/tmp/out",
-            "youtube_opts": False,
-            "cookies_opts": {"cookiesfrombrowser": ["chrome"]},
-            "extractor_args": {},
-        }
-        opts = make_ydl_opts(req, {"format": "best", "format_sort": ["quality"]})
-        assert opts["cookiesfrombrowser"] == ("chrome",)
-
-
-class TestPoolRunOnWorker:
-    """Tests for YtDlpProcessPool._run_on_worker against the worker protocol."""
-
-    @pytest.mark.asyncio
-    async def test_success_returns_result_and_strips_stderr(self) -> None:
-        worker = _make_fake_worker(
-            [b'{"title": "T", "ext": "mp4", "_stderr": "some warn"}\n']
-        )
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        result, stderr = await pool._run_on_worker(worker, {"url": "x"}, None)
-        assert result == {"title": "T", "ext": "mp4"}
-        assert stderr == "some warn"
-
-    @pytest.mark.asyncio
-    async def test_error_line_raises_runtime_error(self) -> None:
-        worker = _make_fake_worker([b'{"error": "Video unavailable", "_stderr": ""}\n'])
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        with pytest.raises(RuntimeError, match="yt-dlp extraction failed"):
-            await pool._run_on_worker(worker, {"url": "x"}, None)
-
-    @pytest.mark.asyncio
-    async def test_progress_lines_forwarded_to_callback(self) -> None:
-        lines = [
-            b'{"progress": true, "percent": 10.0}\n',
-            b'{"progress": true, "percent": 20.0}\n',
-            b'{"title": "T", "ext": "mp4", "_stderr": ""}\n',
-        ]
-        worker = _make_fake_worker(lines)
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        received: list = []
-
-        async def cb(d):
-            received.append(d)
-
-        await pool._run_on_worker(worker, {"url": "x"}, cb)
-        assert [p["percent"] for p in received] == [10.0, 20.0]
-
-    @pytest.mark.asyncio
-    async def test_worker_death_without_output_raises(self) -> None:
-        worker = _make_fake_worker([], returncode=1)
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        with pytest.raises(RuntimeError, match="without producing a result"):
-            await pool._run_on_worker(worker, {"url": "x"}, None)
-
-    @pytest.mark.asyncio
-    async def test_timeout_kills_worker_and_raises(self) -> None:
-        worker = _make_fake_worker([], hang=True, pid=55555)
-        pool = YtDlpProcessPool(size=1, timeout=0.05)
-
-        killed: list = []
-
-        def fake_wait_for(coro, timeout=None):
+    async def mock_wait_for(coro, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
             _discard_awaitable(coro)
-            raise TimeoutError("timed out")
+            raise TimeoutError("extraction timed out")
+        return await real_wait_for(coro, timeout=timeout)
 
-        def fake_killpg(pgid, sig):
-            killed.append(sig)
-
-        with (
-            patch("app.services.yt_dlp_service.os.getpgid", return_value=55555),
-            patch("app.services.yt_dlp_service.os.killpg", fake_killpg),
-            patch("asyncio.wait_for", fake_wait_for),
-        ):
-            with pytest.raises(TimeoutError):
-                await pool._run_on_worker(worker, {"url": "x"}, None)
-
-        # The timed-out worker's process group must be killed.
-        assert signal.SIGTERM in killed
+    return mock_wait_for
 
 
-class TestPoolResilience:
-    """Regression tests for the four review-comment fixes on PR #165.
+def mock_killpg_raises_lookup_error(pgid, sig):
+    raise ProcessLookupError(f"Process group {pgid} not found")
 
-    Covers: no worker leak on routine extraction errors, throttle detection on
-    the failure path, fail-fast when the pool shrinks, and idempotent startup.
+
+async def mock_subprocess_exec_returns_process(*args, **kwargs):
+    return _make_process(pid=12345)
+
+
+class TestExtractViaSubprocessTimeoutHandling:
+    """Tests for TimeoutError handling in _extract_via_subprocess.
+
+    The PR changed asyncio.TimeoutError → TimeoutError (bare built-in) in both
+    the main except clause and the finally cleanup block. These tests verify the
+    correct behaviour of both paths.
     """
 
     @pytest.mark.asyncio
-    async def test_healthy_worker_reused_after_extraction_error(self) -> None:
-        """A routine error result must NOT leak the worker process.
+    async def test_timeout_error_in_finally_cleanup_is_silenced(self) -> None:
+        """When SIGKILL cleanup times out in the finally block, it must not propagate.
 
-        CRITICAL fix: previously the error-result path marked the (still-alive)
-        worker dead and respawned a replacement, leaking a full ``yt_dlp``
-        process (~50-100MB) on every failed extraction. The healthy worker
-        must be returned to the pool and reused.
+        The finally block catches TimeoutError from the second wait_for call and
+        passes silently. A RuntimeError from the subprocess is expected to surface
+        instead, not a TimeoutError from the cleanup.
         """
-        spawn_calls = {"n": 0}
+        from app.services.yt_dlp_service import _extract_via_subprocess
 
-        async def fake_spawn():
-            spawn_calls["n"] += 1
-            return _make_fake_worker(
-                [b'{"error": "Video unavailable", "_stderr": "some diag"}\n']
-            )
-
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        pool._spawn_worker = fake_spawn
-        await pool._ensure_started()
-        assert spawn_calls["n"] == 1
-
-        with pytest.raises(_WorkerJobError):
-            await pool.submit({"url": "x"}, None)
-
-        # Same worker returned to the pool (not respawned) -> no leak.
-        assert not pool._free.empty()
-        assert len(pool._workers) == 1
-        assert spawn_calls["n"] == 1
-
-    @pytest.mark.asyncio
-    async def test_submit_fails_fast_when_pool_has_no_workers(self) -> None:
-        """WARNING fix: a shrunk-to-zero pool must fail fast, not hang forever.
-
-        When every respawn failed, ``_free.get()`` would block indefinitely
-        because the semaphore still admits concurrent jobs. It must raise.
-        """
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        pool._workers = []  # simulate: nothing could be started
-        pool._started = True
-
-        with pytest.raises(RuntimeError, match="no workers could be started"):
-            await pool.submit({"url": "x"}, None)
-
-    @pytest.mark.asyncio
-    async def test_submit_fails_fast_when_capacity_exceeded(self) -> None:
-        """WARNING fix: a request beyond the live-worker capacity fails fast."""
-        pool = YtDlpProcessPool(size=1, timeout=5)
-        # One worker checked out and in flight, free queue empty.
-        pool._workers = [_make_fake_worker([b"{}"])]
-        pool._checked_out = 1
-        pool._started = True  # skip (real) startup; we only exercise the checkout guard
-        pool._free._queue.clear()
-
-        with pytest.raises(RuntimeError, match="no available worker"):
-            await pool.submit({"url": "x"}, None)
-
-    @pytest.mark.asyncio
-    async def test_ensure_started_idempotent_after_partial_failure(self) -> None:
-        """SUGGESTION fix: a partial spawn failure must not deadlock on retry.
-
-        Previously a midway spawn failure left workers 1..k-1 queued, then the
-        next ``_ensure_started`` re-spawned all N and overflowed the bounded
-        queue (maxsize == N), deadlocking every subsequent submit.
-        """
-        pool = YtDlpProcessPool(size=3, timeout=5)
-        order = {"n": 0}
-
-        async def flaky_spawn():
-            order["n"] += 1
-            if order["n"] == 2:
-                raise OSError("transient spawn failure")
-            return _make_fake_worker([b'{"title": "T", "ext": "mp4", "_stderr": ""}\n'])
-
-        pool._spawn_worker = flaky_spawn
-        await pool._ensure_started()
-        assert len(pool._workers) == 1
-        assert pool._started is False
-
-        order["n"] = 0
-
-        async def ok_spawn():
-            order["n"] += 1
-            return _make_fake_worker([b'{"title": "T", "ext": "mp4", "_stderr": ""}\n'])
-
-        pool._spawn_worker = ok_spawn
-        # Must complete (no deadlock) and top up only the 2 missing slots.
-        await pool._ensure_started()
-        assert len(pool._workers) == 3
-        assert order["n"] == 2
-        assert pool._started is True
-        assert pool._free.qsize() == 3
-
-
-class TestTerminateWorkerOnTimeout:
-    """Tests for the timeout kill semantics (SIGTERM -> SIGKILL + orphan walk)."""
-
-    @pytest.mark.asyncio
-    async def test_sigterm_before_sigkill(self) -> None:
-        killed: list = []
-        proc = AsyncMock()
-        proc.pid = 55555
-        proc.wait = AsyncMock(return_value=0)
-
+        call_count = 0
         real_wait_for = asyncio.wait_for
-        wait_calls = {"n": 0}
 
-        def fake_wait_for(coro, timeout=None):
-            wait_calls["n"] += 1
-            if wait_calls["n"] == 1:
-                # After SIGTERM the (mock) process is still alive -> escalate.
+        async def mock_wait_for(coro, timeout=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First call: stream readers complete normally but with error exit
+                return await real_wait_for(coro, timeout=timeout)
+            else:
+                # Subsequent cleanup calls (process.wait()) — simulate hung process
                 _discard_awaitable(coro)
-                raise TimeoutError("still running")
-            return real_wait_for(coro, timeout=timeout)
+                raise TimeoutError("cleanup timed out")
 
-        def fake_killpg(pgid, sig):
-            killed.append(sig)
+        # None returncode triggers final cleanup after RuntimeError is raised.
+        mock_process = _make_process(
+            stdout=[],
+            stderr=[b"process failed\n"],
+            returncode=None,
+            pid=99999,
+        )
 
-        with (
-            patch("app.services.yt_dlp_service.os.getpgid", return_value=55555),
-            patch("app.services.yt_dlp_service.os.killpg", fake_killpg),
-            patch("asyncio.wait_for", fake_wait_for),
-        ):
-            await _terminate_worker_on_timeout(proc)
-
-        assert signal.SIGTERM in killed
-        assert signal.SIGKILL in killed
-        assert killed.index(signal.SIGTERM) < killed.index(signal.SIGKILL)
-
-    @pytest.mark.asyncio
-    async def test_killpg_process_lookup_error_is_silenced(self) -> None:
-        proc = AsyncMock()
-        proc.pid = 12345
-        proc.wait = AsyncMock(return_value=0)
-
-        def fake_killpg(pgid, sig):
-            raise ProcessLookupError(f"Process group {pgid} not found")
-
-        with (
-            patch("app.services.yt_dlp_service.os.getpgid", return_value=12345),
-            patch("app.services.yt_dlp_service.os.killpg", fake_killpg),
-        ):
-            # Must not raise despite killpg failing.
-            await _terminate_worker_on_timeout(proc)
-
-
-class TestExtractViaSubprocessTimeout:
-    """End-to-end timeout behaviour through _extract_via_subprocess + the pool."""
-
-    @pytest.mark.asyncio
-    async def test_extract_via_subprocess_timeout_propagates(self, monkeypatch) -> None:
-        monkeypatch.setattr(yt_dlp_service, "_EXTRACTION_CONCURRENCY", 1)
-        await reset_yt_dlp_pool()
-
-        killed: list = []
-
-        def mock_subprocess_exec(*args, **kwargs):
-            proc = AsyncMock()
-            proc.stdout = _HangStream()
-            stdin = MagicMock()
-            stdin.write = MagicMock()
-            stdin.drain = AsyncMock()
-            proc.stdin = stdin
-            proc.stderr = None
-            proc.pid = 55555
-            proc.returncode = None
-            proc.wait = AsyncMock(return_value=0)
-            return proc
-
-        def fake_wait_for(coro, timeout=None):
-            _discard_awaitable(coro)
-            raise TimeoutError("timed out")
-
-        def fake_killpg(pgid, sig):
-            killed.append(sig)
+        async def mock_subprocess_exec(*args, **kwargs):
+            return mock_process
 
         with (
             patch(
@@ -727,16 +536,276 @@ class TestExtractViaSubprocessTimeout:
                 mock_subprocess_exec,
             ),
             patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
-            patch("app.services.yt_dlp_service.os.getpgid", return_value=55555),
-            patch("app.services.yt_dlp_service.os.killpg", fake_killpg),
-            patch("asyncio.wait_for", fake_wait_for),
+            patch("app.services.yt_dlp_service.asyncio.wait_for", mock_wait_for),
+            patch("app.services.yt_dlp_service.os.getpgid", return_value=99999),
+            patch("app.services.yt_dlp_service.os.killpg"),
+        ):
+            # Should raise RuntimeError from yt-dlp failure, NOT TimeoutError from cleanup
+            with pytest.raises(RuntimeError):
+                await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_timeout_error_not_asyncio_timeout_error(self) -> None:
+        """TimeoutError (bare) is raised on extraction timeout — not a different type.
+
+        In Python 3.11+ asyncio.TimeoutError is an alias for the built-in
+        TimeoutError, but we explicitly verify the raised exception is a TimeoutError
+        instance after the PR change.
+        """
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        call_count = 0
+        real_wait_for = asyncio.wait_for
+
+        async def mock_wait_for(coro, timeout=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                _discard_awaitable(coro)
+                raise TimeoutError("extraction timed out")
+            return await real_wait_for(coro, timeout=timeout)
+
+        mock_process = _make_process(pid=12345)
+
+        async def mock_subprocess_exec(*args, **kwargs):
+            return mock_process
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                mock_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+            patch("app.services.yt_dlp_service.asyncio.wait_for", mock_wait_for),
+            patch("app.services.yt_dlp_service.os.getpgid", return_value=12345),
+            patch("app.services.yt_dlp_service.os.killpg"),
         ):
             with pytest.raises(TimeoutError):
-                await _extract_via_subprocess(
-                    "https://www.youtube.com/watch?v=test", "/tmp/out"
-                )
+                await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
 
-        assert signal.SIGTERM in killed
+    @pytest.mark.asyncio
+    async def test_sigterm_sent_before_sigkill_on_timeout(self) -> None:
+        """On extraction timeout, SIGTERM is sent first, then SIGKILL if needed.
+
+        The except-TimeoutError block sends SIGTERM, waits, and escalates to
+        SIGKILL only when SIGTERM does not terminate the process within 5 s.
+        """
+        import signal as _signal
+
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        call_count = 0
+        real_wait_for = asyncio.wait_for
+        killed_with: list[int] = []
+
+        async def mock_wait_for(coro, timeout=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Stream readers time out
+                _discard_awaitable(coro)
+                raise TimeoutError("timed out")
+            elif call_count == 2:
+                # First cleanup wait (after SIGTERM) also times out — forces SIGKILL
+                _discard_awaitable(coro)
+                raise TimeoutError("still running")
+            else:
+                # Final cleanup after SIGKILL succeeds
+                return await real_wait_for(coro, timeout=timeout)
+
+        def mock_killpg(pgid, sig):
+            killed_with.append(sig)
+
+        mock_process = _make_process(pid=55555)
+
+        async def mock_subprocess_exec(*args, **kwargs):
+            return mock_process
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                mock_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+            patch("app.services.yt_dlp_service.asyncio.wait_for", mock_wait_for),
+            patch("app.services.yt_dlp_service.os.getpgid", return_value=55555),
+            patch("app.services.yt_dlp_service.os.killpg", mock_killpg),
+        ):
+            with pytest.raises(TimeoutError):
+                await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
+
+        # SIGTERM must precede SIGKILL
+        assert _signal.SIGTERM in killed_with, "Expected SIGTERM to be sent on timeout"
+        assert _signal.SIGKILL in killed_with, (
+            "Expected SIGKILL escalation when SIGTERM insufficient"
+        )
+        sigterm_idx = killed_with.index(_signal.SIGTERM)
+        sigkill_idx = killed_with.index(_signal.SIGKILL)
+        assert sigterm_idx < sigkill_idx, "SIGTERM must be sent before SIGKILL"
+
+    @pytest.mark.asyncio
+    async def test_process_lookup_error_on_killpg_is_handled(self) -> None:
+        """When os.killpg raises ProcessLookupError, it must be silently handled.
+
+        This can happen if the process group already terminated between the
+        timeout detection and the kill attempt.
+        """
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                mock_subprocess_exec_returns_process,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+            patch(
+                "app.services.yt_dlp_service.asyncio.wait_for",
+                create_mock_wait_for_timeout_first_call(),
+            ),
+            patch("app.services.yt_dlp_service.os.getpgid", return_value=12345),
+            patch("app.services.yt_dlp_service.os.killpg", mock_killpg_raises_lookup_error),
+        ):
+            with pytest.raises(TimeoutError):
+                await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
+
+
+@pytest.mark.asyncio
+async def test_process_lookup_error_on_killpg_in_finally_block() -> None:
+    """When os.killpg raises ProcessLookupError in finally, it must be silently handled.
+
+    This covers the finally block cleanup when process is still running but
+    killpg fails because the process group already terminated.
+    """
+    from app.services.yt_dlp_service import _extract_via_subprocess
+
+    mock_process = _make_process(returncode=None, pid=12345)
+
+    async def mock_subprocess_exec(*args, **kwargs):
+        return mock_process
+
+    async def mock_wait_for(coro, timeout=None):
+        return await coro
+
+    def mock_killpg_raises(pgid, sig):
+        raise ProcessLookupError(f"Process group {pgid} not found")
+
+    with (
+        patch(
+            "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+            mock_subprocess_exec,
+        ),
+        patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        patch("app.services.yt_dlp_service.asyncio.wait_for", mock_wait_for),
+        patch("app.services.yt_dlp_service.os.killpg", mock_killpg_raises),
+    ):
+        result = await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
+        assert result == {"title": "T", "ext": "mp4"}
+
+
+@pytest.mark.asyncio
+async def test_error_payload_in_stdout_raises_runtime_error() -> None:
+    """When yt-dlp returns JSON with 'error' key in stdout, raise RuntimeError."""
+    from app.services.yt_dlp_service import _extract_via_subprocess
+
+    mock_process = _make_process(
+        stdout=[b'{"error": "Video unavailable"}\n'],
+        returncode=1,
+        pid=12345,
+    )
+
+    async def mock_subprocess_exec_2(*args, **kwargs):
+        return mock_process
+
+    with (
+        patch(
+            "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+            mock_subprocess_exec_2,
+        ),
+        patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        patch("app.services.yt_dlp_service.os.killpg"),
+    ):
+        with pytest.raises(RuntimeError, match="yt-dlp extraction failed"):
+            await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
+
+
+class TestFormatFallbackChain:
+    """Tests for format fallback chain functionality in _extract_via_subprocess."""
+
+    @pytest.fixture
+    async def captured_script(self) -> str:
+        """Capture the generated script from _extract_via_subprocess."""
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        captured_scripts: list[str] = []
+
+        async def capturing_subprocess_exec(*args, **kwargs):
+            captured_scripts.append(args[2])
+            return _make_process(pid=12345)
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                capturing_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        ):
+            await _extract_via_subprocess("https://www.youtube.com/watch?v=test", "/tmp/out")
+
+        return captured_scripts[0]
+
+    @pytest.mark.asyncio
+    async def test_format_fallback_chain_in_script(self, captured_script: str) -> None:
+        """Verify the generated script encodes the full YouTube chain as a single
+        native yt-dlp format string with '/' fallback (issue #169: previously a
+        per-spec loop that only ever ran the first entry)."""
+        # Every segment of the merged-combo chain must appear in the single format value.
+        assert "bestvideo*+bestaudio" in captured_script
+        assert "bestvideo+bestaudio" in captured_script
+        assert "worstvideo*+bestaudio" in captured_script
+        # The native '/' separators wire the whole chain as yt-dlp's own fallback.
+        assert " / best" in captured_script
+        assert " / worst" in captured_script
+        # The old chain enshrined dead format-ID selectors — assert they're gone.
+        assert "res:1080+h264" not in captured_script
+        assert "res:720" not in captured_script
+        # format_sort still biases toward 1080p/h264 on the first segment.
+        assert '"res:1080"' in captured_script
+        assert '"codec:h264"' in captured_script
+        # The new model uses ONE extract_info call, not a per-spec Python loop.
+        assert '"format"' in captured_script
+        assert "for i, format_spec" not in captured_script
+
+    @pytest.mark.asyncio
+    async def test_prefer_free_formats_enabled(self, captured_script: str) -> None:
+        """Verify prefer_free_formats is True in the yt-dlp options."""
+        assert '"prefer_free_formats": True' in captured_script
+
+    @pytest.mark.asyncio
+    async def test_check_formats_missable(self, captured_script: str) -> None:
+        """Verify check_formats is set to 'missable' in the yt-dlp options."""
+        assert '"check_formats": "missable"' in captured_script
+
+    @pytest.mark.asyncio
+    async def test_extractor_args_player_clients(self, captured_script: str) -> None:
+        """Verify all 4 player clients are included (tv, web, default, mobile)."""
+        assert '"player_client": ["tv", "web", "default", "mobile"]' in captured_script
+
+    @pytest.mark.asyncio
+    async def test_format_unavailable_continues_to_next(self, captured_script: str) -> None:
+        """The fallback chain is encoded as a single native yt-dlp format string
+        whose '/' separators make yt-dlp degrade across the whole chain in one
+        extract_info call (issue #169). There is no longer a per-format Python
+        loop that only caught one narrow error string."""
+        assert '"format":' in captured_script
+        assert "bestvideo*+bestaudio" in captured_script
+        assert " / best" in captured_script
+        assert " / worst" in captured_script
+        assert "res:1080+h264" not in captured_script
+        assert "res:720" not in captured_script
+        # Degradation is yt-dlp's responsibility now: no hand-rolled loop that
+        # only continued on 'Requested format ... not available'.
+        assert "for i, format_spec" not in captured_script
+        assert '"Requested format" in err_str' not in captured_script
 
 
 class TestGetPlatform:
@@ -764,9 +833,7 @@ class TestGetPlatform:
         assert _get_platform("https://www.dailymotion.com/video/x84sh87") == "dailymotion"
 
     def test_twitch_url(self) -> None:
-        assert (
-            _get_platform("https://clips.twitch.tv/SmilingPluckySashimiBibleThump") == "twitch"
-        )
+        assert _get_platform("https://clips.twitch.tv/SmilingPluckySashimiBibleThump") == "twitch"
 
     def test_tiktok_url(self) -> None:
         assert (
@@ -789,3 +856,97 @@ class TestGetPlatform:
 
     def test_empty_url_returns_youtube(self) -> None:
         assert _get_platform("not-a-url") == "youtube"
+
+
+class TestPlatformFormatChains:
+    """Tests verifying platform-specific format chains are routed correctly."""
+
+    @pytest.fixture
+    async def captured_script_tiktok(self) -> str:
+        """Capture the generated script for a TikTok URL."""
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        captured_scripts: list[str] = []
+
+        async def capturing_subprocess_exec(*args, **kwargs):
+            """
+            Capture the subprocess script and return a mocked process.
+
+            Returns:
+                A mocked subprocess process with a fixed process ID.
+            """
+            captured_scripts.append(args[2])
+            return _make_process(pid=12346)
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                capturing_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        ):
+            await _extract_via_subprocess("https://www.tiktok.com/@test/video/123", "/tmp/out")
+
+        return captured_scripts[0]
+
+    @pytest.fixture
+    async def captured_script_instagram(self) -> str:
+        """Capture the generated script for an Instagram URL."""
+        from app.services.yt_dlp_service import _extract_via_subprocess
+
+        captured_scripts: list[str] = []
+
+        async def capturing_subprocess_exec(*args, **kwargs):
+            """
+            Capture the subprocess script and return a mock process for testing.
+
+            Returns:
+                Mock subprocess process with PID 12347.
+            """
+            captured_scripts.append(args[2])
+            return _make_process(pid=12347)
+
+        with (
+            patch(
+                "app.services.yt_dlp_service.asyncio.create_subprocess_exec",
+                capturing_subprocess_exec,
+            ),
+            patch("app.services.yt_dlp_service._check_ssrf", new_callable=AsyncMock),
+        ):
+            await _extract_via_subprocess("https://www.instagram.com/reel/test/", "/tmp/out")
+
+        return captured_scripts[0]
+
+    @pytest.mark.asyncio
+    async def test_tiktok_excludes_youtube_specific_opts(self, captured_script_tiktok: str) -> None:
+        """TikTok extraction must NOT include YouTube-only format options."""
+        assert '"prefer_free_formats"' not in captured_script_tiktok
+        assert '"check_formats"' not in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_tiktok_excludes_youtube_player_clients(
+        self, captured_script_tiktok: str
+    ) -> None:
+        """TikTok extraction must NOT include YouTube player_client extractor args."""
+        assert '"player_client"' not in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_tiktok_uses_simple_format_chain(self, captured_script_tiktok: str) -> None:
+        """TikTok extraction uses simple best format, not the 5-entry YouTube chain."""
+        assert '"bestvideo*+bestaudio/best"' not in captured_script_tiktok
+        assert '"bestvideo+bestaudio/best"' not in captured_script_tiktok
+        assert '"res:1080"' not in captured_script_tiktok
+        assert '"best"' in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_platform_in_error_message(self, captured_script_tiktok: str) -> None:
+        """Failure message includes platform prefix like [tiktok]."""
+        assert "[{platform}]" in captured_script_tiktok or "[tiktok]" in captured_script_tiktok
+
+    @pytest.mark.asyncio
+    async def test_instagram_excludes_youtube_specific_opts(
+        self, captured_script_instagram: str
+    ) -> None:
+        """Instagram extraction must NOT include YouTube-only format options."""
+        assert '"prefer_free_formats"' not in captured_script_instagram
+        assert '"check_formats"' not in captured_script_instagram
