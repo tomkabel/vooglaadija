@@ -26,37 +26,46 @@ jobs to them over stdin, reusing the import + init across many jobs.
 
 ## Decisions
 
-### Decision 1: Persistent worker pool vs. per-call subprocess
-**Chosen: Persistent worker pool.** Each worker imports `yt_dlp` once and serves
+### Decision 1: Persistent driver pool vs. per-call subprocess
+**Chosen: Persistent driver pool.** Each driver imports `yt_dlp` once and serves
 many jobs over stdin/stdout JSON lines. This removes the dominant per-job cost.
-The worker is launched as a dedicated script file (`yt_dlp_worker.py`), which
-keeps `yt_dlp_service.py` free of the large inline f-string and makes the worker
-unit-testable in isolation.
+The driver is launched as a dedicated script file (`yt_dlp_worker_driver.py`),
+which keeps `yt_dlp_service.py` free of the large inline f-string and makes the
+driver unit-testable in isolation. The pool holds a fixed list of slots
+(dicts tracking `proc`/`ready`/`busy`/`starting`/`stderr_lines`/`stderr_task`)
+rather than a worker-object-per-slot abstraction.
 
-### Decision 2: Worker stdin/stdout JSON protocol vs. re-running `python -c` per job
+### Decision 2: Driver stdin/stdout JSON protocol vs. re-running `python -c` per job
 **Chosen: newline-delimited JSON over stdin/stdout.** The parent writes one JSON
-request line; the worker streams `{"progress": true, ...}` lines and exactly one
-terminal line (result dict or `{"error": ...}`). The parent reads until the first
-non-progress line. This preserves the existing progress/result framing and needs
-no new network connections.
+request line; the driver streams `{"job_id": ..., "progress": true, ...}` lines
+and exactly one terminal line (`{"job_id": ..., "result": {...}}` or
+`{"job_id": ..., "error": "..."}`). `run_job` reads until it sees the matching
+`job_id`'s terminal line, ignoring stray/mismatched lines. On startup each
+driver prints `{"_worker_ready": true}` so `_start_slot` can confirm the import
+succeeded before the slot is handed real jobs. This preserves the existing
+progress/result framing and needs no new network connections.
 
-### Decision 3: stderr handling for persistent workers
-**Chosen: redirect the worker's `stderr` to `DEVNULL` and return per-job stderr
-in the terminal JSON line (`_stderr`).** A persistent worker's stderr cannot be
-read per-job on a shared pipe without blocking or framing complexity. The worker
-captures its own Python-level stderr into a buffer and includes the tail in the
-response, so throttle/error detection still works.
+### Decision 3: stderr handling for persistent drivers
+**Chosen: pipe the driver's `stderr` and drain it continuously with a
+background task (`_drain_stderr`) into a per-slot ring buffer.** A persistent
+driver's stderr cannot be read synchronously per-job without blocking or
+framing complexity, so each slot's stderr is drained as it arrives; `run_job`
+slices the buffer from a per-job watermark after the job completes and checks
+it for throttle/error signals. There is no per-job `_stderr` field in the
+response protocol.
 
 ### Decision 4: Timeout/kill against the pool
-**Chosen: kill the timed-out worker's process group via `_terminate_worker_on_timeout`
-(SIGTERM -> wait 3s -> /proc orphan walk -> SIGKILL -> wait 3s), then respawn the
-slot.** This mirrors the previous per-call timeout block exactly, so ffmpeg
-children that detached from the group are still reaped, and the pool returns to
-full strength for subsequent jobs.
+**Chosen: kill the timed-out slot's process group via `_kill_busy_slot`
+(SIGTERM -> wait 3s -> /proc orphan walk -> SIGKILL -> wait 3s), mark the slot
+dead, and let the next checkout respawn it via `_start_slot`.** This mirrors
+the previous per-call timeout block exactly, so ffmpeg children that detached
+from the group are still reaped, and the pool returns to full strength on
+demand rather than eagerly.
 
 ### Decision 5: Concurrency limiting
-**Chosen: pool size == `YT_DLP_EXTRACTION_CONCURRENCY` with a free-worker queue.**
-`submit` acquires a free worker, runs the job, and returns it (or respawns on
-failure). The existing `_EXTRACTION_SEMAPHORE` in `extract_media_url` is retained
-as a secondary guard; both derive from the same configured value so there is no
-deadlock.
+**Chosen: pool size == `YT_DLP_POOL_SIZE` (default `YT_DLP_EXTRACTION_CONCURRENCY`)
+with slot-based checkout/release.** `_checkout` reserves a free, ready slot (or
+lazily spawns a pending one) and `_release` returns it, dropping it if its
+driver died. The existing `_EXTRACTION_SEMAPHORE` in `extract_media_url` is
+retained as a secondary guard; both derive from the same configured value so
+there is no deadlock.

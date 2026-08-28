@@ -8,45 +8,53 @@ fixed per-call overhead is significant.
 
 ## What Changes
 
-- Introduce a persistent **yt-dlp worker subprocess pool**: one long-lived
-  worker process per extraction concurrency slot (`YT_DLP_EXTRACTION_CONCURRENCY`).
-- Each worker imports `yt_dlp` **once** at first use and then serves extraction
-  requests over stdin/stdout using newline-delimited JSON.
+- Introduce a persistent **yt-dlp driver subprocess pool**: one long-lived
+  driver process per pool slot (`YT_DLP_POOL_SIZE`, defaulting to
+  `YT_DLP_EXTRACTION_CONCURRENCY`).
+- Each driver imports `yt_dlp` **once** at process start and then serves
+  extraction requests over stdin/stdout using newline-delimited JSON.
 - The per-job script is replaced by a small request payload (URL, output
-  template, platform, format fallback chain, extractor args, cookies, output
-  fields) plus the existing progress-hook / result JSON line protocol.
-- Workers are reused across jobs; on a per-job timeout the offending worker is
-  killed (same process-group SIGTERM -> SIGKILL + orphan-walk semantics) and
-  immediately respawned so the pool stays at full strength.
+  template, platform, format spec/format_sort, extractor args, cookies,
+  output fields) plus the existing progress-hook / result JSON line protocol.
+- Slots are reused across jobs; on a per-job timeout, or if the driver dies or
+  fails its handshake, the offending slot is killed (same process-group
+  SIGTERM -> SIGKILL + orphan-walk semantics) and respawned lazily on the next
+  checkout so the pool stays at full strength.
 - Application shutdown terminates the pool (wired into the existing lifespan
   `close_api_resources`).
 
 ## Capabilities
 
 ### New Capabilities
-- `yt-dlp-persistent-worker-pool`: A `YtDlpProcessPool` of `N` persistent
-  worker subprocesses (launched as `python app/services/yt_dlp_worker.py`),
-  each importing `yt_dlp` once and serving requests over stdin/stdout JSON lines.
-- `yt-dlp-worker-request-protocol`: Per-job work is described by a JSON request
-  (`url`, `output_template`, `platform`, `fallback_chain`, `extractor_args`,
-  `cookies_opts`, `output_fields`, `youtube_opts`) and answered with progress
-  lines (`{"progress": true, ...}`) and a single terminal line (result dict or
-  `{"error": ...}`), with per-job stderr returned in a `_stderr` field for
-  throttle/error detection.
+- `yt-dlp-persistent-worker-pool`: A `YtDlpProcessPool` of `N` fixed slots,
+  each backed by a persistent driver subprocess (launched as
+  `python app/services/yt_dlp_worker_driver.py`) that imports `yt_dlp` once
+  and serves requests over stdin/stdout JSON lines. `ensure_started` spawns
+  all slots concurrently; `_checkout`/`_release` hand out and return ready
+  slots, respawning dead ones lazily.
+- `yt-dlp-worker-request-protocol`: Per-job work is described by a JSON
+  request (`job_id`, `mode`, `url`, `output_template`, `platform`, `format`,
+  `format_sort`, `extractor_args`, `cookies_opts`, `youtube_opts`) and
+  answered with progress lines (`{"job_id": ..., "progress": true, ...}`) and
+  a single terminal line (`{"job_id": ..., "result": {...}}` or
+  `{"job_id": ..., "error": "..."}`). Each driver's stderr is drained
+  continuously by a background task into a per-slot buffer, which
+  `run_job` checks for throttle/error signals after each job — there is no
+  per-job `_stderr` response field.
 
 ### Modified Capabilities
 - `yt-dlp-extraction-kill-semantics`: The timeout-kill sequence (process-group
   SIGTERM -> wait -> /proc orphan walk -> SIGKILL) is preserved against the
-  persistent worker pool via `_terminate_worker_on_timeout`, and the pool
-  respawns the slot afterwards.
+  persistent driver pool via `_kill_busy_slot` (in-job timeout/failure) and
+  `shutdown` (pool teardown); a killed slot is respawned on its next checkout.
 
 ## Impact
 
-- **`app/services/yt_dlp_worker.py`** (new): the persistent worker script.
+- **`app/services/yt_dlp_worker_driver.py`** (new): the persistent driver
+  script.
 - **`app/services/yt_dlp_service.py`**: `_extract_via_subprocess` now builds a
-  request via `_build_extract_request` and dispatches it to the singleton
-  `YtDlpProcessPool`; adds `YtDlpProcessPool`, `_terminate_worker_on_timeout`,
-  `shutdown_yt_dlp_pool`, `reset_yt_dlp_pool`.
+  request and dispatches it to the singleton `YtDlpProcessPool` via
+  `run_job`; adds `YtDlpProcessPool`, `_get_pool`, `shutdown_yt_dlp_pool`.
 - **`app/api/startup.py`**: `close_api_resources` now shuts down the pool.
 - **No database changes, no new dependencies.** Behavior, output paths, titles,
   and progress-callback contract are unchanged.

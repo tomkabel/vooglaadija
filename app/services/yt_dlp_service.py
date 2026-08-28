@@ -632,13 +632,18 @@ class YtDlpProcessPool:
             slot["starting"] = False
 
     async def ensure_started(self) -> None:
-        """Start all slots concurrently (idempotent). Best-effort: dead slots simply stay None."""
-        if self._started:
+        """Start all slots concurrently (idempotent). Best-effort: dead slots simply stay None.
+
+        Bails out once ``_shutting_down`` is set: a pool instance that has
+        been (or is being) shut down must never spawn drivers again — the
+        singleton is dropped and a fresh instance created on the next
+        ``_get_pool()`` call instead.
+        """
+        if self._started or self._shutting_down:
             return
         async with self._lock:
-            if self._started:
+            if self._started or self._shutting_down:
                 return
-            self._shutting_down = False
             self._started = True
         # Spawn/handshake outside the lock so a slow slot can't stall
         # _checkout/_release for the rest of the pool; concurrent so startup

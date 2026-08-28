@@ -273,6 +273,28 @@ async def test_pool_does_not_spawn_after_shutdown():
 
 
 @pytest.mark.asyncio
+async def test_ensure_started_does_not_spawn_after_shutdown():
+    """``ensure_started`` on a shut-down pool instance must stay a no-op.
+
+    Regression for the kilo-code-bot review finding: ``ensure_started`` used
+    to unconditionally clear ``_shutting_down`` and set ``_started = True``,
+    reopening the spawn-after-shutdown race for any request that reached it
+    in the window before ``shutdown_yt_dlp_pool`` drops the singleton.
+    """
+    pool = YtDlpProcessPool(size=1, startup_timeout=60.0)
+    await pool.ensure_started()
+    assert pool.available_count() == 1
+    await pool.shutdown()
+
+    await pool.ensure_started()
+
+    assert pool._started is False
+    assert pool._shutting_down is True
+    assert all(slot["proc"] is None for slot in pool._slots)
+    assert all(slot["ready"] is False for slot in pool._slots)
+
+
+@pytest.mark.asyncio
 async def test_shutdown_yt_dlp_pool_helper(monkeypatch):
     """The module-level shutdown helper is a no-op when idle and clears the singleton."""
     from app.services import yt_dlp_service
