@@ -160,13 +160,24 @@ services:
   # Worker — background job processor (yt-dlp)
   # ==========================================
   worker:
-    container_name: ytprocessor-worker
+    # NOTE: no static container_name — it blocks `deploy.replicas` (Compose
+    # requires unique names per replica). The container is named
+    # `vooglaadija-worker-N` automatically; inter-service comms and Prometheus
+    # use the service name `worker`, so removing this is safe.
     image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # Scale out by setting WORKER_REPLICAS>1 in the environment (each replica
+    # runs the bounded concurrency pool from #160, so total parallelism is
+    # WORKER_REPLICAS * WORKER_CONCURRENCY).
     environment:
       <<: *common-env
-      WORKER_ID: ${HOSTNAME:-worker-1}
+      # No static WORKER_ID: `${HOSTNAME:-worker-1}` interpolates the compose
+      # host's value once and hands the SAME id to every replica, so scaled
+      # replicas overwrite one another's `worker:health:*` key. Instead the
+      # worker derives its id from the container's runtime hostname (unique per
+      # replica) and falls back to WORKER_ID if an operator sets it explicitly.
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
       # Phase 2: route TikTok/Instagram/Twitter to the browser-downloader
@@ -191,13 +202,17 @@ services:
         max-size: '10m'
         max-file: '3'
     deploy:
+      replicas: ${WORKER_REPLICAS:-1}
       resources:
+        # Raised from 0.75 CPU / 512M to back the concurrency pool (#160/#161):
+        # ~2 concurrent yt-dlp/ffmpeg jobs need ~1-1.5 CPU and ~1-1.5 GB during
+        # format negotiation. A single replica now sustains WORKER_CONCURRENCY=2.
         limits:
-          cpus: '0.75'
-          memory: 512M
+          cpus: '2.0'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test:
         [

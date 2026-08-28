@@ -601,6 +601,10 @@ ignore = [
     "ASYNC240", # os.path.getsize for file info after subprocess
     "TID251",   # yt-dlp ACL exemption (see CODEBOUNDARIES.md)
 ]
+# The warm-pool driver process imports yt_dlp once and is fed jobs over stdin.
+# It is the yt-dlp execution boundary (sibling to the facade), so it is exempt
+# from the anti-corruption ACL the same way the facade is.
+"app/services/yt_dlp_worker_driver.py" = ["TID251"]
 # yt-dlp plugin extractors live OUTSIDE app/ and are yt-dlp extensions by
 # definition: they must import yt_dlp.* APIs, so the anti-corruption ACL
 # (yt-dlp importable only from the facade) does not apply to them.
