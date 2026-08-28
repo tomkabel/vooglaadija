@@ -203,6 +203,12 @@ COPY migrate.sh /app/migrate.sh
 RUN chmod +x ./entrypoint-worker.sh /app/migrate.sh && \
     chown appuser:appuser ./entrypoint-worker.sh /app/migrate.sh
 
+# Named volumes inherit the ownership of the image path they're mounted over
+# on first use, but only if that path already exists in the image — an
+# unknown path is created root-owned instead, which the non-root appuser
+# below cannot write into. celery-beat mounts celery_beat_data here.
+RUN mkdir -p /var/lib/celerybeat && chown appuser:appuser /var/lib/celerybeat
+
 # Note: When using bind mounts (not named volumes), the host directory must be
 # pre-created with UID/GID 1000 ownership, or the container will fail to write.
 # docker-compose.yml uses named volumes which correctly inherit image ownership.
