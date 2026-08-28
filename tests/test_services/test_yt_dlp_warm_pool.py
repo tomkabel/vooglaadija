@@ -208,3 +208,102 @@ async def test_run_job_wall_clock_deadline_bounds_chatty_job():
     assert asyncio.get_running_loop().time() - start < 2.0
     assert slot["ready"] is False
     assert slot["proc"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_job_relays_throttle_signal_on_error_path(monkeypatch):
+    """A failed job whose stderr carries a 429 still feeds the throttle predictor.
+
+    Regression for the PR #165 review finding "throttle detection on the failure
+    path": the check must run on the per-job stderr before the error is re-raised,
+    since 429s only ever appear on failed extractions.
+    """
+    recorded = []
+
+    async def fake_record(service, status):
+        recorded.append((service, status))
+
+    monkeypatch.setattr("app.services.throttle_predictor.record_response", fake_record)
+
+    class _ErrorWithStderr(_FakeStream):
+        def __init__(self, slot):
+            super().__init__([b'{"job_id": "j1", "error": "Video unavailable"}\n'])
+            self._slot = slot
+
+        async def readline(self):
+            line = await super().readline()
+            # Simulate the driver writing a 429 diagnostic to stderr mid-job.
+            self._slot["stderr_lines"].append("ERROR: HTTP Error 429: Too Many Requests")
+            return line
+
+    pool = YtDlpProcessPool(size=1)
+    slot = pool._slots[0]
+    proc = _FakeProc([])
+    proc.stdout = _ErrorWithStderr(slot)
+    slot["proc"] = proc
+    slot["ready"] = True
+    slot["stderr_lines"] = ["pre-existing line"]
+
+    with pytest.raises(RuntimeError, match="yt-dlp extraction failed"):
+        await pool.run_job({"job_id": "j1"}, job_timeout=5.0, service="youtube")
+
+    # The 429 must have been relayed to the throttle predictor even though the
+    # job itself failed.
+    assert recorded == [("youtube", 429)]
+
+
+@pytest.mark.asyncio
+async def test_pool_does_not_spawn_after_shutdown():
+    """No checkout may spawn a fresh driver into a pool that was shut down.
+
+    Regression for the PR #165 review finding "shutdown race": once a pool is
+    discarded, an unwinding/in-flight checkout must fail fast instead of
+    spawning a new yt_dlp subprocess into the just-discarded pool.
+    """
+    pool = YtDlpProcessPool(size=1, startup_timeout=60.0)
+    await pool.ensure_started()
+    assert pool.available_count() == 1
+    await pool.shutdown()
+    assert pool.available_count() == 0
+
+    # A checkout after shutdown must return None without respawning.
+    assert await pool._checkout() is None
+    assert all(slot["proc"] is None for slot in pool._slots)
+    assert all(slot["ready"] is False for slot in pool._slots)
+
+
+@pytest.mark.asyncio
+async def test_ensure_started_does_not_spawn_after_shutdown():
+    """``ensure_started`` on a shut-down pool instance must stay a no-op.
+
+    Regression for the kilo-code-bot review finding: ``ensure_started`` used
+    to unconditionally clear ``_shutting_down`` and set ``_started = True``,
+    reopening the spawn-after-shutdown race for any request that reached it
+    in the window before ``shutdown_yt_dlp_pool`` drops the singleton.
+    """
+    pool = YtDlpProcessPool(size=1, startup_timeout=60.0)
+    await pool.ensure_started()
+    assert pool.available_count() == 1
+    await pool.shutdown()
+
+    await pool.ensure_started()
+
+    assert pool._started is False
+    assert pool._shutting_down is True
+    assert all(slot["proc"] is None for slot in pool._slots)
+    assert all(slot["ready"] is False for slot in pool._slots)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_yt_dlp_pool_helper(monkeypatch):
+    """The module-level shutdown helper is a no-op when idle and clears the singleton."""
+    from app.services import yt_dlp_service
+
+    monkeypatch.setattr(yt_dlp_service, "_pool", None)
+    # Must not raise when no pool was ever created.
+    await yt_dlp_service.shutdown_yt_dlp_pool()
+
+    pool = YtDlpProcessPool(size=1)
+    monkeypatch.setattr(yt_dlp_service, "_pool", pool)
+    await yt_dlp_service.shutdown_yt_dlp_pool()
+    assert yt_dlp_service._pool is None
