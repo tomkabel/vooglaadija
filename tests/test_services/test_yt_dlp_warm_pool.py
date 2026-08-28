@@ -223,9 +223,7 @@ async def test_run_job_relays_throttle_signal_on_error_path(monkeypatch):
     async def fake_record(service, status):
         recorded.append((service, status))
 
-    monkeypatch.setattr(
-        "app.services.throttle_predictor.record_response", fake_record
-    )
+    monkeypatch.setattr("app.services.throttle_predictor.record_response", fake_record)
 
     class _ErrorWithStderr(_FakeStream):
         def __init__(self, slot):
@@ -235,9 +233,7 @@ async def test_run_job_relays_throttle_signal_on_error_path(monkeypatch):
         async def readline(self):
             line = await super().readline()
             # Simulate the driver writing a 429 diagnostic to stderr mid-job.
-            self._slot["stderr_lines"].append(
-                "ERROR: HTTP Error 429: Too Many Requests"
-            )
+            self._slot["stderr_lines"].append("ERROR: HTTP Error 429: Too Many Requests")
             return line
 
     pool = YtDlpProcessPool(size=1)
