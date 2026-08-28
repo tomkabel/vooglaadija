@@ -15,6 +15,7 @@ import pytest
 import app.services.yt_dlp_service as yt_dlp_service
 from app.services.yt_dlp_service import (
     YtDlpProcessPool,
+    _WorkerJobError,
     _build_extract_request,
     _extract_via_subprocess,
     _get_platform,
@@ -535,6 +536,107 @@ class TestPoolRunOnWorker:
 
         # The timed-out worker's process group must be killed.
         assert signal.SIGTERM in killed
+
+
+class TestPoolResilience:
+    """Regression tests for the four review-comment fixes on PR #165.
+
+    Covers: no worker leak on routine extraction errors, throttle detection on
+    the failure path, fail-fast when the pool shrinks, and idempotent startup.
+    """
+
+    @pytest.mark.asyncio
+    async def test_healthy_worker_reused_after_extraction_error(self) -> None:
+        """A routine error result must NOT leak the worker process.
+
+        CRITICAL fix: previously the error-result path marked the (still-alive)
+        worker dead and respawned a replacement, leaking a full ``yt_dlp``
+        process (~50-100MB) on every failed extraction. The healthy worker
+        must be returned to the pool and reused.
+        """
+        spawn_calls = {"n": 0}
+
+        async def fake_spawn():
+            spawn_calls["n"] += 1
+            return _make_fake_worker(
+                [b'{"error": "Video unavailable", "_stderr": "some diag"}\n']
+            )
+
+        pool = YtDlpProcessPool(size=1, timeout=5)
+        pool._spawn_worker = fake_spawn
+        await pool._ensure_started()
+        assert spawn_calls["n"] == 1
+
+        with pytest.raises(_WorkerJobError):
+            await pool.submit({"url": "x"}, None)
+
+        # Same worker returned to the pool (not respawned) -> no leak.
+        assert not pool._free.empty()
+        assert len(pool._workers) == 1
+        assert spawn_calls["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_submit_fails_fast_when_pool_has_no_workers(self) -> None:
+        """WARNING fix: a shrunk-to-zero pool must fail fast, not hang forever.
+
+        When every respawn failed, ``_free.get()`` would block indefinitely
+        because the semaphore still admits concurrent jobs. It must raise.
+        """
+        pool = YtDlpProcessPool(size=1, timeout=5)
+        pool._workers = []  # simulate: nothing could be started
+        pool._started = True
+
+        with pytest.raises(RuntimeError, match="no workers could be started"):
+            await pool.submit({"url": "x"}, None)
+
+    @pytest.mark.asyncio
+    async def test_submit_fails_fast_when_capacity_exceeded(self) -> None:
+        """WARNING fix: a request beyond the live-worker capacity fails fast."""
+        pool = YtDlpProcessPool(size=1, timeout=5)
+        # One worker checked out and in flight, free queue empty.
+        pool._workers = [_make_fake_worker([b"{}"]) ]
+        pool._checked_out = 1
+        pool._started = True  # skip (real) startup; we only exercise the checkout guard
+        pool._free._queue.clear()
+
+        with pytest.raises(RuntimeError, match="no available worker"):
+            await pool.submit({"url": "x"}, None)
+
+    @pytest.mark.asyncio
+    async def test_ensure_started_idempotent_after_partial_failure(self) -> None:
+        """SUGGESTION fix: a partial spawn failure must not deadlock on retry.
+
+        Previously a midway spawn failure left workers 1..k-1 queued, then the
+        next ``_ensure_started`` re-spawned all N and overflowed the bounded
+        queue (maxsize == N), deadlocking every subsequent submit.
+        """
+        pool = YtDlpProcessPool(size=3, timeout=5)
+        order = {"n": 0}
+
+        async def flaky_spawn():
+            order["n"] += 1
+            if order["n"] == 2:
+                raise OSError("transient spawn failure")
+            return _make_fake_worker([b'{"title": "T", "ext": "mp4", "_stderr": ""}\n'])
+
+        pool._spawn_worker = flaky_spawn
+        await pool._ensure_started()
+        assert len(pool._workers) == 1
+        assert pool._started is False
+
+        order["n"] = 0
+
+        async def ok_spawn():
+            order["n"] += 1
+            return _make_fake_worker([b'{"title": "T", "ext": "mp4", "_stderr": ""}\n'])
+
+        pool._spawn_worker = ok_spawn
+        # Must complete (no deadlock) and top up only the 2 missing slots.
+        await pool._ensure_started()
+        assert len(pool._workers) == 3
+        assert order["n"] == 2
+        assert pool._started is True
+        assert pool._free.qsize() == 3
 
 
 class TestTerminateWorkerOnTimeout:

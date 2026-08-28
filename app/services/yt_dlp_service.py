@@ -320,6 +320,7 @@ class YtDlpProcessPool:
         self._timeout = timeout
         self._workers: list[_Worker] = []
         self._free: asyncio.Queue[_Worker] = asyncio.Queue(maxsize=self._size)
+        self._checked_out = 0
         self._started = False
         self._lock = asyncio.Lock()
 
@@ -384,20 +385,23 @@ class YtDlpProcessPool:
         bound until OOM.
         """
         await self._ensure_started()
-        # Fail fast instead of hanging forever: if the pool shrank to zero usable
-        # workers there is nothing to wait for.
+        # Fail fast instead of blocking forever. The semaphore allows up to
+        # ``_size`` concurrent jobs, but if the pool has shrunk (e.g. a swallowed
+        # respawn failure) there may be fewer live workers than concurrent
+        # requests — a checkout would then wait on an empty queue with no worker
+        # ever returning. Only proceed if a worker can actually become available.
         if not self._workers:
             raise RuntimeError(
                 "yt-dlp worker pool is unavailable: no workers could be started"
             )
-        try:
-            worker = await asyncio.wait_for(self._free.get(), timeout=self._timeout)
-        except TimeoutError as exc:
+        if len(self._workers) - self._checked_out <= 0:
             raise RuntimeError(
-                "yt-dlp worker pool has no available worker; request timed out "
+                "yt-dlp worker pool has no available worker; request would block "
                 "waiting for a free slot"
-            ) from exc
+            )
 
+        worker = await self._free.get()
+        self._checked_out += 1
         worker_dead = False
         try:
             return await self._run_on_worker(worker, request, progress_callback)
@@ -410,6 +414,7 @@ class YtDlpProcessPool:
             # still alive and reusable, so propagate without respawning.
             raise
         finally:
+            self._checked_out -= 1
             if worker_dead or worker.process.returncode is not None:
                 await self._respawn_into_free(worker)
             elif worker in self._workers:
