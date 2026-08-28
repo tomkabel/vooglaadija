@@ -275,6 +275,19 @@ class _WorkerDead(Exception):
     """Raised when a worker slot's subprocess is no longer usable."""
 
 
+class _WorkerJobError(RuntimeError):
+    """Raised when a worker completes a job but reports an extraction failure.
+
+    The worker process is still alive and reusable; only the job itself failed.
+    The captured per-job stderr is retained so callers can still run throttle
+    detection on the failure path (where 429s are most likely to appear).
+    """
+
+    def __init__(self, message: str, stderr: str = "") -> None:
+        super().__init__(message)
+        self.stderr = stderr
+
+
 class _Worker:
     """A single persistent yt-dlp worker subprocess and its IO handles."""
 
@@ -314,11 +327,27 @@ class YtDlpProcessPool:
         async with self._lock:
             if self._started:
                 return
-            for _ in range(self._size):
-                worker = await self._spawn_worker()
+            # Idempotent: only spawn the slots that are still missing. A previous
+            # attempt that failed midway leaves workers 1..k-1 in ``_workers`` and
+            # ``_free``, so we top up only the remainder rather than re-spawning the
+            # whole set — re-spawning all of them would overflow the bounded queue
+            # (maxsize == size) and permanently deadlock every subsequent submit.
+            needed = self._size - len(self._workers)
+            for _ in range(needed):
+                try:
+                    worker = await self._spawn_worker()
+                except Exception:
+                    logger.warning("yt_dlp_worker_spawn_failed", exc_info=True)
+                    # Leave ``_started`` False so the next submit retries the
+                    # still-missing slots instead of declaring victory early.
+                    break
                 self._workers.append(worker)
-                await self._free.put(worker)
-            self._started = True
+                try:
+                    await self._free.put(worker)
+                except asyncio.QueueFull:
+                    break
+            if len(self._workers) == self._size:
+                self._started = True
 
     async def _spawn_worker(self) -> _Worker:
         worker_path = os.path.join(os.path.dirname(__file__), "yt_dlp_worker.py")
@@ -343,21 +372,50 @@ class YtDlpProcessPool:
         """Run one extraction request on a pooled worker.
 
         Returns ``(result, stderr_text)`` on success. Raises ``TimeoutError`` if
-        the worker does not respond within the pool timeout, or ``RuntimeError``
-        if the worker reports an extraction failure or dies unexpectedly.
+        the worker does not respond within the pool timeout, ``_WorkerJobError``
+        (a ``RuntimeError`` subclass) if the worker reports an extraction
+        failure while remaining reusable, or ``_WorkerDead`` if the worker
+        subprocess itself is gone.
+
+        A *healthy* worker is always returned to the pool — only a genuinely
+        dead/timeout worker is killed and respawned. This prevents leaking a
+        full ``yt_dlp`` process on every routine extraction error (e.g. a
+        private/age-restricted video), which previously accumulated without
+        bound until OOM.
         """
         await self._ensure_started()
-        worker = await self._free.get()
-        died = False
+        # Fail fast instead of hanging forever: if the pool shrank to zero usable
+        # workers there is nothing to wait for.
+        if not self._workers:
+            raise RuntimeError(
+                "yt-dlp worker pool is unavailable: no workers could be started"
+            )
+        try:
+            worker = await asyncio.wait_for(self._free.get(), timeout=self._timeout)
+        except TimeoutError as exc:
+            raise RuntimeError(
+                "yt-dlp worker pool has no available worker; request timed out "
+                "waiting for a free slot"
+            ) from exc
+
+        worker_dead = False
         try:
             return await self._run_on_worker(worker, request, progress_callback)
+        except _WorkerDead:
+            # Worker process is genuinely gone — must be replaced.
+            worker_dead = True
+            raise
         except Exception:
-            died = True
+            # Job-level failure (e.g. ``_WorkerJobError``): the worker process is
+            # still alive and reusable, so propagate without respawning.
             raise
         finally:
-            if died or worker.process.returncode is not None:
+            if worker_dead or worker.process.returncode is not None:
                 await self._respawn_into_free(worker)
-            else:
+            elif worker in self._workers:
+                # Healthy worker → return it to the pool for reuse. The
+                # ``worker in self._workers`` guard avoids re-queueing a stale
+                # worker after the pool was shut down and restarted.
                 await self._free.put(worker)
 
     async def _run_on_worker(
@@ -409,7 +467,13 @@ class YtDlpProcessPool:
             ) from exc
 
         if error_result:
-            raise RuntimeError(f"yt-dlp extraction failed: {error_result['error']}")
+            # The worker is alive and reusable; surface the failure to the caller
+            # (as a ``RuntimeError`` subclass) carrying the per-job stderr so the
+            # caller can still run throttle detection on the failure path.
+            raise _WorkerJobError(
+                f"yt-dlp extraction failed: {error_result['error']}",
+                stderr=stderr_text,
+            )
         if result is not None:
             return result, stderr_text
         raise RuntimeError("yt-dlp worker exited without producing a result")
@@ -417,9 +481,10 @@ class YtDlpProcessPool:
     async def _respawn_into_free(self, dead_worker: _Worker) -> None:
         """Replace a dead worker so the pool stays at full size.
 
-        Spawn failures are swallowed (logged) so the original job error still
-        propagates to the caller; the pool simply shrinks until a future
-        respawn succeeds.
+        The discarded worker is terminated if it is somehow still running (it is
+        normally already dead or killed on timeout) so no process is leaked. Spawn
+        failures are swallowed (logged) so the original job error still propagates
+        to the caller; the pool simply shrinks until a future respawn succeeds.
         """
         try:
             if dead_worker in self._workers:
@@ -427,12 +492,23 @@ class YtDlpProcessPool:
         except ValueError:
             pass
         try:
+            if dead_worker.process.returncode is None:
+                await _kill_process_group(dead_worker.process, graceful=True)
+        except Exception:
+            pass
+        # Another concurrent respawn may have already filled the slot.
+        if len(self._workers) >= self._size:
+            return
+        try:
             new_worker = await self._spawn_worker()
         except Exception:
             logger.warning("yt_dlp_worker_respawn_failed", exc_info=True)
             return
         self._workers.append(new_worker)
-        await self._free.put(new_worker)
+        try:
+            await self._free.put(new_worker)
+        except asyncio.QueueFull:
+            pass
 
     async def shutdown(self) -> None:
         """Terminate all workers and reset the pool."""
@@ -705,8 +781,16 @@ async def _extract_via_subprocess(
     await _check_ssrf(url)
     request = _build_extract_request(url, output_template)
     pool = _get_pool()
-    result, stderr_text = await pool.submit(request, progress_callback)
-
+    try:
+        result, stderr_text = await pool.submit(request, progress_callback)
+    except _WorkerJobError as exc:
+        # Throttle detection must also run on the failed-extraction path: a 429
+        # is most likely to surface in the failure's stderr, and the throttle
+        # predictor only ever learns about throttling from failure output. The
+        # worker stays alive and reusable; only the job failed.
+        service = _service_from_url(url)
+        await _check_throttle(exc.stderr, service)
+        raise
     if stderr_text:
         service = _service_from_url(url)
         await _check_throttle(stderr_text, service)
