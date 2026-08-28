@@ -42,6 +42,8 @@ jobs:
           # Remove or fix REDIS_URL - it defaults to localhost in .env.example which doesn't work in Docker
           # Leave it empty so docker-compose uses the service name from the compose file
           sed -i 's|^REDIS_URL=.*|REDIS_URL=|' .env
+          # Flower dashboard credentials for the CI stack (loopback only)
+          sed -i 's|^FLOWER_BASIC_AUTH=.*|FLOWER_BASIC_AUTH=ci_flower:ci_flower_password|' .env
 
       # ============================================
       # 2. BUILD & START SERVICES

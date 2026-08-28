@@ -194,7 +194,7 @@ ENV PYTHONPATH=/app \
     STORAGE_PATH=/app/storage
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD ["curl", "-fsS", "-o", "/dev/null", "http://localhost:8082/health"]
+    CMD ["python", "-c", "import asyncio; from core.redis_client import get_redis_client; asyncio.run(get_redis_client().ping())"]
 
 EXPOSE 8082
 

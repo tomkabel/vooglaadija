@@ -18,9 +18,30 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Callable set by worker/ at startup: (task_name, args, queue) -> None
-# ponytail: dependency-inversion slot; worker/ sets this on import
+# Callable: (task_name, args, queue) -> None
+# ponytail: dependency-inversion slot; worker/celery_app sets this on import,
+# and core.queue falls back to a lazily-built broker-only Celery producer so
+# the API process can enqueue without importing worker/ (ruff TID251).
 _celery_send_task: Any = None
+
+
+def _get_celery_send_task() -> Any:
+    """Return the Celery task sender, wiring a broker-only producer lazily.
+
+    The worker process wires the full Celery app (``worker.celery_app``). The
+    API process cannot import ``worker/`` (ruff TID251 bans app/core importing
+    worker), so build a minimal broker-only producer here instead. The producer
+    connects on first use and is cached for the process lifetime.
+    """
+    global _celery_send_task
+    if _celery_send_task is None:
+        from celery import Celery
+
+        from core.config import settings
+
+        producer = Celery("vooglaadija-producer", broker=settings.redis_url)
+        _celery_send_task = producer.send_task
+    return _celery_send_task
 
 
 class _LazyRedisClient:
@@ -80,10 +101,7 @@ async def enqueue_job(job_id: UUID | str) -> None:
     Dispatches a Celery task to the downloads queue. The Celery worker
     will pick up the task and process it with automatic retry support.
     """
-    if _celery_send_task is None:
-        raise RuntimeError("Celery not configured — worker/ must set core.queue._celery_send_task")
-
-    _celery_send_task(
+    _get_celery_send_task()(
         "worker.celery_tasks.process_download",
         args=[str(job_id)],
         queue="downloads",

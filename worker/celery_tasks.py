@@ -17,7 +17,7 @@ from uuid import UUID
 
 from celery import shared_task
 from celery.utils.log import get_task_logger
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.services.error_classifier import classify_error
 from core.config import settings
@@ -41,14 +41,22 @@ logger = get_task_logger(__name__)
 _sync_logger = get_logger(__name__)
 
 
+_worker_loop: asyncio.AbstractEventLoop | None = None
+
+
 def _run_async(coro):
-    """Run an async coroutine synchronously within a Celery task."""
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    """Run an async coroutine synchronously within a Celery task.
+
+    Uses one persistent event loop per worker process so shared async
+    resources (Redis, DB) are never bound to a fresh, per-task loop —
+    creating a loop per task would make cross-task Redis/DB reuse fail with
+    "Event loop is closed" / "attached to a different loop" errors.
+    """
+    global _worker_loop
+    if _worker_loop is None or _worker_loop.is_closed():
+        _worker_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_worker_loop)
+    return _worker_loop.run_until_complete(coro)
 
 
 @shared_task(
@@ -57,11 +65,6 @@ def _run_async(coro):
     queue="downloads",
     acks_late=True,
     reject_on_worker_lost=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_backoff_max=300,
-    retry_jitter=True,
-    max_retries=3,
     soft_time_limit=540,
     time_limit=600,
 )
@@ -173,10 +176,9 @@ async def _handle_result(db, job: DownloadJob, result: dict) -> None:
         )
         await db.commit()
 
-        process_download.apply_async(
+        retry_download.apply_async(
             args=[str(job.id)],
             countdown=delay,
-            queue="retries",
         )
     else:
         await _move_to_dlq(db, job, error, classification)
@@ -226,6 +228,10 @@ async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -
     JOBS_COMPLETED.labels(status="failed").inc()
     DLQ_DEPTH.inc()
 
+    # Dispatch the DLQ handler to the dedicated `dlq` Celery queue (routed via
+    # task_routes) for alerting/notification hooks.
+    handle_failed_job.delay(str(job.id), str(error))
+
 
 async def _requeue_job(job_id: UUID, db) -> None:
     """Requeue a job during shutdown or cancellation."""
@@ -237,31 +243,33 @@ async def _requeue_job(job_id: UUID, db) -> None:
     await db.commit()
 
 
-def _publish_progress(user_id: UUID, job_id: UUID, data: dict) -> None:
-    """Publish progress update via pub/sub."""
+async def _publish_progress(user_id: UUID, job_id: UUID, data: dict) -> None:
+    """Publish progress update via pub/sub.
+
+    Async so the executor can await it on the task's own event loop — no
+    per-callback event loop is created, and the shared pub/sub Redis client
+    stays on a single loop. Best-effort: a failing publish must never fail
+    the download.
+    """
     try:
         from app.services.pubsub_service import get_pubsub_service
 
         pubsub = get_pubsub_service()
-
-        async def _publish():
-            await pubsub.publish_job_progress(
-                user_id,
-                {
-                    "id": str(job_id),
-                    "progress": {
-                        "percent": data.get("percent"),
-                        "speed": data.get("speed"),
-                        "eta": data.get("eta"),
-                        "downloaded_bytes": data.get("downloaded_bytes"),
-                        "total_bytes": data.get("total_bytes"),
-                    },
+        await pubsub.publish_job_progress(
+            user_id,
+            {
+                "id": str(job_id),
+                "progress": {
+                    "percent": data.get("percent"),
+                    "speed": data.get("speed"),
+                    "eta": data.get("eta"),
+                    "downloaded_bytes": data.get("downloaded_bytes"),
+                    "total_bytes": data.get("total_bytes"),
                 },
-            )
-
-        _run_async(_publish())
+            },
+        )
     except Exception:
-        pass
+        logger.warning("progress_publish_failed", job_id=str(job_id), exc_info=True)
 
 
 def _calculate_backoff(retry_count: int, base_delay: float) -> float:
@@ -366,7 +374,14 @@ def cleanup_dlq() -> dict:
             for entry in expired:
                 await db.delete(entry)
             await db.commit()
-            DLQ_DEPTH.set(0)
+
+            # Reflect the actual remaining DLQ depth instead of zeroing the
+            # gauge: only expired rows were removed, so non-expired entries
+            # must stay visible in ytprocessor_dlq_depth.
+            remaining = await db.execute(
+                select(func.count()).select_from(FailedJob).where(FailedJob.expires_at >= now)
+            )
+            DLQ_DEPTH.set(remaining.scalar_one())
             return {"dlq_cleaned": count}
 
     return _run_async(_cleanup())

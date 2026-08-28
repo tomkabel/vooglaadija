@@ -29,6 +29,9 @@ def celery_app():
     app = get_celery_app()
     app.conf.task_always_eager = True
     app.conf.task_eager_propagates = True
+    # Ensure `include=["worker.celery_tasks"]` modules are imported so task
+    # introspection works regardless of test ordering (e.g. `--ff` reruns).
+    app.loader.import_default_modules()
     return app
 
 
@@ -115,20 +118,42 @@ class TestProcessDownloadTask:
 
 
 class TestRetryBehavior:
-    """Tests for Celery retry behavior."""
+    """Tests for the retry mechanism.
 
-    def test_process_download_has_autoretry(self, celery_app):
-        """Verify process_download task has autoretry configured."""
+    Retries are DB-driven (``job.retry_count`` / ``next_retry_at`` and a
+    re-dispatch to the ``retries`` queue) rather than Celery autoretry, so
+    there is a single retry budget that the API/web UI can observe.
+    """
+
+    def test_process_download_has_no_autoretry(self, celery_app):
+        """Verify process_download does not use Celery's built-in autoretry."""
         task = celery_app.tasks.get("worker.celery_tasks.process_download")
         assert task is not None
-        assert task.autoretry_for
-        assert task.max_retries >= 1
+        assert getattr(task, "autoretry_for", None) is None
 
-    def test_process_download_has_backoff(self, celery_app):
-        """Verify process_download task uses backoff."""
-        task = celery_app.tasks.get("worker.celery_tasks.process_download")
+    def test_manual_backoff_is_bounded(self, celery_app):
+        """Verify the DB-driven backoff grows exponentially and is capped."""
+        from worker.celery_tasks import _calculate_backoff
+
+        first = _calculate_backoff(1, 30.0)
+        second = _calculate_backoff(2, 30.0)
+        third = _calculate_backoff(3, 30.0)
+        assert 30.0 <= first <= 300.0
+        assert second > first
+        assert third > second
+        assert third <= 300.0
+
+    def test_retry_download_task_registered(self, celery_app):
+        """Verify the retries-queue task exists and routes to retry_download."""
+        task = celery_app.tasks.get("worker.celery_tasks.retry_download")
         assert task is not None
-        assert task.retry_backoff is True
+        assert task.queue == "retries"
+
+    def test_handle_failed_job_task_registered(self, celery_app):
+        """Verify the dlq-queue task exists for DLQ processing."""
+        task = celery_app.tasks.get("worker.celery_tasks.handle_failed_job")
+        assert task is not None
+        assert task.queue == "dlq"
 
 
 class TestCleanupTasks:

@@ -39,8 +39,11 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          hatch run lint:check | reviewdog \
-            -efm="%f:%l:%c: %t%f %m" \
+          # Concise output (`path:line:col: CODE message`) so reviewdog's
+          # errorformat can parse it — the github format used by lint:check
+          # emits `::error file=...` workflow-command lines that match nothing.
+          hatch run ruff check app/ core/ worker/ scripts/ alembic/ tests/ --output-format=concise | reviewdog \
+            -efm="%f:%l:%c: %t%n %m" \
             -name="ruff" \
             -reporter=github-pr-annotations \
             -filter-mode=diff-filter \
@@ -73,8 +76,11 @@ jobs:
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # mypy emits `file:line:col: error: message [code]` — `%trror:`
+          # matches the lowercase severity with no error number (the previous
+          # `%t%n:` required a number that mypy never produces).
           hatch run type:check | reviewdog \
-            -efm="%f:%l:%c: %t%n: %m" \
+            -efm="%f:%l:%c: %trror: %m" \
             -name="mypy" \
             -reporter=github-pr-annotations \
             -filter-mode=diff-filter \

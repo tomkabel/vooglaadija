@@ -5,19 +5,19 @@ horizontally-scalable job processing.
 
 ## What Changed
 
-| Legacy (BRPOP)                 | New (Celery)                       |
-| ------------------------------ | ---------------------------------- |
-| `worker/main.py` event loop    | `celery-worker` service            |
-| Custom Lua scripts for retry   | Celery built-in retry with backoff |
-| `retry_queue` Redis sorted set | `retries` Celery queue             |
-| DLQ via DB table               | `dlq` Celery queue + DB table      |
-| `zombie_sweeper.py`            | Celery Beat `requeue-stuck-jobs`   |
-| Custom outbox relay            | Celery Beat `enqueue-pending`      |
-| Health server on :8082         | Flower dashboard on :5555          |
+| Legacy (BRPOP)                 | New (Celery)                      |
+| ------------------------------ | --------------------------------- |
+| `worker/main.py` event loop    | `worker` + `celery-beat` services |
+| Custom Lua scripts for retry   | DB-driven retry with backoff      |
+| `retry_queue` Redis sorted set | `retries` Celery queue            |
+| DLQ via DB table               | `dlq` Celery queue + DB table     |
+| `zombie_sweeper.py`            | Celery Beat `requeue-stuck-jobs`  |
+| Custom outbox relay            | Celery Beat `enqueue-pending`     |
+| Health server on :8082         | Flower dashboard on :5555         |
 
 ## Architecture
 
-```
+```text
                     ┌─────────────────┐
                     │   FastAPI API   │
                     └────────┬────────┘
@@ -30,8 +30,8 @@ horizontally-scalable job processing.
               ┌──────────────┼──────────────┐
               ▼              ▼              ▼
      ┌────────────┐  ┌────────────┐  ┌────────────┐
-     │  celery-   │  │  celery-   │  │   flower   │
-     │  worker    │  │   beat     │  │ (monitor)  │
+     │   worker   │  │ celery-    │  │   flower   │
+     │            │  │ beat       │  │ (monitor)  │
      └────────────┘  └────────────┘  └────────────┘
               │              │
               ▼              ▼
@@ -55,8 +55,9 @@ horizontally-scalable job processing.
 
 ### Production (any VPS)
 
-No changes needed to `bootstrap.sh` — the `docker-compose.yml` now includes `celery-worker`,
-`celery-beat`, and `flower` services.
+No changes needed to `bootstrap.sh` — the `docker-compose.yml` now includes the `worker`,
+`celery-beat`, and `flower` services. Set `FLOWER_BASIC_AUTH` in the environment (compose fails fast
+if unset).
 
 ### Local Development
 
@@ -66,7 +67,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 # Access points:
 # - Web Dashboard: http://localhost:8000/web/downloads
-# - Flower:        http://localhost:5555 (admin:admin)
+# - Flower:        http://localhost:5555 (vooglaadija:vooglaadija in local dev)
 ```
 
 ### Manual Worker Start (debugging)
@@ -87,12 +88,12 @@ python -m worker.celery_main enqueue
 
 ## Environment Variables
 
-| Variable             | Default                 | Description                |
-| -------------------- | ----------------------- | -------------------------- |
-| `CELERY_QUEUES`      | `downloads,retries,dlq` | Comma-separated queue list |
-| `CELERY_CONCURRENCY` | `2`                     | Worker concurrency         |
-| `FLOWER_PORT`        | `5555`                  | Flower dashboard port      |
-| `FLOWER_BASIC_AUTH`  | `admin:admin`           | Flower HTTP basic auth     |
+| Variable             | Default                 | Description                            |
+| -------------------- | ----------------------- | -------------------------------------- |
+| `CELERY_QUEUES`      | `downloads,retries,dlq` | Comma-separated queue list             |
+| `CELERY_CONCURRENCY` | `2`                     | Worker concurrency                     |
+| `FLOWER_PORT`        | `5555`                  | Flower dashboard port                  |
+| `FLOWER_BASIC_AUTH`  | required                | Flower HTTP basic auth (user:password) |
 
 ## Monitoring
 
@@ -116,7 +117,9 @@ Access at `http://localhost:5555` to view:
 
 ## Retry Behavior
 
-Celery tasks use exponential backoff with jitter:
+Retries are DB-driven: `_handle_result` records `retry_count` / `next_retry_at` on the job and
+re-dispatches the task to the `retries` queue with exponential backoff plus jitter (single retry
+budget — no Celery autoretry):
 
 | Attempt | Base Delay | Max Delay |
 | ------- | ---------- | --------- |
@@ -124,7 +127,7 @@ Celery tasks use exponential backoff with jitter:
 | 2       | 20s        | 30s       |
 | 3       | 40s        | 60s       |
 
-Max 3 retries per task (configurable via `task_max_retries`).
+Max 3 retries per job (configurable via `DownloadJob.max_retries`).
 
 ## Backward Compatibility
 
@@ -138,16 +141,16 @@ used.
 2. **Deploy** the new Celery worker and Beat scheduler.
 3. **Drain existing pending jobs** from the database into Celery:
 
-```bash
-# Enqueue all pending jobs in the database
-python -m worker.celery_main enqueue
-```
+   ```bash
+   # Enqueue all pending jobs in the database
+   python -m worker.celery_main enqueue
+   ```
 
 4. **Verify** that affected database jobs remain `pending` or move to `processing`:
 
-```sql
-SELECT id, status, retry_count FROM download_jobs WHERE status = 'pending';
-```
+   ```sql
+   SELECT id, status, retry_count FROM download_jobs WHERE status = 'pending';
+   ```
 
 Jobs stuck in `pending` after the worker has been running for several minutes indicate a
 configuration issue.
