@@ -45,6 +45,7 @@ _DB_POOL_DEFAULTS = {
 
 
 def _is_testing_enabled() -> bool:
+    """Return True when the TESTING env flag is set (any truthy spelling)."""
     return os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
 
 
@@ -156,6 +157,7 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _parse_db_pool_integer(cls, value: object, info: ValidationInfo) -> int:
+        """Coerce a DB pool setting to int, falling back to the testing default."""
         field_name = info.field_name
         if field_name is None:
             raise ValueError("Invalid DB pool setting: field name unavailable")
@@ -173,6 +175,7 @@ class Settings(BaseSettings):
         raise ValueError(f"Invalid {env_name}: {value!r} must be an integer")
 
     def _apply_testing_defaults(self) -> "Settings":
+        """Apply test-friendly defaults (in-memory DB, plain-HTTP cookies)."""
         if not self.database_url:
             self.database_url = "sqlite+aiosqlite:///:memory:"
         if not self.redis_url:
@@ -183,16 +186,19 @@ class Settings(BaseSettings):
         return self
 
     def _validate_ports(self) -> None:
+        """Validate DB and Redis port settings."""
         self._validate_port("DB_PORT", self.db_port)
         self._validate_port("REDIS_PORT", self.redis_port)
 
     def _validate_db_pool_settings(self) -> None:
+        """Validate DB pool size/overflow/timeout/recycle minimums."""
         self._validate_minimum("DB_POOL_SIZE", self.db_pool_size, 1)
         self._validate_minimum("DB_MAX_OVERFLOW", self.db_max_overflow, 0)
         self._validate_minimum("DB_POOL_TIMEOUT", self.db_pool_timeout, 1)
         self._validate_minimum("DB_POOL_RECYCLE", self.db_pool_recycle, 1)
 
     def _validate_yt_dlp_pool(self) -> None:
+        """Validate warm-pool size bounds and its coupling to extraction concurrency."""
         # Warm pool size is capped to avoid spawning too many long-lived
         # yt-dlp processes (each holds ~50-100MB resident + its own extractor
         # state). It must also not exceed the extraction semaphore's capacity,
@@ -218,6 +224,7 @@ class Settings(BaseSettings):
             )
 
     def _validate_worker_concurrency(self) -> None:
+        """Validate worker concurrency bounds and the DB-pool coupling guard."""
         # Allow up to 32 parallel downloads; beyond that the host is likely to be
         # CPU/RAM-bound (each yt-dlp/ffmpeg process uses ~50-100MB + 1+ core
         # during negotiation) and the DB pool would need to be sized accordingly.
@@ -239,11 +246,13 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _validate_minimum(name: str, value: int, minimum: int) -> None:
+        """Reject an integer setting that is below its allowed minimum."""
         if value < minimum:
             raise ValueError(f"Invalid {name}: {value!r} must be >= {minimum}")
 
     @staticmethod
     def _validate_port(name: str, value: str) -> None:
+        """Reject a port setting that is not an integer in 1-65535."""
         try:
             port = int(value)
         except (TypeError, ValueError) as exc:
@@ -314,6 +323,7 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _validate_cors_origin(origin: str) -> None:
+        """Reject a CORS origin that is not an origin-only http(s) URL."""
         try:
             parsed = urlparse(origin)
             port = parsed.port
@@ -337,6 +347,7 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid CORS origin: {origin!r}")
 
     def _resolve_storage(self) -> None:
+        """Resolve and ensure the storage directory exists and is writable."""
         path = Path(self.storage_path).expanduser().resolve()
         try:
             path.mkdir(parents=True, exist_ok=True)

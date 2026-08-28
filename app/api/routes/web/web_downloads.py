@@ -35,11 +35,13 @@ _SAFE_STATUS_PATTERN = re.compile(r"[^a-z0-9_-]+", re.IGNORECASE)
 
 
 def _safe_status_label(status: str | None) -> str:
+    """Normalize a job status into a safe display label."""
     normalized = _SAFE_STATUS_PATTERN.sub(" ", str(status or "").strip().lower()).strip()
     return normalized or "unknown"
 
 
 def _delete_status_conflict_message(status: str | None) -> str:
+    """Build the 409 error message for a job that cannot be deleted."""
     safe_status = _safe_status_label(status)
     return (
         f"Cannot delete job with status '{safe_status}'. "
@@ -48,11 +50,13 @@ def _delete_status_conflict_message(status: str | None) -> str:
 
 
 def _download_file_status_message(status: str | None) -> str:
+    """Build the error message for a download that is not completed yet."""
     safe_status = _safe_status_label(status)
     return f"Job is not completed. Current status: {safe_status}"
 
 
 def _download_file_missing_message(exc: DownloadFileMissingError) -> str:
+    """Build the error message for a download file that cannot be found."""
     if exc.code == "missing_on_disk":
         return "File not found on disk"
     return "File not found"

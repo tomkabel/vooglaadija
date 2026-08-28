@@ -77,6 +77,7 @@ def get_grace_period_remaining() -> float | None:
 
 
 async def _update_circuit_deferred_depth() -> None:
+    """Refresh the circuit-deferred queue depth metric from Redis."""
     try:
         depth = await redis_client.zcard("circuit_deferred_queue")
         CIRCUIT_DEFERRED_DEPTH.set(depth)

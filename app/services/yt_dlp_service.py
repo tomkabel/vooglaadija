@@ -496,6 +496,7 @@ class YtDlpProcessPool:
         startup_timeout: float = 30.0,
         driver_module: str = "app.services.yt_dlp_worker_driver",
     ) -> None:
+        """Set up the pool with ``size`` idle driver slots and a startup timeout."""
         self._size = max(1, size)
         self._startup_timeout = startup_timeout
         self._driver_module = driver_module
@@ -673,6 +674,7 @@ class YtDlpProcessPool:
         return None
 
     async def _release(self, slot: dict) -> None:
+        """Return a slot to the free pool, dropping it if its driver died."""
         async with self._lock:
             slot["busy"] = False
             proc = slot["proc"]
@@ -801,6 +803,7 @@ class YtDlpProcessPool:
             pass
 
     async def shutdown(self) -> None:
+        """Kill all live drivers, stop their stderr readers, and reset the pool."""
         async with self._lock:
             for slot in self._slots:
                 proc = slot["proc"]
@@ -988,6 +991,7 @@ except Exception as e:
         )
 
         async def _read_stdout() -> None:
+            """Consume the subprocess stdout, capturing result/error/progress lines."""
             nonlocal result, error_result
             if process.stdout is None:
                 return

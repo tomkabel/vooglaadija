@@ -123,6 +123,7 @@ def _progress_printer(job_id: str) -> Callable[[dict], None]:
     last_pct = -1.0
 
     def _hook(d: dict) -> None:
+        """yt-dlp progress-hook callback: emit JSON lines on >=0.5% steps."""
         nonlocal last_pct
         if d.get("status") != "downloading":
             return
