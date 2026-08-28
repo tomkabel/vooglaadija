@@ -1,0 +1,1715 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_delfiie",
+      "label": "DelfiIE",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "code",
+      "norm_label": "delfiie",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L38"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_delfiie_parse_media",
+      "label": "._parse_media()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "code",
+      "norm_label": "._parse_media()",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L93"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_delfiie_real_extract",
+      "label": "._real_extract()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "code",
+      "norm_label": "._real_extract()",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L55"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_div_end",
+      "label": "div_end()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "code",
+      "norm_label": "div_end()",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L106"
+    },
+    {
+      "id": "infoextractor",
+      "label": "InfoExtractor",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "code",
+      "norm_label": "infoextractor",
+      "source_file": "",
+      "source_location": ""
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi",
+      "label": "delfi.py",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "code",
+      "norm_label": "delfi.py",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_rationale_1",
+      "label": "yt-dlp plugin extractor for Delfi (Estonian news portal) article videos. Delfi\u2026",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "rationale",
+      "norm_label": "yt-dlp plugin extractor for delfi (estonian news portal) article videos. delfi...",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L1"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_rationale_107",
+      "label": "Return the index past the closing </div> of the opened div at `start`.",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "rationale",
+      "norm_label": "return the index past the closing </div> of the opened div at `start`.",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L107"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_rationale_39",
+      "label": "Extractor for Delfi articles that embed a JWPlayer-hosted video.",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "rationale",
+      "norm_label": "extractor for delfi articles that embed a jwplayer-hosted video.",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L39"
+    },
+    {
+      "id": "yt_dlp_plugins_extractor_delfi_rationale_94",
+      "label": "Return (manifest_url, video_id) or (None, None).",
+      "_origin": "ast",
+      "community": 0,
+      "community_name": "DelfiIE",
+      "file_type": "rationale",
+      "norm_label": "return (manifest_url, video_id) or (none, none).",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L94"
+    },
+    {
+      "id": "deploy_bootstrap_die",
+      "label": "die()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "die()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L70"
+    },
+    {
+      "id": "deploy_bootstrap_install_docker",
+      "label": "install_docker()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "install_docker()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L282"
+    },
+    {
+      "id": "deploy_bootstrap_log_info",
+      "label": "log_info()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_info()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L63"
+    },
+    {
+      "id": "deploy_bootstrap_main",
+      "label": "main()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "main()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L550"
+    },
+    {
+      "id": "deploy_bootstrap_require_root",
+      "label": "require_root()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "require_root()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L103"
+    },
+    {
+      "id": "deploy_bootstrap_setup_caddy",
+      "label": "setup_caddy()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "setup_caddy()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L404"
+    },
+    {
+      "id": "deploy_bootstrap_setup_environment",
+      "label": "setup_environment()",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "setup_environment()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L342"
+    },
+    {
+      "id": "deploy_bootstrap_sh__entry",
+      "label": "bootstrap.sh script",
+      "_origin": "ast",
+      "community": 1,
+      "community_name": "main",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_entrypoint"
+      },
+      "norm_label": "bootstrap.sh script",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L1"
+    },
+    {
+      "id": "deploy_uninstall",
+      "label": "uninstall.sh",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "file"
+      },
+      "norm_label": "uninstall.sh",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L1"
+    },
+    {
+      "id": "deploy_uninstall_confirm",
+      "label": "confirm()",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "confirm()",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L28"
+    },
+    {
+      "id": "deploy_uninstall_die",
+      "label": "die()",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "die()",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L26"
+    },
+    {
+      "id": "deploy_uninstall_log_error",
+      "label": "log_error()",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_error()",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L24"
+    },
+    {
+      "id": "deploy_uninstall_log_info",
+      "label": "log_info()",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_info()",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L22"
+    },
+    {
+      "id": "deploy_uninstall_log_warn",
+      "label": "log_warn()",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_warn()",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L23"
+    },
+    {
+      "id": "deploy_uninstall_remove_local_stack",
+      "label": "remove_local_stack()",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "remove_local_stack()",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L34"
+    },
+    {
+      "id": "deploy_uninstall_sh__entry",
+      "label": "uninstall.sh script",
+      "_origin": "ast",
+      "community": 2,
+      "community_name": "uninstall.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_entrypoint"
+      },
+      "norm_label": "uninstall.sh script",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L1"
+    },
+    {
+      "id": "deploy_bootstrap",
+      "label": "bootstrap.sh",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "file"
+      },
+      "norm_label": "bootstrap.sh",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L1"
+    },
+    {
+      "id": "deploy_bootstrap_cloudflare_api",
+      "label": "cloudflare_api()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "cloudflare_api()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L192"
+    },
+    {
+      "id": "deploy_bootstrap_confirm",
+      "label": "confirm()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "confirm()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L97"
+    },
+    {
+      "id": "deploy_bootstrap_dns_setup",
+      "label": "dns_setup()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "dns_setup()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L200"
+    },
+    {
+      "id": "deploy_bootstrap_is_valid_ipv4",
+      "label": "is_valid_ipv4()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "is_valid_ipv4()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L107"
+    },
+    {
+      "id": "deploy_bootstrap_log_error",
+      "label": "log_error()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_error()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L65"
+    },
+    {
+      "id": "deploy_bootstrap_preflight",
+      "label": "preflight()",
+      "_origin": "ast",
+      "community": 3,
+      "community_name": "bootstrap.sh",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "preflight()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L118"
+    },
+    {
+      "id": "deploy_bootstrap_deploy_and_verify",
+      "label": "deploy_and_verify()",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "log_step",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "deploy_and_verify()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L461"
+    },
+    {
+      "id": "deploy_bootstrap_log_step",
+      "label": "log_step()",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "log_step",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_step()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L66"
+    },
+    {
+      "id": "deploy_bootstrap_log_warn",
+      "label": "log_warn()",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "log_step",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "log_warn()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L64"
+    },
+    {
+      "id": "deploy_bootstrap_setup_repo",
+      "label": "setup_repo()",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "log_step",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "setup_repo()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L304"
+    },
+    {
+      "id": "deploy_bootstrap_summary",
+      "label": "summary()",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "log_step",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "summary()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L512"
+    },
+    {
+      "id": "deploy_bootstrap_gather_inputs",
+      "label": "gather_inputs()",
+      "_origin": "ast",
+      "community": 5,
+      "community_name": "gather_inputs",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "gather_inputs()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L164"
+    },
+    {
+      "id": "deploy_bootstrap_prompt",
+      "label": "prompt()",
+      "_origin": "ast",
+      "community": 5,
+      "community_name": "gather_inputs",
+      "file_type": "code",
+      "metadata": {
+        "language": "bash",
+        "kind": "bash_function"
+      },
+      "norm_label": "prompt()",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L85"
+    }
+  ],
+  "links": [
+    {
+      "source": "deploy_bootstrap_deploy_and_verify",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L462",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_deploy_and_verify",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L467",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_deploy_and_verify",
+      "target": "deploy_bootstrap_log_error",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L469",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_deploy_and_verify",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L488",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_die",
+      "target": "deploy_bootstrap_log_error",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L70",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_dns_setup",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L201",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_dns_setup",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L202",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_dns_setup",
+      "target": "deploy_bootstrap_cloudflare_api",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L211",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_dns_setup",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L230",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_dns_setup",
+      "target": "deploy_bootstrap_confirm",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L232",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_gather_inputs",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L165",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_gather_inputs",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L168",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_gather_inputs",
+      "target": "deploy_bootstrap_prompt",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L169",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_gather_inputs",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L173",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_gather_inputs",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L180",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_install_docker",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L283",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_install_docker",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L285",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_install_docker",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L291",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_require_root",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L561",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_preflight",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L562",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_gather_inputs",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L563",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_dns_setup",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L564",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_install_docker",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L565",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_setup_repo",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L566",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_setup_environment",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L567",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_setup_caddy",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L568",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_deploy_and_verify",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L569",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_main",
+      "target": "deploy_bootstrap_summary",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L570",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L119",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L122",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_is_valid_ipv4",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L130",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_prompt",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L141",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_log_error",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L143",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L147",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L151",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_preflight",
+      "target": "deploy_bootstrap_confirm",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L152",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_require_root",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L104",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_caddy",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L405",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_caddy",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L413",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_caddy",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L420",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_environment",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L343",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_environment",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L347",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_environment",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L363",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_repo",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L305",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_repo",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L308",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_repo",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L313",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_repo",
+      "target": "deploy_bootstrap_confirm",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L328",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_setup_repo",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L328",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_sh__entry",
+      "target": "deploy_bootstrap_main",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L579",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_sh__entry",
+      "target": "deploy_bootstrap_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_summary",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L514",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap_summary",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L519",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_die",
+      "target": "deploy_uninstall_log_error",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_remove_local_stack",
+      "target": "deploy_uninstall_log_warn",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_remove_local_stack",
+      "target": "deploy_uninstall_confirm",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_remove_local_stack",
+      "target": "deploy_uninstall_log_info",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_remove_local_stack",
+      "target": "deploy_uninstall_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_sh__entry",
+      "target": "deploy_uninstall_remove_local_stack",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_sh__entry",
+      "target": "deploy_uninstall_confirm",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall_sh__entry",
+      "target": "deploy_uninstall_die",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_delfiie_real_extract",
+      "target": "yt_dlp_plugins_extractor_delfi_delfiie_parse_media",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "call",
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_sh__entry",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_sh__entry",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi",
+      "target": "yt_dlp_plugins_extractor_delfi_div_end",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L106",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi",
+      "target": "yt_dlp_plugins_extractor_delfi_delfiie",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_require_root",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L103",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_is_valid_ipv4",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L107",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_preflight",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L118",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_gather_inputs",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L164",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_cloudflare_api",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L192",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_dns_setup",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L200",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_install_docker",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L282",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_setup_repo",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L304",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_setup_environment",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L342",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_setup_caddy",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L404",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_deploy_and_verify",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L461",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_summary",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L512",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_main",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L550",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_log_info",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_log_warn",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_log_error",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_log_step",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_die",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L70",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_prompt",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L85",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_bootstrap",
+      "target": "deploy_bootstrap_confirm",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/bootstrap.sh",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_log_info",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_log_warn",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_log_error",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_die",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_confirm",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "deploy_uninstall",
+      "target": "deploy_uninstall_remove_local_stack",
+      "relation": "defines",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "deploy/uninstall.sh",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_delfiie",
+      "target": "infoextractor",
+      "relation": "inherits",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_delfiie",
+      "target": "yt_dlp_plugins_extractor_delfi_delfiie_real_extract",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L55",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_delfiie",
+      "target": "yt_dlp_plugins_extractor_delfi_delfiie_parse_media",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L93",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_rationale_1",
+      "target": "yt_dlp_plugins_extractor_delfi",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_rationale_107",
+      "target": "yt_dlp_plugins_extractor_delfi_div_end",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L107",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_rationale_39",
+      "target": "yt_dlp_plugins_extractor_delfi_delfiie",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "yt_dlp_plugins_extractor_delfi_rationale_94",
+      "target": "yt_dlp_plugins_extractor_delfi_delfiie_parse_media",
+      "relation": "rationale_for",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "yt_dlp_plugins/extractor/delfi.py",
+      "source_location": "L94",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "built_at_commit": "f054c156e59bbfe31f20e1aed383bd6e1a9fbd17"
+}
