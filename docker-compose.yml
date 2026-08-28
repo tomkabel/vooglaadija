@@ -234,8 +234,15 @@ services:
     restart: unless-stopped
     environment:
       <<: *common-env
+      # core.config.Settings requires DB_POOL_SIZE + DB_MAX_OVERFLOW >=
+      # WORKER_CONCURRENCY + 2 for every process, including beat (which
+      # never runs downloads and leaves WORKER_CONCURRENCY at its default
+      # of 2, so the pool must total >= 4). Lowering WORKER_CONCURRENCY
+      # instead would also lower YT_DLP_EXTRACTION_CONCURRENCY's default,
+      # which the yt-dlp pool-size validator checks against — so the pool
+      # is bumped here rather than touching worker-role settings.
       DB_POOL_SIZE: '2'
-      DB_MAX_OVERFLOW: '1'
+      DB_MAX_OVERFLOW: '2'
     volumes:
       - storage:/app/storage:Z
       # Named volume holds the PersistentScheduler schedule file
