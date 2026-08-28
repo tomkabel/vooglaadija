@@ -284,6 +284,12 @@ services:
       <<: *common-env
       FLOWER_PORT: ${FLOWER_PORT:-5555}
       FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:?FLOWER_BASIC_AUTH is required}
+    # Flower doesn't touch downloaded files, but importing core.config
+    # (via worker.celery_main) validates STORAGE_PATH is writable for every
+    # process — without this mount, the read-only root filesystem below
+    # makes that validation fail and the container crash-loops on startup.
+    volumes:
+      - storage:/app/storage:Z
     expose:
       - '5555'
     depends_on:
