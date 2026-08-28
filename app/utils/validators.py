@@ -64,12 +64,17 @@ _EXTRA_DOMAINS = (
 
 
 def is_supported_url(url: str) -> bool:
-    """Validate if URL is from a supported platform.
+    """Validate if URL is acceptable for download.
 
-    Uses exact domain matching to prevent subdomain bypass attacks
-    (e.g., youtube.com.evil.com must NOT match).
+    HOTFIX: the per-platform domain whitelist has been disabled so that any
+    http/https URL is accepted (the backend / downloader decides what it can
+    actually fetch). The scheme guard below still rejects non-http(s) schemes
+    (file://, javascript:, etc.) and the separate SSRF resolver
+    (validate_url_not_ssrf) remains the last line of defense against private
+    IPs.
 
-    Supported platforms: YouTube, Vimeo, Dailymotion, Twitch, TikTok, Instagram.
+    To re-enable the platform whitelist, restore the domain-matching branch and
+    return False for hostnames outside the allow-listed sets.
     """
     try:
         parsed = urlparse(url)
@@ -79,17 +84,10 @@ def is_supported_url(url: str) -> bool:
             return False
 
         hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            return False
 
-        if hostname in _YOUTUBE_DOMAINS:
-            return True
-        if hostname in _YOUTUBE_SHORT_DOMAINS:
-            return True
-        if hostname in _YOUTUBE_NOCOOKIE_DOMAINS:
-            return True
-        if hostname in _EXTRA_DOMAINS:
-            return True
-
-        return False
+        return True
     except (ValueError, AttributeError):
         return False
 

@@ -13,6 +13,9 @@ from sqlalchemy import create_engine, inspect
 from alembic import command
 from core.config import settings
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = PROJECT_ROOT / "alembic/versions/005_add_composite_indexes.py"
 

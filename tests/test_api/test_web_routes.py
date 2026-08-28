@@ -1175,7 +1175,12 @@ class TestCreateDownloadForm:
 
     @pytest.mark.asyncio
     async def test_create_download_invalid_url(self):
-        """Test creating download with invalid URL returns 422."""
+        """Test creating download with an unsupported *scheme* returns 422.
+
+        Note: the per-platform domain whitelist is disabled (HOTFIX), so
+        non-allowlisted *domains* are now accepted; only scheme-level rejections
+        (e.g. ftp://) still hit the 422 path.
+        """
         email = f"invalidurl_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
 
@@ -1203,7 +1208,7 @@ class TestCreateDownloadForm:
 
             create_response = await client.post(
                 "/web/downloads",
-                data={"url": "https://not-youtube.com/video"},
+                data={"url": "ftp://not-youtube.com/video"},
                 headers=headers,
             )
 
@@ -1245,6 +1250,9 @@ class TestCreateDownloadForm:
                     "app.services.download_service.enqueue_job", new_callable=AsyncMock
                 ) as mock_enqueue,
             ):
+                # Title resolution is deferred to the worker (resolved during
+                # extraction and streamed to the client over pub/sub), so the
+                # create path no longer calls resolve_video_title synchronously.
                 mock_title.return_value = "Canonical HTMX row"
                 mock_enqueue.return_value = None
 
@@ -1270,7 +1278,10 @@ class TestCreateDownloadForm:
         assert create_response.status_code == 200
         assert '<div class="download-row" data-job-id="' in create_response.text
         assert 'class="status-badge status-pending"' in create_response.text
-        assert "Canonical HTMX row" in create_response.text
+        # Title is deferred, so the rendered partial falls back to the URL
+        # (job.title or job.url) and must not show the (unresolved) mock title.
+        assert "Canonical HTMX row" not in create_response.text
+        assert sample_url in create_response.text
 
     @pytest.mark.asyncio
     async def test_create_download_htmx_validation_error_returns_inline_error_fragment(self):
@@ -1303,7 +1314,7 @@ class TestCreateDownloadForm:
 
             create_response = await client.post(
                 "/web/downloads",
-                data={"url": "https://not-youtube.com/video"},
+                data={"url": "ftp://not-youtube.com/video"},
                 headers=headers,
                 cookies={"access_token": access_token},
             )
@@ -2681,7 +2692,12 @@ class TestCreateDownloadFullPageErrors:
 
     @pytest.mark.asyncio
     async def test_create_download_full_page_invalid_url(self):
-        """Test full page download with invalid URL returns redirect."""
+        """Test full page download with an unsupported *scheme* returns redirect.
+
+        Note: the per-platform domain whitelist is disabled (HOTFIX), so
+        non-allowlisted *domains* are now accepted; only scheme-level rejections
+        (e.g. ftp://) still hit the error redirect path.
+        """
         email = f"fullurl_{uuid.uuid4().hex[:8]}@example.com"
         password = "securepassword123"
 
@@ -2711,7 +2727,7 @@ class TestCreateDownloadFullPageErrors:
 
             create_response = await client.post(
                 "/web/downloads/full",
-                data={"url": "https://not-youtube.com/video"},
+                data={"url": "ftp://not-youtube.com/video"},
                 headers={"X-CSRF-Token": csrf_token} if csrf_token else {},
                 cookies={"access_token": access_token},
             )

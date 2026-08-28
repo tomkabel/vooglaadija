@@ -61,12 +61,17 @@
 
 ### Worker
 
-| Variable                      | Description                                    | Default    |
-| ----------------------------- | ---------------------------------------------- | ---------- |
-| `WORKER_GRACE_PERIOD_SECONDS` | Seconds to wait for in-flight jobs on shutdown | `30`       |
-| `CLEANUP_INTERVAL_MINUTES`    | Minutes between stale-job sweeps               | `60`       |
-| `WORKER_ID`                   | Worker identifier (used in logs/metrics)       | `worker-1` |
-| `WORKER_HEALTH_PORT`          | Port for worker health endpoint                | `8082`     |
+| Variable                      | Description                                                                                    | Default    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- | ---------- |
+| `WORKER_GRACE_PERIOD_SECONDS` | Seconds to wait for in-flight jobs on shutdown                                                 | `30`       |
+| `CLEANUP_INTERVAL_MINUTES`    | Minutes between stale-job sweeps                                                               | `60`       |
+| `WORKER_ID`                   | Worker identifier; derived from the runtime container hostname (unique per replica) when unset | `worker-1` |
+| `WORKER_HEALTH_PORT`          | Port for worker health endpoint                                                                | `8082`     |
+| `WORKER_CONCURRENCY`          | In-flight downloads per worker (1..32)                                                         | `2`        |
+| `WORKER_REPLICAS`             | Worker container replicas                                                                      | `1`        |
+| `YT_DLP_WARM_POOL`            | Use long-lived yt-dlp driver processes                                                         | `true`     |
+| `YT_DLP_POOL_SIZE`            | Warm driver processes per worker (1..16)                                                       | `2`        |
+| `YT_DLP_PREFER_PROGRESSIVE`   | Try a single progressive stream before merged combos                                           | `false`    |
 
 ---
 
@@ -91,7 +96,32 @@ labels (`:Z`) and json-file log rotation for every service. `api`/`worker` pull 
 (`IMAGE_TAG`, default `latest`); the local override builds them from the `Dockerfile`.
 
 Worker DB pool overrides live in `docker-compose.yml` as `WORKER_DB_POOL_SIZE` (default 3) and
-`WORKER_DB_MAX_OVERFLOW` (default 2).
+`WORKER_DB_MAX_OVERFLOW` (default 2). The worker runs a bounded concurrency pool
+(`WORKER_CONCURRENCY`, default 2) and is sized at 2 CPU / 2 GB to back it. To scale out, set
+`WORKER_REPLICAS` (>1) — each replica runs its own pool, so total parallelism is
+`WORKER_REPLICAS * WORKER_CONCURRENCY` and total DB connections are
+`WORKER_REPLICAS * (pool + overflow)`. The worker has no static `container_name` (removed to allow
+replicas); containers are named `vooglaadija-worker-N` and are addressed by the `worker` service
+name. There is also no static `WORKER_ID`: each replica derives its id from the container's runtime
+hostname, so scaled replicas write distinct `worker:health:*` keys (set `WORKER_ID` explicitly to
+override).
+
+The warm pool also bounds effective parallelism: `YT_DLP_POOL_SIZE` may not exceed the yt-dlp
+extraction concurrency (`YT_DLP_EXTRACTION_CONCURRENCY`, which defaults to `WORKER_CONCURRENCY`), so
+pool slots are never started beyond what the extraction semaphore can check out.
+
+**Monitoring caveat:** the Prometheus `ytprocessor-worker` job in `infra/prometheus/prometheus.yml`
+pins a single static `worker:8082` target. With `WORKER_REPLICAS > 1`, Docker's service DNS
+round-robins across replicas, so that job scrapes one replica at a time and worker metrics
+(QUEUE_DEPTH, JOBS_COMPLETED, health state) flicker or merge across replicas. For per-replica worker
+metrics, add explicit per-replica targets (e.g. DNS service discovery) to the scrape config.
+
+yt-dlp runs through a **warm subprocess pool** (`YT_DLP_WARM_POOL=true`, `YT_DLP_POOL_SIZE=2`):
+instead of spawning `python -c "import yt_dlp"` for every job (hundreds of ms of interpreter +
+import cold start per call), a small pool of long-lived Python processes imports yt_dlp once and is
+fed jobs over stdin. The pool reuses the same process-group kill/orphan-walk semantics as the
+per-job path and falls back to it transparently if a driver dies or the pool is disabled. Set
+`YT_DLP_WARM_POOL=false` to force the legacy per-job subprocess path.
 
 Configuration validation runs when `core.config.Settings` is constructed outside `TESTING=1`.
 Malformed `CORS_ORIGINS`, out-of-range DB or Redis ports, unwritable `STORAGE_PATH`, weak

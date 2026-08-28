@@ -17,6 +17,7 @@ from app.api.routes.web.web_helpers import (
     validate_csrf_token,
 )
 from app.api.routes.web_helpers import _error_html
+from app.schemas.download import DownloadResponse
 from app.services.download_service import (
     DownloadFileExpiredError,
     DownloadFileMissingError,
@@ -34,11 +35,13 @@ _SAFE_STATUS_PATTERN = re.compile(r"[^a-z0-9_-]+", re.IGNORECASE)
 
 
 def _safe_status_label(status: str | None) -> str:
+    """Normalize a job status into a safe display label."""
     normalized = _SAFE_STATUS_PATTERN.sub(" ", str(status or "").strip().lower()).strip()
     return normalized or "unknown"
 
 
 def _delete_status_conflict_message(status: str | None) -> str:
+    """Build the 409 error message for a job that cannot be deleted."""
     safe_status = _safe_status_label(status)
     return (
         f"Cannot delete job with status '{safe_status}'. "
@@ -47,11 +50,13 @@ def _delete_status_conflict_message(status: str | None) -> str:
 
 
 def _download_file_status_message(status: str | None) -> str:
+    """Build the error message for a download that is not completed yet."""
     safe_status = _safe_status_label(status)
     return f"Job is not completed. Current status: {safe_status}"
 
 
 def _download_file_missing_message(exc: DownloadFileMissingError) -> str:
+    """Build the error message for a download file that cannot be found."""
     if exc.code == "missing_on_disk":
         return "File not found on disk"
     return "File not found"
@@ -65,11 +70,17 @@ async def dashboard_page(
 ) -> HTMLResponse:
     """Render main dashboard page with download list."""
     result = await DownloadService(db, current_user.id).list(page=1, per_page=50)
+    # Eagerly convert ORM rows to plain pydantic models. `DownloadService.list`
+    # loads them in an async DB session; if that session is later committed or
+    # expired (e.g. a prior `best_effort_enqueue`) the synchronous Jinja render
+    # would trigger a lazy DB load outside the event loop and raise
+    # `MissingGreenlet`. Copying here reads every attribute in the async context.
+    job_views = [DownloadResponse.model_validate(job) for job in result.jobs]
     return render_csrf_page(
         request,
         "dashboard.html",
         current_user=current_user,
-        jobs=result.jobs,
+        jobs=job_views,
     )
 
 
@@ -96,19 +107,29 @@ async def create_download_form(
     if not is_supported_url(url):
         return HTMLResponse(status_code=422, content=_error_html("Invalid supported URL"))
 
+    # Defer title resolution: the worker captures the title during extraction and
+    # streams it to the client over pub/sub, so resolving it here would block the
+    # HTMX request for up to 15s and spawn a redundant yt-dlp subprocess.
     service = DownloadService(db, current_user.id)
     try:
-        job = await service.create(url, resolve_title=True)
+        job = await service.create(url, resolve_title=False)
     except Exception:
         logger.exception("failed_to_create_download_job")
         return HTMLResponse(status_code=500, content=_error_html("Failed to create download"))
 
     await service.best_effort_enqueue(job.id)
 
+    # Detach from the ORM session before rendering: `best_effort_enqueue`
+    # commits, which expires the instance's attributes. Jinja renders
+    # synchronously (outside the event loop), so a lazy DB load here raises
+    # `MissingGreenlet`. Copying into a plain pydantic model eagerly reads the
+    # attributes in the async context and yields a template-safe object.
+    job_view = DownloadResponse.model_validate(job)
+
     resp = templates.TemplateResponse(
         request,
         "partials/_download_item.html",
-        get_template_context(request, job=job),
+        get_template_context(request, job=job_view),
     )
     # NOTE: no rotate_csrf_token here — the response is an HTMX partial whose
     # page <meta> still carries the pre-request token. Rotating the cookie

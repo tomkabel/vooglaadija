@@ -14,6 +14,8 @@ from core.database import get_async_session_factory
 from core.models.download_job import DownloadJob
 from core.models.outbox import Outbox
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.mark.unit
 def test_claim_next_uses_update_returning_without_follow_up_select() -> None:

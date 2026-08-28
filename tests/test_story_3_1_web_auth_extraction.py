@@ -10,6 +10,8 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 from tests.test_route_introspection import iter_api_routes
 
+pytestmark = pytest.mark.slow
+
 
 def _csrf_cookie(response) -> str:
     """Return the CSRF cookie value from a web response."""

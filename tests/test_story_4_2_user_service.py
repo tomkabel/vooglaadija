@@ -8,6 +8,9 @@ import pytest
 from app.main import app
 from tests.test_route_introspection import iter_api_routes
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_PATH = PROJECT_ROOT / "app/services/user_service.py"
 REST_AUTH_PATH = PROJECT_ROOT / "app/api/routes/auth.py"

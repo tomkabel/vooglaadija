@@ -44,7 +44,10 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          version=$(grep -E '^version = ' pyproject.toml | cut -d'"' -f2)
+          # Only the [project] table carries the package version; pyproject.toml
+          # also has [tool.hatch.python] version = "3.12", so an unanchored grep
+          # captured both lines and produced an invalid multi-value output.
+          version=$(grep -A 20 '^\[project\]$' pyproject.toml | grep -E '^version = ' | head -1 | cut -d'"' -f2)
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Build API image

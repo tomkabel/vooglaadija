@@ -48,7 +48,7 @@ FORCE=false
 #   curl -fsSL https://get.docker.com | sha256sum
 #   curl -fsSL https://cdn.coollabs.io/coolify/install.sh | sha256sum
 DOCKER_INSTALL_SHA256="e57f086075dd69dc7057c61d67a029acfbff649f6e394ac96e2123819516cd28"
-COOLIFY_INSTALL_SHA256="73203a9b8b626554c8f24d839fbd5b91d46a8ef282800395ee33e68b23a0e7cf"
+COOLIFY_INSTALL_SHA256="8ef02dce49339208f5abc247bff0277c73d04538d7a36dcfd21331e314e0f2cd"
 
 # ── Colors ────────────────────────────────────────────────
 RED='\033[0;31m'

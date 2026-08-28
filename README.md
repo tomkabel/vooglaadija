@@ -140,6 +140,18 @@ sudo ./deploy/bootstrap.sh
 
 See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 
+> **This VPS (youtube.tomabel.ee) uses a standalone Caddy proxy, not Coolify.** The documented
+> `docker compose ... -f docker-compose.local.yml up -d` command above starts only the app — it
+> omits the public entry point. On this server the stack must be started with the Caddy override or
+> Cloudflare returns HTTP 521:
+>
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d
+> ```
+>
+> See
+> [Standalone deployment (Caddy, no Coolify)](docs/PRODUCTION_DEPLOYMENT.md#standalone-deployment-caddy-no-coolify).
+
 ### Local Development
 
 ```bash

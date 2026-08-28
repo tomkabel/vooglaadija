@@ -17,6 +17,9 @@ from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 from tests.test_route_introspection import iter_api_routes
 
+pytestmark = pytest.mark.slow
+
+
 DASHBOARD_ROUTE_MODULE = "app.api.routes.web.web_dashboard"
 SETTINGS_ROUTE_MODULE = "app.api.routes.web.web_settings"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

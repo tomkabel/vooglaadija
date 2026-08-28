@@ -94,6 +94,8 @@ services:
     restart: 'no'
     volumes:
       - storage:/app/storage:rw
+    # Named volumes are now bind-mounted to the HDDs via the volume
+    # definitions at the bottom of this file (see DATA_ROOT doc).
     command: |
       sh -c "
         echo 'Fixing storage permissions...';
@@ -129,7 +131,7 @@ services:
     expose:
       - '8000'
     volumes:
-      - storage:/app/storage:Z # SELinux label
+      - storage:/app/storage # bind-mounted to HDD (see volumes: block)
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -159,13 +161,24 @@ services:
   # Worker — background job processor (yt-dlp)
   # ==========================================
   worker:
-    container_name: ytprocessor-worker
+    # NOTE: no static container_name — it blocks `deploy.replicas` (Compose
+    # requires unique names per replica). The container is named
+    # `vooglaadija-worker-N` automatically; inter-service comms and Prometheus
+    # use the service name `worker`, so removing this is safe.
     image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # Scale out by setting WORKER_REPLICAS>1 in the environment (each replica
+    # runs the bounded concurrency pool from #160, so total parallelism is
+    # WORKER_REPLICAS * WORKER_CONCURRENCY).
     environment:
       <<: *common-env
-      WORKER_ID: ${HOSTNAME:-worker-1}
+      # No static WORKER_ID: `${HOSTNAME:-worker-1}` interpolates the compose
+      # host's value once and hands the SAME id to every replica, so scaled
+      # replicas overwrite one another's `worker:health:*` key. Instead the
+      # worker derives its id from the container's runtime hostname (unique per
+      # replica) and falls back to WORKER_ID if an operator sets it explicitly.
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
       # Phase 2: route TikTok/Instagram/Twitter to the browser-downloader
@@ -173,7 +186,7 @@ services:
       BROWSER_DOWNLOADER_ENABLED: ${BROWSER_DOWNLOADER_ENABLED:-true}
       BROWSER_DOWNLOADER_ENDPOINT: ${BROWSER_DOWNLOADER_ENDPOINT:-http://browser-downloader:3000}
     volumes:
-      - storage:/app/storage:Z
+      - storage:/app/storage
     depends_on:
       storage-init:
         condition: service_completed_successfully
@@ -190,13 +203,17 @@ services:
         max-size: '10m'
         max-file: '3'
     deploy:
+      replicas: ${WORKER_REPLICAS:-1}
       resources:
+        # Raised from 0.75 CPU / 512M to back the concurrency pool (#160/#161):
+        # ~2 concurrent yt-dlp/ffmpeg jobs need ~1-1.5 CPU and ~1-1.5 GB during
+        # format negotiation. A single replica now sustains WORKER_CONCURRENCY=2.
         limits:
-          cpus: '0.75'
-          memory: 512M
+          cpus: '2.0'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test:
         [
@@ -266,7 +283,7 @@ services:
       # PostgreSQL tuning for containers
       POSTGRES_INITDB_ARGS: '--data-checksums'
     volumes:
-      - postgres_data:/var/lib/postgresql/data:Z
+      - postgres_data:/var/lib/postgresql/data
     ports: []
     # PostgreSQL must run as its default user, not overridden by security-context
     deploy:
@@ -312,7 +329,7 @@ services:
       - --appendfilename
       - 'appendonly.aof'
     volumes:
-      - redis_data:/data:Z
+      - redis_data:/data
     environment:
       REDISCLI_AUTH: '${REDIS_PASSWORD}'
     security_opt:
@@ -351,6 +368,13 @@ services:
       # local/dev only; production should set a real OTLP/gRPC backend target.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-localhost:4317}
       OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE:-false}
+      # Pipeline exporter selector. Defaults to "debug" so the collector prints
+      # received telemetry and does NOT forward back to its own plain gRPC
+      # receiver (which previously caused a continuous TLS handshake error loop).
+      # Set to "otlp" ONLY when a real downstream OTLP backend is configured via
+      # OTEL_EXPORTER_OTLP_ENDPOINT (TLS-capable, not this collector's own
+      # receiver).
+      OTEL_SELF_EXPORT_ENABLED: debug
     expose:
       - '4317' # OTLP gRPC
       - '4318' # OTLP HTTP
@@ -477,7 +501,7 @@ services:
     restart: 'no'
     volumes:
       - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
-      - ./infra/backup/backup-data:/var/backup/ytprocessor
+      - backup_data:/var/backup/ytprocessor
     environment:
       PGHOST: db
       PGPORT: 5432
@@ -502,7 +526,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./infra/backup/backup.sh:/usr/local/bin/backup.sh:ro
-      - ./infra/backup/backup-data:/var/backup/ytprocessor
+      - backup_data:/var/backup/ytprocessor
     environment:
       PGHOST: db
       PGPORT: 5432
@@ -529,14 +553,64 @@ services:
         max-size: '10m'
         max-file: '3'
 
+# ============================================================
+# DATA_ROOT — all large/persistent data lives on the HDDs, NOT the root SSD
+# ============================================================
+# The named volumes below are backed by host bind mounts on the HDDs so that
+# Docker stores every byte of real data under /mnt/<disk>/... instead of
+# /var/lib/docker/volumes/ (which is on the root SSD).
+#
+#   /dev/vdb2 (2.0T, empty) -> /mnt/new_storage  (general blob storage)
+#   /dev/vdb1 (6.0T)        -> /mnt/db_storage   (PostgreSQL data)
+#
+# The host directories were pre-created with the correct ownership/permissions
+# for each service's runtime UID (postgres 70:70, redis 999:1000,
+# prometheus 65534, grafana 472, app 1000:1000).
+#
+# To relocate later, change the `device:` paths below AND move the host
+# directories (e.g. rsync /mnt/new_storage/* to the new path).
+# ============================================================
+
 volumes:
   postgres_data:
     name: ytprocessor-postgres-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/db_storage/postgres
   redis_data:
     name: ytprocessor-redis-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/redis
   storage:
     name: ytprocessor-storage
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/storage
   prometheus_data:
     name: ytprocessor-prometheus-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/prometheus
   grafana_data:
     name: ytprocessor-grafana-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/grafana
+  backup_data:
+    name: ytprocessor-backup-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/new_storage/backups

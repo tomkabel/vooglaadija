@@ -6,8 +6,8 @@ instead of the monolithic "retry 3 times then fail" approach.
 
 Each error category has its own retry policy:
 - RATE_LIMITED (429):    5 retries, 60s-20m, decorrelated jitter
-- TRANSIENT (5xx/timeout): 3 retries, 10s-10m, decorrelated jitter
-- BLOCKED (403/geo):     0 retries, fail fast
+- TRANSIENT (5xx/timeout/403): 3 retries, 10s-10m, decorrelated jitter
+- BLOCKED (geo/drm/copyright/login): 0 retries, fail fast
 - NOT_FOUND (404/gone):  0 retries, fail fast
 - FORMAT_UNAVAILABLE:    0 retries (handled by format fallback chain)
 - TIMEOUT:               2 retries, 30s-10m, full jitter
@@ -140,6 +140,14 @@ _RATE_LIMITED_PATTERNS = [
 _TRANSIENT_PATTERNS = [
     re.compile(r"HTTP Error 50[0-9]", re.IGNORECASE),
     re.compile(r"\b50[2-3]\b"),
+    # Generic media 403s (e.g. "HTTP Error 403: Forbidden" from yt-dlp) are
+    # almost always transient YouTube-side throttling / signed-URL rejection,
+    # not a permanent block: the same URL routinely downloads minutes or hours
+    # later. Retry with jitter instead of failing fast. Request-specific,
+    # permanent markers (geo, DRM, copyright, login required, ...) stay in
+    # BLOCKED and remain non-retryable.
+    re.compile(r"HTTP Error 403", re.IGNORECASE),
+    re.compile(r"\b403\b"),
     re.compile(r"connection.*(?:refused|reset|abort|timeout)", re.IGNORECASE),
     re.compile(r"temporary.*(?:failure|error|unavailable)", re.IGNORECASE),
     re.compile(r"try again later", re.IGNORECASE),
@@ -155,8 +163,6 @@ _TRANSIENT_PATTERNS = [
 ]
 
 _BLOCKED_PATTERNS = [
-    re.compile(r"HTTP Error 403", re.IGNORECASE),
-    re.compile(r"\b403\b"),
     re.compile(r"blocked", re.IGNORECASE),
     re.compile(r"age.?restrict", re.IGNORECASE),
     re.compile(r"copyright", re.IGNORECASE),
@@ -186,6 +192,11 @@ _FORMAT_PATTERNS = [
     re.compile(r"format is not available", re.IGNORECASE),
     re.compile(r"Requested format.*not available", re.IGNORECASE),
     re.compile(r"All formats failed", re.IGNORECASE),
+    # Emitted by the single-pass format fallback (issue #169) when yt-dlp
+    # returns no info object at all — the format_unavailable signal must not
+    # degrade to UNKNOWN just because the new native-format path no longer
+    # prints the old "All formats failed" summary.
+    re.compile(r"No video info returned", re.IGNORECASE),
 ]
 
 _TIMEOUT_PATTERNS = [

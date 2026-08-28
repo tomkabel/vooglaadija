@@ -12,6 +12,9 @@ import yaml
 
 from core.logging_config import configure_logging, get_logger
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # All compose services use Docker's json-file driver with rotation.

@@ -101,8 +101,8 @@
 ### L-1: Wrong Container Name in Demo Script
 
 **Video:** `docker kill vooglaadija_worker_1`
-**Reality:** Container is `ytprocessor-worker`.
-**Fix:** Update demo protocol in video plan.
+**Reality:** The worker has no static `container_name` (removed to allow `WORKER_REPLICAS` scaling); the container is auto-named `vooglaadija-worker-N` and is addressed by the `worker` service.
+**Fix:** Use `docker compose kill worker` (kills the worker service / all replicas) or `docker kill vooglaadija-worker-1`.
 
 ### L-2: Unverified p99 Metric
 

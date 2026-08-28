@@ -18,6 +18,9 @@ from tests.conftest import TestingSessionLocal
 from tests.test_api.test_web_routes import do_login, do_register, get_csrf_from_response
 from tests.test_route_introspection import iter_api_routes
 
+pytestmark = pytest.mark.slow
+
+
 DOWNLOAD_ROUTE_MODULE = "app.api.routes.web.web_downloads"
 DOWNLOAD_SERVICE_MODULE = "app.services.download_service"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -135,12 +138,8 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
         )
 
         with (
-            patch(
-                f"{DOWNLOAD_SERVICE_MODULE}.resolve_video_title", new_callable=AsyncMock
-            ) as title,
             patch(f"{DOWNLOAD_SERVICE_MODULE}.enqueue_job", new_callable=AsyncMock) as enqueue,
         ):
-            title.return_value = "Story 3.2 smoke video"
             enqueue.return_value = None
 
             create_response = await client.post(
@@ -150,7 +149,11 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
             )
 
         assert create_response.status_code == 200
-        assert "Story 3.2 smoke video" in create_response.text
+        # Title resolution is deferred to the worker (#160): the pending row
+        # falls back to the source URL instead of a blocking yt-dlp metadata
+        # fetch, so the create partial shows the URL, not a title.
+        assert sample_url in create_response.text
+        assert "Story 3.2 smoke video" not in create_response.text
 
         async with TestingSessionLocal() as session:
             job_result = await session.execute(
@@ -158,6 +161,9 @@ async def test_web_downloads_smoke_flow_create_list_sse_and_delete(sample_url):
             )
             job = job_result.scalars().one()
             job.status = "completed"
+            # The worker streams the resolved title over pub/sub; simulate that
+            # update so the list view reflects it.
+            job.title = "Story 3.2 smoke video"
             await session.commit()
             job_id = str(job.id)
             user_id = job.user_id
