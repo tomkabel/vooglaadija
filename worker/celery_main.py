@@ -101,7 +101,7 @@ def start_beat() -> None:
         "--scheduler",
         "celery.beat.PersistentScheduler",
         "--schedule",
-        "/var/lib/celerybeat/celerybeat-schedule",  # noqa: S108
+        "/var/lib/celerybeat/celerybeat-schedule",
     ]
 
     celery_app.start(argv)
@@ -114,20 +114,25 @@ def start_flower() -> None:
     to avoid issues with the health heartbeat thread and Celery worker state.
     Flower connects directly to Redis as a broker API client.
     """
+    import shutil
     import subprocess
 
     port = int(os.environ.get("FLOWER_PORT", "5555"))
     logger.info("starting_flower", port=port)
 
+    celery_bin = shutil.which("celery")
+    if celery_bin is None:
+        raise RuntimeError("celery executable not found on PATH")
+
     cmd = [
-        "celery",
+        celery_bin,
         "-A",
         "worker.celery_app",
         "flower",
         f"--port={port}",
         f"--broker_api={settings.redis_url}",
     ]
-    subprocess.run(cmd)
+    subprocess.run(cmd, check=False)  # noqa: S603 — fixed argv, no untrusted input
 
 
 def enqueue_pending_jobs() -> int:
