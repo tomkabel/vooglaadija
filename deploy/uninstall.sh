@@ -52,9 +52,9 @@ case "${1:-}" in
   --purge)
     remove_local_stack true
     ;;
-  --help|-h)
-    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
-    ;;
+    --help|-h)
+      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+      ;;
   "")
     if confirm "Remove the local Docker Compose stack (data preserved)?"; then
       remove_local_stack false
