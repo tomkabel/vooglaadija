@@ -19,12 +19,13 @@
 
 ### Redis
 
-| Variable         | Description                  | Default                   | Notes                                                                                          |
-| ---------------- | ---------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------- |
-| `REDIS_URL`      | Full Redis connection string | _(built from components)_ | If set, `REDIS_*` variables are ignored.                                                       |
-| `REDIS_HOST`     | Redis host                   | `localhost`               |                                                                                                |
-| `REDIS_PORT`     | Redis port                   | `6379`                    |                                                                                                |
-| `REDIS_PASSWORD` | Redis password               | _(conditional)_           | Only required when Redis AUTH is enabled. Docker Compose interpolates the value when provided. |
+| Variable               | Description                              | Default                   | Notes                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ---------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REDIS_URL`            | Full Redis connection string             | _(built from components)_ | If set, `REDIS_*` variables are ignored.                                                                                                                                                                                                                                                |
+| `REDIS_HOST`           | Redis host                               | `localhost`               |                                                                                                                                                                                                                                                                                         |
+| `REDIS_PORT`           | Redis port                               | `6379`                    |                                                                                                                                                                                                                                                                                         |
+| `REDIS_PASSWORD`       | Redis password                           | _(conditional)_           | Only required when Redis AUTH is enabled. Docker Compose interpolates the value when provided.                                                                                                                                                                                          |
+| `RATE_LIMIT_REDIS_URL` | Redis URL for shared rate-limit counters | `REDIS_URL` or localhost  | slowapi stores rate-limit counters here so limits are shared across API replicas (issue #120). Compose defaults it to `redis://:<password>@<REDIS_HOST>:<REDIS_PORT>/1`; the password must be URL-encoded if it contains reserved characters (matches `core/config.py`'s `quote_plus`). |
 
 ### Application
 
@@ -90,6 +91,22 @@ Caddy) and deploys `docker-compose.yml` — the single source of truth for the s
 cp .env.example .env        # set DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY
 docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
+
+**Optional API gateway (Traefik, issue #120):**
+
+The stack rate-limits at the application layer with Redis-backed counters shared across API replicas
+(`RATE_LIMIT_REDIS_URL`, see Redis table above). To also put a gateway in front of the API for edge
+rate limiting, TLS termination, circuit breaking and security headers:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d
+```
+
+The gateway override attaches the `api` service to the `ytprocessor-network` (alongside the default
+network used for inter-service traffic) and routes `/api`, `/web`, `/docs` and `/static` to
+`ytprocessor-api:8000`. TLS uses Traefik's default self-signed certificate out of the box; for
+production, put the existing platform proxy (Coolify/Caddy) in front or add a
+`certificatesresolvers` entrypoint to `infra/traefik/dynamic.yml`.
 
 `docker-compose.yml` defines resource limits, health checks, read-only root filesystems, SELinux
 labels (`:Z`) and json-file log rotation for every service. `api`/`worker` pull prebuilt GHCR images
