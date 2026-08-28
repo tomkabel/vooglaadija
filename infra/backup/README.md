@@ -67,5 +67,5 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml exec db psql -U
 
 - Copy dumps off the server (rsync to another host or object storage) — a backup on the same disk as
   the data is not a real backup.
-- The standalone deployment stores its database in the `ytprocessor-postgres-data` volume;
-  backups via the profile above are the supported restore path.
+- The standalone deployment stores its database in the `ytprocessor-postgres-data` volume; backups
+  via the profile above are the supported restore path.

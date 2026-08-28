@@ -150,9 +150,8 @@ no host plugin required. Application logs are one JSON object per line in produc
 | `grafana`        | `grafana/grafana:11.3.0` (profile `monitoring`)   | `127.0.0.1:3000`  | Dashboards               |
 | `backup`         | `postgres:15-alpine` (profile `backup`)           | —                 | Daily `pg_dump`          |
 
-In production, the standalone Caddy reverse proxy (ports 80/443, see
-`docker-compose.caddy.yml`) is the only public entry point; the local
-override binds debug ports to loopback.
+In production, the standalone Caddy reverse proxy (ports 80/443, see `docker-compose.caddy.yml`) is
+the only public entry point; the local override binds debug ports to loopback.
 
 ---
 
