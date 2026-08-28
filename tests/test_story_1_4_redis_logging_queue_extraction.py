@@ -96,16 +96,19 @@ def test_core_logging_config_owns_public_objects():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_core_queue_enqueue_job_uses_patchable_core_redis_proxy():
-    """The queue enqueue helper pushes to Redis through core.queue.redis_client."""
+    """The queue enqueue helper dispatches to Celery via _celery_send_task."""
     from core.queue import enqueue_job
 
-    mock_redis = MagicMock()
-    mock_redis.lpush = AsyncMock()
+    mock_send = MagicMock()
 
-    with patch("core.queue.redis_client", mock_redis):
+    with patch("core.queue._celery_send_task", mock_send):
         await enqueue_job("story-1-4-job")
 
-    mock_redis.lpush.assert_called_once_with("download_queue", "story-1-4-job")
+    mock_send.assert_called_once_with(
+        "worker.celery_tasks.process_download",
+        args=["story-1-4-job"],
+        queue="downloads",
+    )
 
 
 @pytest.mark.unit

@@ -1,6 +1,7 @@
 """Story 1.1 API tests for core model persistence."""
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -23,26 +24,29 @@ async def test_download_api_persists_jobs_with_core_models(db_session: AsyncSess
     # Title resolution is deferred to the worker (resolved during extraction and
     # streamed to the client over pub/sub), so the API returns the job without a
     # title immediately. Resolve the create path without stubbing the title.
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        register_response = await client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        login_response = await client.post(
-            "/api/v1/auth/login",
-            json={"email": email, "password": password},
-        )
-        token = login_response.json()["access_token"]
+    # The broker dispatch is stubbed to succeed so the outbox row is determinis-
+    # tically marked processed (queue/outbox interplay is covered elsewhere).
+    with patch("core.queue._celery_send_task", side_effect=lambda *args, **kwargs: None):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            register_response = await client.post(
+                "/api/v1/auth/register",
+                json={"email": email, "password": password},
+            )
+            login_response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": email, "password": password},
+            )
+            token = login_response.json()["access_token"]
 
-        create_response = await client.post(
-            "/api/v1/downloads",
-            json={"url": video_url},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        list_response = await client.get(
-            "/api/v1/downloads",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+            create_response = await client.post(
+                "/api/v1/downloads",
+                json={"url": video_url},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            list_response = await client.get(
+                "/api/v1/downloads",
+                headers={"Authorization": f"Bearer {token}"},
+            )
 
     assert register_response.status_code == 201
     assert create_response.status_code == 201
@@ -67,7 +71,9 @@ async def test_download_api_persists_jobs_with_core_models(db_session: AsyncSess
     outbox_result = await db_session.execute(select(Outbox).where(Outbox.job_id == job_id))
     outbox = outbox_result.scalars().one()
     assert outbox.event_type == "enqueue_download"
-    assert outbox.status == "pending"
+    # The API enqueues the job via Celery at create time, so the outbox entry
+    # is marked processed immediately (enqueue_job succeeds in the API process).
+    assert outbox.status == "processed"
 
 
 @pytest.mark.asyncio

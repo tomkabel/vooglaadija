@@ -22,6 +22,8 @@ BASE_COMPOSE_SERVICES = {
     "storage-init",
     "api",
     "worker",
+    "celery-beat",
+    "flower",
     "browser-downloader",
     "db",
     "redis",

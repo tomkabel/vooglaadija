@@ -27,7 +27,7 @@ jobs:
       # 1. SETUP
       # ============================================
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5
@@ -42,6 +42,8 @@ jobs:
           # Remove or fix REDIS_URL - it defaults to localhost in .env.example which doesn't work in Docker
           # Leave it empty so docker-compose uses the service name from the compose file
           sed -i 's|^REDIS_URL=.*|REDIS_URL=|' .env
+          # Flower dashboard credentials for the CI stack (loopback only)
+          sed -i 's|^FLOWER_BASIC_AUTH=.*|FLOWER_BASIC_AUTH=ci_flower:ci_flower_password|' .env
 
       # ============================================
       # 2. BUILD & START SERVICES

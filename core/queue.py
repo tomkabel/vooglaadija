@@ -7,6 +7,7 @@ deduplication to prevent duplicate job entries.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -17,6 +18,31 @@ if TYPE_CHECKING:
     import redis.asyncio as aioredis
 
 logger = get_logger(__name__)
+
+# Callable: (task_name, args, queue) -> None
+# ponytail: dependency-inversion slot; worker/celery_app sets this on import,
+# and core.queue falls back to a lazily-built broker-only Celery producer so
+# the API process can enqueue without importing worker/ (ruff TID251).
+_celery_send_task: Any = None
+
+
+def _get_celery_send_task() -> Any:
+    """Return the Celery task sender, wiring a broker-only producer lazily.
+
+    The worker process wires the full Celery app (``worker.celery_app``). The
+    API process cannot import ``worker/`` (ruff TID251 bans app/core importing
+    worker), so build a minimal broker-only producer here instead. The producer
+    connects on first use and is cached for the process lifetime.
+    """
+    global _celery_send_task
+    if _celery_send_task is None:
+        from celery import Celery
+
+        from core.config import settings
+
+        producer = Celery("vooglaadija-producer", broker=settings.redis_url)
+        _celery_send_task = producer.send_task
+    return _celery_send_task
 
 
 class _LazyRedisClient:
@@ -71,11 +97,22 @@ redis_client = _LazyRedisClient()
 
 
 async def enqueue_job(job_id: UUID | str) -> None:
-    """Enqueue a download job for processing.
+    """Enqueue a download job for processing via Celery.
 
-    Uses the async Redis client to push job IDs to the download queue.
+    Dispatches a Celery task to the downloads queue. The Celery worker
+    will pick up the task and process it with automatic retry support.
+
+    ``send_task`` does a blocking Redis round-trip, so it runs in a thread
+    to avoid stalling the API's event loop (and every in-flight request)
+    for the duration of the broker publish.
     """
-    await redis_client.lpush("download_queue", str(job_id))
+    send_task = _get_celery_send_task()
+    await asyncio.to_thread(
+        send_task,
+        "worker.celery_tasks.process_download",
+        args=[str(job_id)],
+        queue="downloads",
+    )
 
     try:
         from core.metrics import QUEUE_DEPTH

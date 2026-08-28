@@ -57,6 +57,10 @@ dependencies = [
     "pyasn1>=0.6.4",  # transitive; CVE-2025-0395 (panic on malformed BER)
     "authlib>=1.6.9",  # transitive; CVE-2025-62025 (token fixation via empty client secret)
 
+    # Celery — distributed job queue (replaces hand-rolled BRPOP worker)
+    "celery[redis]>=5.4.0",
+    "flower>=2.0.0",
+
     # MEDIUM PRIORITY - Reliability & Debugging
     # Battle-tested retry logic
     "tenacity>=8.2.0",
@@ -82,6 +86,8 @@ server = [
 ]
 worker = [
     "redis",
+    "celery[redis]>=5.4.0",
+    "flower>=2.0.0",
     "yt-dlp>=2026.7.4",
 ]
 test = [
@@ -748,7 +754,7 @@ skips = [
 #   urllib3, idna, mako, pyasn1, authlib
 # - Test-exercised runtime deps (candidate removals if observability drops):
 #   orjson, tenacity
-per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp", "urllib3", "idna", "mako", "pyasn1", "authlib", "curl-cffi"] }
+per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp", "urllib3", "idna", "mako", "pyasn1", "authlib", "curl-cffi", "flower"], "DEP001" = ["kombu"] }
 # Module name differs from package name; required because the detached audit
 # env runs deptry without the project installed (no auto-detection possible).
 package_module_name_map = { "python-jose" = ["jose"] }
