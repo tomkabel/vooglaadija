@@ -38,7 +38,6 @@ set -euo pipefail
 # ── Configuration ─────────────────────────────────────────
 REPO_URL="${GIT_REPOSITORY:-https://github.com/tomkabel/vooglaadija.git}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
-APP_NAME="vooglaadija"
 NON_INTERACTIVE=false
 FORCE=false
 SKIP_DNS="${SKIP_DNS:-false}"
