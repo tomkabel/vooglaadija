@@ -61,17 +61,17 @@
 
 ### Worker
 
-| Variable                      | Description                                                                                    | Default    |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- | ---------- |
-| `WORKER_GRACE_PERIOD_SECONDS` | Seconds to wait for in-flight jobs on shutdown                                                 | `30`       |
-| `CLEANUP_INTERVAL_MINUTES`    | Minutes between stale-job sweeps                                                               | `60`       |
-| `WORKER_ID`                   | Worker identifier; derived from the runtime container hostname (unique per replica) when unset | `worker-1` |
-| `WORKER_HEALTH_PORT`          | Port for worker health endpoint                                                                | `8082`     |
-| `WORKER_CONCURRENCY`          | In-flight downloads per worker (1..32)                                                         | `2`        |
-| `WORKER_REPLICAS`             | Worker container replicas                                                                      | `1`        |
-| `YT_DLP_WARM_POOL`            | Use long-lived yt-dlp driver processes                                                         | `true`     |
-| `YT_DLP_POOL_SIZE`            | Warm driver processes per worker (1..16)                                                       | `2`        |
-| `YT_DLP_PREFER_PROGRESSIVE`   | Try a single progressive stream before merged combos                                           | `false`    |
+| Variable                      | Description                                                                                                           | Default                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `WORKER_GRACE_PERIOD_SECONDS` | Seconds to wait for in-flight jobs on shutdown                                                                        | `30`                        |
+| `CLEANUP_INTERVAL_MINUTES`    | Minutes between stale-job sweeps                                                                                      | `60`                        |
+| `WORKER_ID`                   | Worker identifier; unset → the runtime container hostname (unique per replica). `worker-1` is only the final fallback | _(unset; runtime hostname)_ |
+| `WORKER_HEALTH_PORT`          | Port for worker health endpoint                                                                                       | `8082`                      |
+| `WORKER_CONCURRENCY`          | In-flight downloads per worker (1..32)                                                                                | `2`                         |
+| `WORKER_REPLICAS`             | Worker container replicas                                                                                             | `1`                         |
+| `YT_DLP_WARM_POOL`            | Use long-lived yt-dlp driver processes                                                                                | `true`                      |
+| `YT_DLP_POOL_SIZE`            | Warm driver processes per worker (1..16)                                                                              | `2`                         |
+| `YT_DLP_PREFER_PROGRESSIVE`   | Try a single progressive stream before merged combos                                                                  | `false`                     |
 
 ---
 

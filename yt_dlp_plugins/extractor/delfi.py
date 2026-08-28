@@ -37,10 +37,7 @@ _JWPLAYER_RE = re.compile(
 # the NUXT payload (``data-id=<uuid>`` next to the manifest) expose it. The
 # div and the manifest travel separately in the page, so the UUID that sits
 # next to a manifest is the one that belongs to that video.
-_UUID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-    re.IGNORECASE,
-)
+_DATA_ID_RE = re.compile(r"data-id=([0-9a-f-]{36})", re.IGNORECASE)
 _MEDIA_DIV_RE = re.compile(r"media-video-([0-9a-f-]{36})", re.IGNORECASE)
 
 
@@ -85,9 +82,7 @@ class DelfiIE(InfoExtractor):
 
         title = (
             self._og_search_title(webpage)
-            or self._html_search_regex(
-                r"<title[^>]*>(.*?)</title>", webpage, "title", default=None
-            )
+            or self._html_search_regex(r"<title[^>]*>(.*?)</title>", webpage, "title", default=None)
             or article_id
         )
 
@@ -117,17 +112,20 @@ class DelfiIE(InfoExtractor):
 
         manifest_url = f"https://cdn.jwplayer.com/manifests/{jw.group(1)}.m3u8"
 
-        # The NUXT payload embeds the media UUID right after the manifest
-        # (``...manifests/<id>.m3u8", ..., "<div data-id=<uuid>...``). Grab it
-        # from a short window so it is the UUID *of this manifest* on
-        # multi-video pages, not the first placeholder div in the document.
+        # The NUXT payload embeds the media UUID as a ``data-id=<uuid>``
+        # attribute right after the manifest (``...manifests/<id>.m3u8", ...,
+        # "<div data-id=<uuid>...``). Match only that attribute from `jw.end()`
+        # so a decoy UUID elsewhere in the window is never picked. The
+        # placeholder div is used only as a fallback and only when there is a
+        # single video on the page, so multi-video pages never get a
+        # mismatched id.
         media_id = None
-        nearby = _UUID_RE.search(webpage[jw.start() : jw.start() + 500])
+        nearby = _DATA_ID_RE.search(webpage[jw.end() : jw.end() + 500])
         if nearby:
-            media_id = nearby.group(0)
+            media_id = nearby.group(1)
         else:
-            div = _MEDIA_DIV_RE.search(webpage)
-            if div:
-                media_id = div.group(1)
+            placeholders = _MEDIA_DIV_RE.findall(webpage)
+            if len(placeholders) == 1:
+                media_id = placeholders[0]
 
         return (manifest_url, media_id)

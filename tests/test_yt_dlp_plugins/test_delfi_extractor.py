@@ -117,3 +117,19 @@ class TestMediaParsing:
         manifest, media_id = extractor._parse_media(page)
         assert manifest == f"https://cdn.jwplayer.com/manifests/{self.MANIFEST_ID}.m3u8"
         assert media_id == second_media
+
+    def test_decoy_uuid_near_manifest_is_ignored(self, extractor):
+        """Only the data-id value right after the manifest is used, not decoys."""
+        decoy = "99999999-8888-7777-6666-555555555555"
+        media_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        page = (
+            '<div id="media-video-' + self.MEDIA_ID + '"></div>'
+            f"<script>window.__NUXT__={{config:{{media:"
+            f'"https:\\u002F\\u002Fcdn.jwplayer.com\\u002Fmanifests\\u002F{self.MANIFEST_ID}.m3u8",'
+            f'"thumb": {decoy}, '
+            f'"\\u003Cdiv data-id={media_id} data-type=VIDEO}}'
+            "</script>"
+        )
+        manifest, parsed_media_id = extractor._parse_media(page)
+        assert manifest == f"https://cdn.jwplayer.com/manifests/{self.MANIFEST_ID}.m3u8"
+        assert parsed_media_id == media_id

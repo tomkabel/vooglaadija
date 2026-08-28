@@ -392,6 +392,18 @@ setup_environment() {
     else
       echo "CORS_ORIGINS=https://${DEPLOY_DOMAIN}" >> "$env_file"
     fi
+    # This is a production deployment behind HTTPS: force Secure cookies and
+    # the production environment, replacing any local-dev leftovers.
+    if grep -q '^COOKIE_SECURE=' "$env_file"; then
+      sed -i 's|^COOKIE_SECURE=.*|COOKIE_SECURE=True|' "$env_file"
+    else
+      echo "COOKIE_SECURE=True" >> "$env_file"
+    fi
+    if grep -q '^ENVIRONMENT=' "$env_file"; then
+      sed -i 's|^ENVIRONMENT=.*|ENVIRONMENT=production|' "$env_file"
+    else
+      echo "ENVIRONMENT=production" >> "$env_file"
+    fi
     return 0
   fi
 

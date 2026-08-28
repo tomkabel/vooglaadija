@@ -131,13 +131,19 @@ check_port_conflicts() {
   done
 
   # Ports 80/443: warn if occupied by a non-Caddy process (Caddy needs them for TLS).
-  # Merely having a Caddy container is not proof of ownership — verify the Caddy
-  # container actually publishes the specific port before suppressing the warning.
+  # Merely having a container named caddy is not proof of ownership — the
+  # container must belong to THIS compose project (caddy service) and actually
+  # publish the specific port before the warning is suppressed.
   for port in 80 443; do
     if ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN; then
       local caddy_owns=false cid
       while IFS= read -r cid; do
         [[ -z "$cid" ]] && continue
+        local proj svc
+        proj=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid" 2>/dev/null || true)
+        svc=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$cid" 2>/dev/null || true)
+        [[ -n "$compose_project" && "$proj" != "$compose_project" ]] && continue
+        [[ -n "$svc" && "$svc" != "caddy" ]] && continue
         if docker port "$cid" "$port/tcp" >/dev/null 2>&1; then
           caddy_owns=true
           break
