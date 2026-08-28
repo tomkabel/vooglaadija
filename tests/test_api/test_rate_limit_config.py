@@ -155,6 +155,9 @@ class TestRedisStorageConfig:
         """Default Redis URL falls back to local Redis."""
         monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
         monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
         assert _resolve_redis_storage_url() == "redis://localhost:6379"
 
     def test_redis_storage_url_prefers_rate_limit_var(self, monkeypatch):
@@ -173,6 +176,9 @@ class TestRedisStorageConfig:
         """Set-but-empty vars fall through to the localhost default."""
         monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "")
         monkeypatch.setenv("REDIS_URL", "")
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
         assert _resolve_redis_storage_url() == "redis://localhost:6379"
 
     def test_redis_storage_url_empty_rate_limit_var_uses_redis_url(self, monkeypatch):
@@ -180,6 +186,42 @@ class TestRedisStorageConfig:
         monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "")
         monkeypatch.setenv("REDIS_URL", "redis://custom-redis:6380/2")
         assert _resolve_redis_storage_url() == "redis://custom-redis:6380/2"
+
+    def test_redis_storage_url_built_from_components(self, monkeypatch):
+        """No explicit URL: components are assembled into a Redis URL."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.setenv("REDIS_PORT", "6379")
+        monkeypatch.setenv("REDIS_PASSWORD", "s3cret")
+        assert _resolve_redis_storage_url() == "redis://:s3cret@redis:6379/1"
+
+    def test_redis_storage_url_components_encode_reserved_password_chars(self, monkeypatch):
+        """Reserved characters in REDIS_PASSWORD are quote_plus-encoded, matching core/config.py."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.setenv("REDIS_PORT", "6379")
+        monkeypatch.setenv("REDIS_PASSWORD", "p@ss:w/rd")
+        assert _resolve_redis_storage_url() == "redis://:p%40ss%3Aw%2Frd@redis:6379/1"
+
+    def test_redis_storage_url_components_without_password(self, monkeypatch):
+        """No password: no auth segment in the assembled URL."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.setenv("REDIS_PORT", "6380")
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        assert _resolve_redis_storage_url() == "redis://redis:6380/1"
+
+    def test_redis_storage_url_components_fallback_when_host_only(self, monkeypatch):
+        """REDIS_HOST set alone still triggers component assembly."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        assert _resolve_redis_storage_url() == "redis://redis:6379/1"
 
     def test_module_constant_is_redis_url(self):
         """Module-level REDIS_STORAGE_URL is a valid redis:// URL."""
