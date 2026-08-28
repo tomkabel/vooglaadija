@@ -62,17 +62,18 @@ def _active_env_example_values() -> dict[str, str]:
 
 def _bootstrap_generated_env_values() -> dict[str, str]:
     bootstrap = _read_project_file("deploy", "bootstrap.sh")
-    match = re.search(
-        r'"FEATURE_METRICS_ENABLED": "(?P<metrics>true|false)"'
-        r'.*"FEATURE_TRACING_ENABLED": "(?P<tracing>true|false)"',
-        bootstrap,
-        flags=re.DOTALL,
+    env_example = _active_env_example_values()
+
+    # The standalone bootstrap seeds the production .env by copying
+    # .env.example and only rewrites a small set of secret/domain keys, so the
+    # observability flags in the generated env are the template's values.
+    assert 'cp "$REPO_DIR/.env.example" "$env_file"' in bootstrap, (
+        "bootstrap.sh generated env payload not found (expected .env.example seed)"
     )
-    assert match is not None, "bootstrap.sh generated env payload not found"
 
     return {
-        "FEATURE_METRICS_ENABLED": match.group("metrics"),
-        "FEATURE_TRACING_ENABLED": match.group("tracing"),
+        "FEATURE_METRICS_ENABLED": env_example["FEATURE_METRICS_ENABLED"],
+        "FEATURE_TRACING_ENABLED": env_example["FEATURE_TRACING_ENABLED"],
     }
 
 
