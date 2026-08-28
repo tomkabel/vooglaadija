@@ -64,7 +64,9 @@ http:
     auth-router:
       rule: 'PathPrefix(`/api/v1/auth`)'
       service: api
-      priority: 10
+      # Must exceed api-router's rule-length default priority (18) so the
+      # stricter auth-ratelimit (10/min) actually wins for /api/v1/auth/*.
+      priority: 30
       middlewares:
         - auth-ratelimit
         - gateway-security-headers
@@ -108,6 +110,22 @@ http:
       service: api
       middlewares:
         - gateway-security-headers
+      entryPoints:
+        - websecure
+      tls: {}
+
+    # Catch-all for the site root and any path not matched by the routers
+    # above (e.g. the app redirects GET / to /web/login or /web/downloads).
+    # Explicitly low priority so it never shadows the ping router (Docker
+    # provider, default priority 14) or any of the specific routers.
+    root-router:
+      rule: 'PathPrefix(`/`)'
+      service: api
+      priority: 5
+      middlewares:
+        - gateway-ratelimit
+        - gateway-security-headers
+        - gateway-circuit-breaker
       entryPoints:
         - websecure
       tls: {}

@@ -23,10 +23,14 @@ def _resolve_redis_storage_url() -> str:
     """Resolve the Redis URL used for shared rate-limit counters.
 
     Precedence: ``RATE_LIMIT_REDIS_URL`` > ``REDIS_URL`` > local Redis.
+    Empty values are treated as unset, so a blank ``REDIS_URL`` (e.g. from a
+    compose file interpolating ``${REDIS_URL:-}``) cannot produce a useless
+    ``storage_uri=""`` that silently degrades the limiter.
     """
-    return os.environ.get(
-        "RATE_LIMIT_REDIS_URL",
-        os.environ.get("REDIS_URL", "redis://localhost:6379"),
+    return (
+        os.environ.get("RATE_LIMIT_REDIS_URL")
+        or os.environ.get("REDIS_URL")
+        or "redis://localhost:6379"
     )
 
 
@@ -71,19 +75,24 @@ def _client_ip(request: Request) -> str:
 
     Behind the deploy proxy every client shares the proxy IP via
     ``request.client.host``, which would make every bucket effectively global
-    (one client's 429s lock out the whole site). Prefer the leftmost
-    ``X-Forwarded-For`` entry, which the proxy prepends with the real client
-    IP. Falls back to the socket address when the header is absent.
+    (one client's 429s lock out the whole site). Traefik and the deploy
+    proxies *append* the direct peer IP as the rightmost ``X-Forwarded-For``
+    entry, so the rightmost value is the one added by the trusted proxy and
+    cannot be forged by a client sending a spoofed leftmost entry. Reading the
+    rightmost entry keeps the app-level buckets aligned with the gateway's
+    rate limiter (``ipStrategy.depth: 1``). Falls back to the socket address
+    when the header is absent.
 
-    Trust note: this assumes a proxy that overwrites/validates XFF (the
-    compose deployment only exposes the API through one). If the API is ever
-    exposed directly, clients could rotate buckets by spoofing the header.
+    Trust note: this assumes the API is only reachable through a proxy that
+    appends/overwrites XFF (the compose deployment exposes the API only
+    through one). If the API is ever exposed directly, clients could rotate
+    buckets by spoofing the header.
     """
     forwarded: str | None = request.headers.get("x-forwarded-for")
     if forwarded:
-        first = forwarded.split(",", 1)[0].strip()
-        if first:
-            return first
+        entries = [entry.strip() for entry in forwarded.split(",") if entry.strip()]
+        if entries:
+            return entries[-1]
     return request.client.host if request.client else "unknown"
 
 

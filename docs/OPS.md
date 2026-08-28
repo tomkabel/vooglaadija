@@ -19,13 +19,13 @@
 
 ### Redis
 
-| Variable               | Description                              | Default                   | Notes                                                                                          |
-| ---------------------- | ---------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------- |
-| `REDIS_URL`            | Full Redis connection string             | _(built from components)_ | If set, `REDIS_*` variables are ignored.                                                       |
-| `REDIS_HOST`           | Redis host                               | `localhost`               |                                                                                                |
-| `REDIS_PORT`           | Redis port                               | `6379`                    |                                                                                                |
-| `REDIS_PASSWORD`       | Redis password                           | _(conditional)_           | Only required when Redis AUTH is enabled. Docker Compose interpolates the value when provided. |
-| `RATE_LIMIT_REDIS_URL` | Redis URL for shared rate-limit counters | `REDIS_URL` or localhost  | slowapi stores rate-limit counters here so limits are shared across API replicas (issue #120). |
+| Variable               | Description                              | Default                   | Notes                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ---------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REDIS_URL`            | Full Redis connection string             | _(built from components)_ | If set, `REDIS_*` variables are ignored.                                                                                                                                                                                                                                                |
+| `REDIS_HOST`           | Redis host                               | `localhost`               |                                                                                                                                                                                                                                                                                         |
+| `REDIS_PORT`           | Redis port                               | `6379`                    |                                                                                                                                                                                                                                                                                         |
+| `REDIS_PASSWORD`       | Redis password                           | _(conditional)_           | Only required when Redis AUTH is enabled. Docker Compose interpolates the value when provided.                                                                                                                                                                                          |
+| `RATE_LIMIT_REDIS_URL` | Redis URL for shared rate-limit counters | `REDIS_URL` or localhost  | slowapi stores rate-limit counters here so limits are shared across API replicas (issue #120). Compose defaults it to `redis://:<password>@<REDIS_HOST>:<REDIS_PORT>/1`; the password must be URL-encoded if it contains reserved characters (matches `core/config.py`'s `quote_plus`). |
 
 ### Application
 
