@@ -1,5 +1,6 @@
 """Tests for rate limit configuration."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,6 +10,7 @@ from app.api.rate_limit_config import (
     REDIS_STORAGE_URL,
     NoOpLimiter,
     _build_limiter,
+    _client_ip,
     _parse_retry_after,
     _resolve_redis_storage_url,
     rate_limit_exceeded_handler,
@@ -105,6 +107,47 @@ class TestRateLimitExceededHandler:
             await rate_limit_exceeded_handler(mock_request, mock_exc)
 
 
+class TestClientIp:
+    """Tests for the _client_ip rate-limit bucket key."""
+
+    @staticmethod
+    def _request(
+        xff: str | None = None,
+        client_host: str | None = "203.0.113.5",
+    ) -> MagicMock:
+        from fastapi import Request
+
+        request = MagicMock(spec=Request)
+        request.headers = {"x-forwarded-for": xff} if xff is not None else {}
+        request.client = SimpleNamespace(host=client_host) if client_host else None
+        return request
+
+    def test_uses_rightmost_xff_entry(self):
+        """The proxy-appended rightmost entry beats a spoofed leftmost one."""
+        request = self._request(xff="198.51.100.9, 203.0.113.5")
+        assert _client_ip(request) == "203.0.113.5"
+
+    def test_single_xff_entry(self):
+        """A single X-Forwarded-For entry is used directly."""
+        request = self._request(xff="203.0.113.5")
+        assert _client_ip(request) == "203.0.113.5"
+
+    def test_falls_back_to_socket_address_without_xff(self):
+        """Without XFF the socket address is the bucket key."""
+        request = self._request(xff=None, client_host="198.51.100.7")
+        assert _client_ip(request) == "198.51.100.7"
+
+    def test_falls_back_to_unknown_without_client(self):
+        """Without XFF and a client socket, the bucket key is 'unknown'."""
+        request = self._request(xff=None, client_host=None)
+        assert _client_ip(request) == "unknown"
+
+    def test_ignores_blank_entries(self):
+        """Empty entries between commas are skipped when selecting the key."""
+        request = self._request(xff=" , 203.0.113.5, ")
+        assert _client_ip(request) == "203.0.113.5"
+
+
 class TestRedisStorageConfig:
     """Tests for Redis-backed rate limit storage configuration."""
 
@@ -123,6 +166,18 @@ class TestRedisStorageConfig:
     def test_redis_storage_url_falls_back_to_redis_url(self, monkeypatch):
         """REDIS_URL env var is used when RATE_LIMIT_REDIS_URL is not set."""
         monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_URL", "redis://custom-redis:6380/2")
+        assert _resolve_redis_storage_url() == "redis://custom-redis:6380/2"
+
+    def test_redis_storage_url_empty_env_falls_back(self, monkeypatch):
+        """Set-but-empty vars fall through to the localhost default."""
+        monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "")
+        monkeypatch.setenv("REDIS_URL", "")
+        assert _resolve_redis_storage_url() == "redis://localhost:6379"
+
+    def test_redis_storage_url_empty_rate_limit_var_uses_redis_url(self, monkeypatch):
+        """An empty RATE_LIMIT_REDIS_URL falls back to REDIS_URL."""
+        monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "")
         monkeypatch.setenv("REDIS_URL", "redis://custom-redis:6380/2")
         assert _resolve_redis_storage_url() == "redis://custom-redis:6380/2"
 
