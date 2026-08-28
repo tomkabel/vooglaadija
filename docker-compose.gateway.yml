@@ -8,6 +8,10 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gateway.yml up -d
 #
 # The gateway listens on ports 80/443 and routes to the API service.
+# TLS note: routers enable TLS with Traefik's default self-signed cert so the
+# stack works out of the box. For production, terminate TLS with the
+# platform's existing proxy (Coolify/Caddy) or add a `certificatesresolvers`
+# entrypoint and reference it from the routers' `tls.certResolver`.
 # ============================================
 
 services:
@@ -15,6 +19,9 @@ services:
     image: traefik:v3.1
     container_name: ytprocessor-gateway
     restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
     command:
       - --api.dashboard=false
       - --ping=true
@@ -35,10 +42,9 @@ services:
       - --metrics.prometheus.addServicesLabels=true
       - --entrypoints.websecure.http.tls=true
       - --entrypoints.websecure.http.tls.options=default
-      - --entrypoints.websecure.http.middlewares=gateway-ratelimit@file,gateway-security-headers@file
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
@@ -67,9 +73,18 @@ services:
       - traefik.http.routers.ping.service=ping@internal
       - traefik.http.routers.ping.entrypoints=websecure
 
+  # Attach the API to the gateway network (in addition to the default network
+  # used for inter-service traffic) so Traefik can reach `ytprocessor-api`.
+  api:
+    networks:
+      - default
+      - ytprocessor-network
+
 networks:
+  # Created automatically when this override is brought up; pre-create it
+  # manually if you manage networks separately.
   ytprocessor-network:
-    external: true
+    name: ytprocessor-network
 
 volumes:
   traefik-certs:

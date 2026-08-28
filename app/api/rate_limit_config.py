@@ -16,12 +16,21 @@ from app.schemas.error import ErrorCode, error_response_dict
 # Disable rate limiting in test mode
 is_testing = os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
 
+
 # Redis storage URL for distributed rate limiting across replicas.
 # Falls back to local Redis when not explicitly configured.
-REDIS_STORAGE_URL = os.environ.get(
-    "RATE_LIMIT_REDIS_URL",
-    os.environ.get("REDIS_URL", "redis://localhost:6379"),
-)
+def _resolve_redis_storage_url() -> str:
+    """Resolve the Redis URL used for shared rate-limit counters.
+
+    Precedence: ``RATE_LIMIT_REDIS_URL`` > ``REDIS_URL`` > local Redis.
+    """
+    return os.environ.get(
+        "RATE_LIMIT_REDIS_URL",
+        os.environ.get("REDIS_URL", "redis://localhost:6379"),
+    )
+
+
+REDIS_STORAGE_URL = _resolve_redis_storage_url()
 
 
 class NoOpLimiter:
@@ -81,20 +90,22 @@ def _client_ip(request: Request) -> str:
 def _build_limiter() -> Limiter | NoOpLimiter:
     """Build a rate limiter backed by Redis storage for distributed state.
 
-    Uses slowapi's RedisStorage so rate limit counters are shared across
-    all API replicas. This ensures consistent enforcement when running
-    multiple containers behind a load balancer.
+    Uses slowapi's ``storage_uri`` option (resolved through ``limits`` to a
+    Redis storage backend) so rate-limit counters are shared across all API
+    replicas. When Redis is unreachable, ``in_memory_fallback_enabled`` makes
+    slowapi fall back to per-process in-memory counters and ``swallow_errors``
+    keeps a failing fallback from breaking requests, so the API never 500s
+    just because the rate-limit backend is down.
     """
     if is_testing:
         return NoOpLimiter()
 
-    try:
-        from slowapi.storage import RedisStorage
-
-        storage = RedisStorage(REDIS_STORAGE_URL)
-        return Limiter(key_func=_client_ip, storage=storage)
-    except ImportError:
-        return Limiter(key_func=_client_ip)
+    return Limiter(
+        key_func=_client_ip,
+        storage_uri=REDIS_STORAGE_URL,
+        in_memory_fallback_enabled=True,
+        swallow_errors=True,
+    )
 
 
 limiter = _build_limiter()
