@@ -4,6 +4,7 @@ import os
 import re
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote_plus
 
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -22,16 +23,32 @@ is_testing = os.environ.get("TESTING", "").lower() in ("1", "true", "yes", "on")
 def _resolve_redis_storage_url() -> str:
     """Resolve the Redis URL used for shared rate-limit counters.
 
-    Precedence: ``RATE_LIMIT_REDIS_URL`` > ``REDIS_URL`` > local Redis.
+    Precedence: ``RATE_LIMIT_REDIS_URL`` > ``REDIS_URL`` > components
+    (``REDIS_HOST``/``REDIS_PORT``/``REDIS_PASSWORD``) > local Redis.
     Empty values are treated as unset, so a blank ``REDIS_URL`` (e.g. from a
     compose file interpolating ``${REDIS_URL:-}``) cannot produce a useless
     ``storage_uri=""`` that silently degrades the limiter.
+
+    When no explicit URL is given, the components are assembled exactly like
+    ``core.config.Settings._build_redis_url``: the password is
+    ``quote_plus``-encoded so values containing ``@``/``:``/``/`` never yield
+    a malformed URL. Docker Compose cannot URL-encode interpolated values, so
+    deriving the URL here keeps rate-limit counters on the same Redis as the
+    queue without requiring operators to pre-encode ``REDIS_PASSWORD``.
     """
-    return (
-        os.environ.get("RATE_LIMIT_REDIS_URL")
-        or os.environ.get("REDIS_URL")
-        or "redis://localhost:6379"
-    )
+    explicit = os.environ.get("RATE_LIMIT_REDIS_URL") or os.environ.get("REDIS_URL")
+    if explicit:
+        return explicit
+
+    if os.environ.get("REDIS_HOST") or os.environ.get("REDIS_PORT"):
+        host = os.environ.get("REDIS_HOST", "redis")
+        port = os.environ.get("REDIS_PORT", "6379")
+        password = os.environ.get("REDIS_PASSWORD")
+        if password:
+            return f"redis://:{quote_plus(password)}@{host}:{port}/1"
+        return f"redis://{host}:{port}/1"
+
+    return "redis://localhost:6379"
 
 
 REDIS_STORAGE_URL = _resolve_redis_storage_url()
