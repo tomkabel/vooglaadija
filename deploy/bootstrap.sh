@@ -448,8 +448,8 @@ ${DEPLOY_DOMAIN} {
 	}
 }
 
-# Plain HTTP listener: redirect everything to HTTPS (covers Cloudflare Flexible mode
-# and direct IP visitors). Health checks that hit http://:80/health still reach the app.
+# Plain HTTP listener: Cloudflare Flexible mode tunnels through :80.
+# Direct IP visitors or health checks that hit http://:80 reach the app here.
 :80 {
 	reverse_proxy api:8000
 }
@@ -493,9 +493,9 @@ deploy_and_verify() {
   log_info "Waiting for https://${DEPLOY_DOMAIN}/health (TLS cert + Cloudflare; can take a minute)..."
   for i in $(seq 1 30); do
     local body
-    code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || echo "000")
+    code=$(curl -sSk --max-time 10 -o /dev/null -w '%{http_code}' "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || echo "000")
     if [[ "$code" == "200" ]]; then
-      body=$(curl -fsS --max-time 10 "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || true)
+        body=$(curl -fsSk --max-time 10 "https://${DEPLOY_DOMAIN}/health" 2>/dev/null || true)
       if printf '%s' "$body" | grep -q '"healthy"'; then
         log_info "✓ Public health check passed: https://${DEPLOY_DOMAIN}/health"
         return 0

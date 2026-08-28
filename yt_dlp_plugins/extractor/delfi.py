@@ -34,9 +34,6 @@ _JWPLAYER_RE = re.compile(
     re.IGNORECASE,
 )
 
-# The portal-player div id encodes the media UUID: media-video-<uuid>.
-_MEDIA_ID_RE = re.compile(r"media-video-([0-9a-f-]{36})")
-
 
 class DelfiIE(InfoExtractor):
     """Extractor for Delfi articles that embed a JWPlayer-hosted video."""
@@ -95,15 +92,31 @@ class DelfiIE(InfoExtractor):
 
     def _parse_media(self, webpage: str):
         """Return (manifest_url, video_id) or (None, None)."""
-        jw = _JWPLAYER_RE.search(webpage)
-        if not jw:
-            return (None, None)
+        for portal_div in re.finditer(r'<div[^>]*\bid=["\']media-video-([0-9a-f-]{36})["\'][^>]*>', webpage):
+            div_id = portal_div.group(1)
+            div_start = portal_div.start()
+            div_end = portal_end(div_start, webpage)
+            div_html = webpage[div_start:div_end]
+            jw = _JWPLAYER_RE.search(div_html)
+            if jw:
+                return ("https://cdn.jwplayer.com/manifests/%s.m3u8" % jw.group(1), div_id)
+        return (None, None)
 
-        manifest_url = "https://cdn.jwplayer.com/manifests/%s.m3u8" % jw.group(1)
 
-        media_id = None
-        mid = _MEDIA_ID_RE.search(webpage)
-        if mid:
-            media_id = mid.group(1)
-
-        return (manifest_url, media_id)
+def div_end(start: int, html: str) -> int:
+    """Return the index past the closing </div> of the opened div at `start`."""
+    depth = 0
+    pos = start
+    while pos < len(html):
+        m = re.search(r'<(/?div)(?:\s[^>]*)?\s*/?>', html[pos:], re.IGNORECASE)
+        if not m:
+            break
+        pos += m.end()
+        if m.group(1).lower() == 'div':
+            if html[m.start() + 1] == '/':
+                depth -= 1
+                if depth < 0:
+                    return pos
+            else:
+                depth += 1
+    return len(html)
