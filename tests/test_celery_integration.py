@@ -159,7 +159,9 @@ class TestEnqueuePending:
         from worker.celery_tasks import enqueue_pending
 
         db = AsyncMock()
-        db.execute.return_value = MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))))
+        db.execute.return_value = MagicMock(
+            scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+        )
         mock_session_factory.return_value = _make_async_session_mock(db)
 
         result = enqueue_pending.delay()

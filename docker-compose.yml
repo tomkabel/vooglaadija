@@ -187,12 +187,12 @@ services:
       browser-downloader:
         condition: service_started
     <<: *base-service
-    command: ["python", "-m", "worker.celery_main", "worker"]
+    command: ['python', '-m', 'worker.celery_main', 'worker']
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
       resources:
@@ -208,8 +208,10 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "python -c \"from worker.celery_app import celery_app; inspect = celery_app.control.inspect(); stats = inspect.stats(); print('healthy' if stats else 'unhealthy')\" || exit 1",
+          'CMD-SHELL',
+          'python -c "from worker.celery_app import celery_app; inspect =
+          celery_app.control.inspect(); stats = inspect.stats(); print(''healthy'' if stats else
+          ''unhealthy'')" || exit 1',
         ]
       interval: 30s
       timeout: 10s
@@ -225,8 +227,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *common-env
-      DB_POOL_SIZE: "2"
-      DB_MAX_OVERFLOW: "1"
+      DB_POOL_SIZE: '2'
+      DB_MAX_OVERFLOW: '1'
     volumes:
       - storage:/app/storage:Z
       - celery_beat_data:/tmp/celerybeat:Z
@@ -238,19 +240,19 @@ services:
       redis:
         condition: service_healthy
     <<: *base-service
-    command: ["python", "-m", "worker.celery_main", "beat"]
+    command: ['python', '-m', 'worker.celery_main', 'beat']
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
     deploy:
       resources:
         limits:
-          cpus: "0.25"
+          cpus: '0.25'
           memory: 256M
         reservations:
-          cpus: "0.1"
+          cpus: '0.1'
           memory: 128M
 
   # ==========================================
@@ -265,30 +267,31 @@ services:
       FLOWER_PORT: ${FLOWER_PORT:-5555}
       FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-admin:admin}
     expose:
-      - "5555"
+      - '5555'
     depends_on:
       - worker
       - redis
     <<: *base-service
-    command: ["python", "-m", "worker.celery_main", "flower"]
+    command: ['python', '-m', 'worker.celery_main', 'flower']
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
     deploy:
       resources:
         limits:
-          cpus: "0.5"
+          cpus: '0.5'
           memory: 512M
         reservations:
-          cpus: "0.1"
+          cpus: '0.1'
           memory: 128M
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5555/healthcheck', timeout=5)\" || exit 1",
+          'CMD-SHELL',
+          'python -c "import urllib.request;
+          urllib.request.urlopen(''http://localhost:5555/healthcheck'', timeout=5)" || exit 1',
         ]
       interval: 30s
       timeout: 10s

@@ -1,18 +1,19 @@
 # Migration to Celery Job Queue
 
-Replaces the hand-rolled BRPOP worker with Celery + Redis for durable, observable, horizontally-scalable job processing.
+Replaces the hand-rolled BRPOP worker with Celery + Redis for durable, observable,
+horizontally-scalable job processing.
 
 ## What Changed
 
-| Legacy (BRPOP) | New (Celery) |
-|---|---|
-| `worker/main.py` event loop | `celery-worker` service |
-| Custom Lua scripts for retry | Celery built-in retry with backoff |
-| `retry_queue` Redis sorted set | `retries` Celery queue |
-| DLQ via DB table | `dlq` Celery queue + DB table |
-| `zombie_sweeper.py` | Celery Beat `requeue-stuck-jobs` |
-| Custom outbox relay | Celery Beat `enqueue-pending` |
-| Health server on :8082 | Flower dashboard on :5555 |
+| Legacy (BRPOP)                 | New (Celery)                       |
+| ------------------------------ | ---------------------------------- |
+| `worker/main.py` event loop    | `celery-worker` service            |
+| Custom Lua scripts for retry   | Celery built-in retry with backoff |
+| `retry_queue` Redis sorted set | `retries` Celery queue             |
+| DLQ via DB table               | `dlq` Celery queue + DB table      |
+| `zombie_sweeper.py`            | Celery Beat `requeue-stuck-jobs`   |
+| Custom outbox relay            | Celery Beat `enqueue-pending`      |
+| Health server on :8082         | Flower dashboard on :5555          |
 
 ## Architecture
 
@@ -44,17 +45,18 @@ Replaces the hand-rolled BRPOP worker with Celery + Redis for durable, observabl
 
 ## Queue Design
 
-| Queue | Purpose | Routing Key |
-|---|---|---|
-| `downloads` | New download jobs | `downloads` |
-| `retries` | Retry attempts with delay | `retries` |
-| `dlq` | Permanently failed jobs | `dlq` |
+| Queue       | Purpose                   | Routing Key |
+| ----------- | ------------------------- | ----------- |
+| `downloads` | New download jobs         | `downloads` |
+| `retries`   | Retry attempts with delay | `retries`   |
+| `dlq`       | Permanently failed jobs   | `dlq`       |
 
 ## Deployment
 
 ### Production (any VPS)
 
-No changes needed to `bootstrap.sh` — the `docker-compose.yml` now includes `celery-worker`, `celery-beat`, and `flower` services.
+No changes needed to `bootstrap.sh` — the `docker-compose.yml` now includes `celery-worker`,
+`celery-beat`, and `flower` services.
 
 ### Local Development
 
@@ -85,18 +87,19 @@ python -m worker.celery_main enqueue
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `CELERY_QUEUES` | `downloads,retries,dlq` | Comma-separated queue list |
-| `CELERY_CONCURRENCY` | `2` | Worker concurrency |
-| `FLOWER_PORT` | `5555` | Flower dashboard port |
-| `FLOWER_BASIC_AUTH` | `admin:admin` | Flower HTTP basic auth |
+| Variable             | Default                 | Description                |
+| -------------------- | ----------------------- | -------------------------- |
+| `CELERY_QUEUES`      | `downloads,retries,dlq` | Comma-separated queue list |
+| `CELERY_CONCURRENCY` | `2`                     | Worker concurrency         |
+| `FLOWER_PORT`        | `5555`                  | Flower dashboard port      |
+| `FLOWER_BASIC_AUTH`  | `admin:admin`           | Flower HTTP basic auth     |
 
 ## Monitoring
 
 ### Flower Dashboard
 
 Access at `http://localhost:5555` to view:
+
 - Active/received/succeeded/failed tasks
 - Worker status and concurrency
 - Queue lengths
@@ -104,32 +107,34 @@ Access at `http://localhost:5555` to view:
 
 ### Key Metrics
 
-| Metric | Description |
-|---|---|
+| Metric                             | Description                |
+| ---------------------------------- | -------------------------- |
 | `vooglaadija_jobs_completed_total` | Jobs completed (by status) |
-| `vooglaadija_job_duration_seconds` | Job processing duration |
-| `vooglaadija_dlq_depth` | Dead-letter queue size |
-| `vooglaadija_queue_depth` | Combined queue depth |
+| `vooglaadija_job_duration_seconds` | Job processing duration    |
+| `vooglaadija_dlq_depth`            | Dead-letter queue size     |
+| `vooglaadija_queue_depth`          | Combined queue depth       |
 
 ## Retry Behavior
 
 Celery tasks use exponential backoff with jitter:
 
 | Attempt | Base Delay | Max Delay |
-|---|---|---|
-| 1 | 10s | 15s |
-| 2 | 20s | 30s |
-| 3 | 40s | 60s |
+| ------- | ---------- | --------- |
+| 1       | 10s        | 15s       |
+| 2       | 20s        | 30s       |
+| 3       | 40s        | 60s       |
 
 Max 3 retries per task (configurable via `task_max_retries`).
 
 ## Backward Compatibility
 
-The legacy Redis list keys (`download_queue`, `retry_queue`, `circuit_deferred_queue`) are no longer used.
+The legacy Redis list keys (`download_queue`, `retry_queue`, `circuit_deferred_queue`) are no longer
+used.
 
 ### Migration Procedure
 
-1. **Stop the legacy worker** before deploying the new Celery worker to prevent duplicate processing.
+1. **Stop the legacy worker** before deploying the new Celery worker to prevent duplicate
+   processing.
 2. **Deploy** the new Celery worker and Beat scheduler.
 3. **Drain existing pending jobs** from the database into Celery:
 
@@ -144,7 +149,8 @@ python -m worker.celery_main enqueue
 SELECT id, status, retry_count FROM download_jobs WHERE status = 'pending';
 ```
 
-Jobs stuck in `pending` after the worker has been running for several minutes indicate a configuration issue.
+Jobs stuck in `pending` after the worker has been running for several minutes indicate a
+configuration issue.
 
 ## Rollback
 
