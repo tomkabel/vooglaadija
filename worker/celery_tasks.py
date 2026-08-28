@@ -183,21 +183,11 @@ async def _handle_result(db, job: DownloadJob, result: dict) -> None:
 
 
 async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -> None:
-    """Move a permanently failed job to the dead-letter queue."""
-    await db.execute(
-        update(DownloadJob)
-        .where(DownloadJob.id == job.id, DownloadJob.status == "processing")
-        .values(
-            status="failed",
-            error=str(error),
-            last_error=str(error),
-            error_category=classification.category.value,
-            completed_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
-        )
-    )
-    await db.commit()
+    """Move a permanently failed job to the dead-letter queue.
 
+    Both the DownloadJob status update and FailedJob insertion happen in a
+    single transaction so either both records persist or neither does.
+    """
     failed = FailedJob(
         id=__import__("uuid").uuid4(),
         original_job_id=job.id,
@@ -211,6 +201,19 @@ async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -
         title=job.title,
         failed_at=datetime.now(UTC),
         expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+
+    await db.execute(
+        update(DownloadJob)
+        .where(DownloadJob.id == job.id, DownloadJob.status == "processing")
+        .values(
+            status="failed",
+            error=str(error),
+            last_error=str(error),
+            error_category=classification.category.value,
+            completed_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
     )
     db.add(failed)
     await db.commit()
@@ -414,14 +417,20 @@ def requeue_stuck_jobs(timeout_minutes: int = 15) -> dict:
 def enqueue_pending() -> dict:
     """Enqueue all pending jobs in the database that are not already queued.
 
-    Useful for recovery after a Celery restart.
+    Filters out retry-scheduled jobs (next_retry_at in the future) to avoid
+    duplicate broker messages. Idempotent — process_download's atomic UPDATE
+    WHERE status='pending' guard prevents double-processing.
     """
     session_factory = get_async_session_factory()
 
     async def _enqueue():
         async with session_factory() as db:
+            now = datetime.now(UTC)
             result = await db.execute(
-                select(DownloadJob.id).where(DownloadJob.status == "pending")
+                select(DownloadJob.id).where(
+                    DownloadJob.status == "pending",
+                    (DownloadJob.next_retry_at.is_(None)) | (DownloadJob.next_retry_at <= now),
+                )
             )
             pending_ids = result.scalars().all()
             count = 0

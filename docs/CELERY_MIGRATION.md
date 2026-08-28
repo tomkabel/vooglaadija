@@ -125,14 +125,26 @@ Max 3 retries per task (configurable via `task_max_retries`).
 
 ## Backward Compatibility
 
-The legacy Redis list keys (`download_queue`, `retry_queue`, `circuit_deferred_queue`) are no longer used. Existing queued jobs will be processed by the legacy worker during migration.
+The legacy Redis list keys (`download_queue`, `retry_queue`, `circuit_deferred_queue`) are no longer used.
 
-To migrate existing pending jobs:
+### Migration Procedure
+
+1. **Stop the legacy worker** before deploying the new Celery worker to prevent duplicate processing.
+2. **Deploy** the new Celery worker and Beat scheduler.
+3. **Drain existing pending jobs** from the database into Celery:
 
 ```bash
 # Enqueue all pending jobs in the database
 python -m worker.celery_main enqueue
 ```
+
+4. **Verify** that affected database jobs remain `pending` or move to `processing`:
+
+```sql
+SELECT id, status, retry_count FROM download_jobs WHERE status = 'pending';
+```
+
+Jobs stuck in `pending` after the worker has been running for several minutes indicate a configuration issue.
 
 ## Rollback
 

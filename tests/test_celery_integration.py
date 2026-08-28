@@ -7,7 +7,8 @@ Tests verify that:
 4. Queue routing is correct
 """
 
-from unittest.mock import MagicMock, patch
+import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,8 +16,6 @@ import pytest
 @pytest.fixture(autouse=True)
 def _celery_eager():
     """Configure Celery to execute tasks synchronously for testing."""
-    import os
-
     os.environ["CELERY_TASK_ALWAYS_EAGER"] = "1"
     os.environ["CELERY_TASK_EAGER_PROPAGATES"] = "1"
     yield
@@ -33,6 +32,23 @@ def celery_app():
     return app
 
 
+def _make_async_session_mock(db=None):
+    """Build a mock session factory that supports ``async with``.
+
+    Returns a factory callable whose return value is an async context manager
+    whose ``__aenter__`` yields ``db`` (or a ``MagicMock`` by default).
+    """
+    if db is None:
+        db = AsyncMock()
+    session = db
+    factory = MagicMock()
+    factory.return_value = MagicMock(
+        __aenter__=AsyncMock(return_value=session),
+        __aexit__=AsyncMock(return_value=False),
+    )
+    return factory
+
+
 class TestCeleryApp:
     """Tests for Celery application configuration."""
 
@@ -43,12 +59,12 @@ class TestCeleryApp:
 
     def test_app_has_result_backend(self, celery_app):
         """Verify result backend is configured."""
-        assert celery_app.conf.backend
-        assert "redis" in celery_app.conf.backend
+        assert celery_app.conf.result_backend
+        assert "redis" in celery_app.conf.result_backend
 
     def test_app_has_required_queues(self, celery_app):
         """Verify required queues are configured."""
-        queue_names = {q.name for q in celery_app.conf.task_queues.values()}
+        queue_names = {q.name for q in celery_app.conf.task_queues}
         assert "downloads" in queue_names
         assert "retries" in queue_names
         assert "dlq" in queue_names
@@ -59,6 +75,7 @@ class TestCeleryApp:
         assert "cleanup-expired-jobs" in schedule
         assert "cleanup-dlq" in schedule
         assert "requeue-stuck-jobs" in schedule
+        assert "enqueue-pending" in schedule
 
     def test_task_routes_configured(self, celery_app):
         """Verify task routes are configured."""
@@ -75,27 +92,26 @@ class TestProcessDownloadTask:
         """Verify task handles non-existent job gracefully."""
         from worker.celery_tasks import process_download
 
-        # Mock the session factory
-        mock_session = MagicMock()
-        mock_session_factory.return_value = MagicMock()
-        mock_session_factory.return_value.return_value.__aenter__ = MagicMock(return_value=mock_session)
-        mock_session_factory.return_value.return_value.__aexit__ = MagicMock(return_value=False)
+        db = AsyncMock()
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        mock_session_factory.return_value = _make_async_session_mock(db)
 
         result = process_download.apply(args=["00000000-0000-0000-0000-000000000000"])
         assert result.successful()
+        assert result.result == {"status": "skipped", "reason": "not_found_or_not_pending"}
 
     @patch("worker.celery_tasks.get_async_session_factory")
     def test_process_download_skips_non_pending_job(self, mock_session_factory, celery_app):
         """Verify task skips jobs not in pending state."""
         from worker.celery_tasks import process_download
 
-        mock_session = MagicMock()
-        mock_session_factory.return_value = MagicMock()
-        mock_session_factory.return_value.return_value.__aenter__ = MagicMock(return_value=mock_session)
-        mock_session_factory.return_value.return_value.__aexit__ = MagicMock(return_value=False)
+        db = AsyncMock()
+        db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        mock_session_factory.return_value = _make_async_session_mock(db)
 
         result = process_download.apply(args=["00000000-0000-0000-0000-000000000000"])
         assert result.successful()
+        assert result.result == {"status": "skipped", "reason": "not_found_or_not_pending"}
 
 
 class TestRetryBehavior:
@@ -142,10 +158,10 @@ class TestEnqueuePending:
         """Verify enqueue_pending returns the count of enqueued jobs."""
         from worker.celery_tasks import enqueue_pending
 
-        mock_session = MagicMock()
-        mock_session_factory.return_value = MagicMock()
-        mock_session_factory.return_value.return_value.__aenter__ = MagicMock(return_value=mock_session)
-        mock_session_factory.return_value.return_value.__aexit__ = MagicMock(return_value=False)
+        db = AsyncMock()
+        db.execute.return_value = MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[]))))
+        mock_session_factory.return_value = _make_async_session_mock(db)
 
         result = enqueue_pending.delay()
         assert result.successful()
+        assert result.result == {"enqueued": 0}

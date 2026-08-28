@@ -14,6 +14,7 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Exchange, Queue
 
 from core.config import settings
 
@@ -64,20 +65,11 @@ def get_celery_app() -> Celery:
 
         # Queue configuration
         task_default_queue="downloads",
-        task_queues={
-            "downloads": {
-                "exchange": "downloads",
-                "routing_key": "downloads",
-            },
-            "retries": {
-                "exchange": "retries",
-                "routing_key": "retries",
-            },
-            "dlq": {
-                "exchange": "dlq",
-                "routing_key": "dlq",
-            },
-        },
+        task_queues=[
+            Queue("downloads", Exchange("downloads"), routing_key="downloads"),
+            Queue("retries", Exchange("retries"), routing_key="retries"),
+            Queue("dlq", Exchange("dlq"), routing_key="dlq"),
+        ],
 
         # Routing
         task_routes={
@@ -99,6 +91,10 @@ def get_celery_app() -> Celery:
             "requeue-stuck-jobs": {
                 "task": "worker.celery_tasks.requeue_stuck_jobs",
                 "schedule": crontab(minute="*/15"),
+            },
+            "enqueue-pending": {
+                "task": "worker.celery_tasks.enqueue_pending",
+                "schedule": crontab(minute="*/2"),
             },
         },
     )
