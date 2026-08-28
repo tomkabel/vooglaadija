@@ -127,10 +127,10 @@ See the [Terms of Service](/web/terms) for full details.
 
 ### Production (any VPS — plug-n-play)
 
-Pull the repo onto any VPS and run the bootstrap. It asks for your domain and an optional
-Cloudflare API token, then provisions Docker, generates production secrets into `./.env`,
-sets up the Caddyfile + TLS origin cert and deploys the full stack behind a standalone Caddy
-reverse proxy (ports 80/443) — no Coolify:
+Pull the repo onto any VPS and run the bootstrap. It asks for your domain and an optional Cloudflare
+API token, then provisions Docker, generates production secrets into `./.env`, sets up the
+Caddyfile + TLS origin cert and deploys the full stack behind a standalone Caddy reverse proxy
+(ports 80/443) — no Coolify:
 
 ```bash
 git clone https://github.com/tomkabel/vooglaadija.git
@@ -139,8 +139,8 @@ sudo ./deploy/bootstrap.sh
 ```
 
 > The domain's DNS must already point at the server (or you supply a Cloudflare token so the
-> bootstrap can create the records). The final public `https://<domain>/health` check requires
-> a proxied (orange-cloud) record so Cloudflare's edge certificate is presented.
+> bootstrap can create the records). The final public `https://<domain>/health` check requires a
+> proxied (orange-cloud) record so Cloudflare's edge certificate is presented.
 
 See [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for details.
 
@@ -274,19 +274,19 @@ bloat, combining duplication, and flagging over-engineering against the architec
 
 ## Tech Stack
 
-| Technology     | Purpose                                    |
-| -------------- | ------------------------------------------ |
-| Python 3.12+   | Runtime                                    |
-| FastAPI        | API framework                              |
-| SQLAlchemy     | ORM                                        |
-| PostgreSQL     | Database                                   |
-| Redis          | Queue and cache                            |
-| Docker         | Containerization                           |
-| Caddy          | Reverse proxy + TLS (standalone)   |
-| Tailwind CSS   | Frontend styling                           |
-| Prometheus     | Metrics                                    |
-| sse-starlette  | Real-time updates                          |
-| GitHub Actions | CI/CD                                      |
+| Technology     | Purpose                          |
+| -------------- | -------------------------------- |
+| Python 3.12+   | Runtime                          |
+| FastAPI        | API framework                    |
+| SQLAlchemy     | ORM                              |
+| PostgreSQL     | Database                         |
+| Redis          | Queue and cache                  |
+| Docker         | Containerization                 |
+| Caddy          | Reverse proxy + TLS (standalone) |
+| Tailwind CSS   | Frontend styling                 |
+| Prometheus     | Metrics                          |
+| sse-starlette  | Real-time updates                |
+| GitHub Actions | CI/CD                            |
 
 ### Runtime Dependencies
 
@@ -328,8 +328,8 @@ The API server handles authentication, job management, HTMX rendering, SSE strea
 observability. The worker consumes jobs from Redis, extracts media via yt-dlp, and manages file
 lifecycle. Production deployments run on any VPS behind a standalone Caddy reverse proxy (see
 [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)); Caddy terminates TLS with an origin
-certificate for Cloudflare. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full
-diagram and component details.
+certificate for Cloudflare. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full diagram
+and component details.
 
 ---
 

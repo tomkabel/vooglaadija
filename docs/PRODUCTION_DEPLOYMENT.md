@@ -31,11 +31,11 @@ over the default compose network. If Caddy is down, Cloudflare returns **HTTP 52
 ## Prerequisites
 
 - A VPS with **≥ 4 GB RAM** (2 GB minimum), Ubuntu/Debian or any systemd Linux distro
-- A domain you control, ideally DNS-managed by **Cloudflare** (the script can auto-create the
-  A records with a token; otherwise set them manually)
-- Optional: a Cloudflare API token with **Zone → DNS → Edit** permission for that zone
-  (create at <https://dash.cloudflare.com/profile/api-tokens>; only needs `Zone.Zone Read` +
-  `Zone.DNS Edit`) — only required for automatic DNS provisioning, not for the app itself
+- A domain you control, ideally DNS-managed by **Cloudflare** (the script can auto-create the A
+  records with a token; otherwise set them manually)
+- Optional: a Cloudflare API token with **Zone → DNS → Edit** permission for that zone (create at
+  <https://dash.cloudflare.com/profile/api-tokens>; only needs `Zone.Zone Read` + `Zone.DNS Edit`) —
+  only required for automatic DNS provisioning, not for the app itself
 
 ## Quick Start
 
@@ -50,28 +50,28 @@ sudo ./deploy/bootstrap.sh
 
 You will be asked for:
 
-1. **Domain** — e.g. `app.example.com` (the script also provisions the `*.app.example.com`
-   wildcard A record if you provide a Cloudflare token)
-2. **Cloudflare API token** (optional) — used to auto-create the DNS records; leave empty to
-   manage DNS manually
+1. **Domain** — e.g. `app.example.com` (the script also provisions the `*.app.example.com` wildcard
+   A record if you provide a Cloudflare token)
+2. **Cloudflare API token** (optional) — used to auto-create the DNS records; leave empty to manage
+   DNS manually
 
-> **DNS precondition (no token / `SKIP_DNS=1`):** the A record for the domain must already
-> exist and resolve to this server before the bootstrap's public `https://<domain>/health`
-> check can pass. For that check to verify cleanly, the record should be **proxied**
-> (orange cloud, so Cloudflare's public edge certificate is presented) — a grey-clouded
-> record pointing straight at the server will expose the self-signed origin certificate,
-> and the TLS verification in the final health check will reject it.
+> **DNS precondition (no token / `SKIP_DNS=1`):** the A record for the domain must already exist and
+> resolve to this server before the bootstrap's public `https://<domain>/health` check can pass. For
+> that check to verify cleanly, the record should be **proxied** (orange cloud, so Cloudflare's
+> public edge certificate is presented) — a grey-clouded record pointing straight at the server will
+> expose the self-signed origin certificate, and the TLS verification in the final health check will
+> reject it.
 
 The script then:
 
 1. Installs Docker Engine + Compose plugin
 2. Verifies/creates the Cloudflare DNS records (skipped without a token)
 3. Generates `./.env` with random secrets (DB password, Redis password, JWT key, Grafana admin) —
-   existing secrets are **preserved** on re-runs so the initialized PostgreSQL/Redis volumes
-   stay in sync
+   existing secrets are **preserved** on re-runs so the initialized PostgreSQL/Redis volumes stay in
+   sync
 4. Generates the `Caddyfile` and a self-signed TLS origin certificate for the domain
-5. Brings up the stack with the standalone Caddy reverse proxy
-   (`docker-compose.yml` + `docker-compose.local.yml` + `docker-compose.caddy.yml`)
+5. Brings up the stack with the standalone Caddy reverse proxy (`docker-compose.yml` +
+   `docker-compose.local.yml` + `docker-compose.caddy.yml`)
 6. Polls `https://<domain>/health` until healthy (also verifies the local `:443` path first)
 
 Non-interactive (CI-friendly) mode — provide the values through environment variables (exported
@@ -85,11 +85,11 @@ sudo ./deploy/bootstrap.sh --non-interactive
 
 ## TLS / certificates
 
-- Caddy serves a **self-signed origin certificate** for `your-domain.com` so the
-  Cloudflare → origin leg is encrypted. Set Cloudflare SSL/TLS mode to **Full** (the self-signed
-  cert is enough; use "Full (strict)" only with a Cloudflare Origin CA cert).
-- Plain HTTP `:80` **redirects to HTTPS** (Caddy `redir`), so credentials are never accepted
-  over cleartext. Cloudflare "Flexible" mode is **not** supported — use "Full".
+- Caddy serves a **self-signed origin certificate** for `your-domain.com` so the Cloudflare → origin
+  leg is encrypted. Set Cloudflare SSL/TLS mode to **Full** (the self-signed cert is enough; use
+  "Full (strict)" only with a Cloudflare Origin CA cert).
+- Plain HTTP `:80` **redirects to HTTPS** (Caddy `redir`), so credentials are never accepted over
+  cleartext. Cloudflare "Flexible" mode is **not** supported — use "Full".
 - If you later grey-cloud the DNS (direct traffic, no Cloudflare), change the `tls` line in the
   `Caddyfile` to `tls internal` and Caddy will auto-issue a real Let's Encrypt certificate.
 
@@ -162,14 +162,14 @@ Images are built locally from the checkout (no GHCR pull required).
 
 ## Troubleshooting
 
-| Symptom                                         | Fix                                                                                                                                                              |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `https://<domain>` returns 502/504              | Check the API container: `docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml logs api`                                  |
+| Symptom                                           | Fix                                                                                                                                                                                                                                                |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://<domain>` returns 502/504                | Check the API container: `docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml logs api`                                                                                                                   |
 | Cloudflare returns **HTTP 521** (web server down) | The Caddy container isn't running or 80/443 aren't listening on this origin. Check `docker ps --filter name=caddy`; if missing, start with the standalone command above (`-f docker-compose.caddy.yml`). Verify `ss -tlnp \| grep -E ':80\|:443'`. |
-| Certificate not accepted by Cloudflare          | Set Cloudflare SSL/TLS mode to **Full** (self-signed origin cert). For "Full (strict)", use a Cloudflare Origin CA cert instead.                                  |
-| Wildcard subdomains don't resolve               | DNS only: create `*.domain` A record pointing at this server (bootstrap does this automatically when the token permits). The generated Caddyfile routes only the exact domain; wildcard hosts that *do* resolve are not proxied by Caddy. |
-| Container stuck restarting                      | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars in `.env` (DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY)  |
-| Deploy doesn't pick up new code                 | Rebuild: `docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d --build`                                            |
+| Certificate not accepted by Cloudflare            | Set Cloudflare SSL/TLS mode to **Full** (self-signed origin cert). For "Full (strict)", use a Cloudflare Origin CA cert instead.                                                                                                                   |
+| Wildcard subdomains don't resolve                 | DNS only: create `*.domain` A record pointing at this server (bootstrap does this automatically when the token permits). The generated Caddyfile routes only the exact domain; wildcard hosts that _do_ resolve are not proxied by Caddy.          |
+| Container stuck restarting                        | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars in `.env` (DB_PASSWORD, REDIS_PASSWORD, SECRET_KEY)                                                                                    |
+| Deploy doesn't pick up new code                   | Rebuild: `docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.caddy.yml up -d --build`                                                                                                                              |
 
 ## Migrating an existing deployment
 

@@ -6,24 +6,24 @@
 
 ## Technology Stack
 
-| Category      | Technology                          | Notes                                     |
-| ------------- | ----------------------------------- | ----------------------------------------- |
-| Container     | Docker + BuildKit                   | Multi-arch (amd64 + arm64)                |
-| Orchestration | Docker Compose                      | Single compose file + optional profiles   |
+| Category      | Technology                          | Notes                                                 |
+| ------------- | ----------------------------------- | ----------------------------------------------------- |
+| Container     | Docker + BuildKit                   | Multi-arch (amd64 + arm64)                            |
+| Orchestration | Docker Compose                      | Single compose file + optional profiles               |
 | Registry      | GitHub Container Registry (ghcr.io) | Images built in CI (optional; local builds supported) |
-| Reverse Proxy | Caddy (standalone, port 80/443)     | TLS origin cert for Cloudflare, HTTP/3    |
-| TLS           | Self-signed origin cert via Caddy   | Served to Cloudflare (SSL/TLS mode Full)  |
-| Monitoring    | Prometheus + Grafana                | Optional `monitoring` profile             |
-| Backups       | pg_dump cron (alpine)               | Optional `backup` profile                 |
-| Logging       | Docker `json-file` + rotation       | No host plugin required                   |
+| Reverse Proxy | Caddy (standalone, port 80/443)     | TLS origin cert for Cloudflare, HTTP/3                |
+| TLS           | Self-signed origin cert via Caddy   | Served to Cloudflare (SSL/TLS mode Full)              |
+| Monitoring    | Prometheus + Grafana                | Optional `monitoring` profile                         |
+| Backups       | pg_dump cron (alpine)               | Optional `backup` profile                             |
+| Logging       | Docker `json-file` + rotation       | No host plugin required                               |
 
 ## Compose Files
 
-| File                        | Environment       | Services                                                                                 |
-| --------------------------- | ----------------- | ---------------------------------------------------------------------------------------- |
-| `docker-compose.yml`        | Production + dev  | api, worker, db, redis, storage-init, otel-collector (+ `monitoring`, `backup` profiles) |
-| `docker-compose.local.yml`  | Local development | Build targets + loopback debug ports                                                     |
-| `docker-compose.caddy.yml`  | Production       | Standalone Caddy reverse proxy (ports 80/443) — the only public entry point              |
+| File                       | Environment       | Services                                                                                 |
+| -------------------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| `docker-compose.yml`       | Production + dev  | api, worker, db, redis, storage-init, otel-collector (+ `monitoring`, `backup` profiles) |
+| `docker-compose.local.yml` | Local development | Build targets + loopback debug ports                                                     |
+| `docker-compose.caddy.yml` | Production        | Standalone Caddy reverse proxy (ports 80/443) — the only public entry point              |
 
 `docker-compose.production.yml`, `docker-compose.demo.yml`, `docker-compose.monitoring.yml`,
 `docker-compose.test.yml` and the nginx/certbot infrastructure were removed — optional services are
