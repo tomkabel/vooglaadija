@@ -515,6 +515,7 @@ class YtDlpProcessPool:
             for _ in range(self._size)
         ]
         self._started = False
+        self._shutting_down = False
 
     async def _drain_stderr(self, slot: dict) -> None:
         """Continuously consume a slot's stderr, retaining recent lines.
@@ -555,6 +556,8 @@ class YtDlpProcessPool:
         never double-spawn it; the spawn/handshake itself runs outside the lock.
         """
         if slot["starting"]:
+            return False
+        if self._shutting_down:
             return False
         slot["starting"] = True
         try:
@@ -615,17 +618,31 @@ class YtDlpProcessPool:
                 slot["proc"] = None
                 return False
 
+            # A shutdown started while we were handshaking: kill the fresh
+            # driver so it never lands in the just-discarded pool.
+            if self._shutting_down:
+                await _kill_process_group(proc, graceful=True)
+                await self._stop_stderr_reader(slot)
+                slot["proc"] = None
+                return False
+
             slot["ready"] = True
             return True
         finally:
             slot["starting"] = False
 
     async def ensure_started(self) -> None:
-        """Start all slots concurrently (idempotent). Best-effort: dead slots simply stay None."""
-        if self._started:
+        """Start all slots concurrently (idempotent). Best-effort: dead slots simply stay None.
+
+        Bails out once ``_shutting_down`` is set: a pool instance that has
+        been (or is being) shut down must never spawn drivers again — the
+        singleton is dropped and a fresh instance created on the next
+        ``_get_pool()`` call instead.
+        """
+        if self._started or self._shutting_down:
             return
         async with self._lock:
-            if self._started:
+            if self._started or self._shutting_down:
                 return
             self._started = True
         # Spawn/handshake outside the lock so a slow slot can't stall
@@ -646,6 +663,11 @@ class YtDlpProcessPool:
         concurrent checkouts from double-spawning a slot.
         """
         async with self._lock:
+            if self._shutting_down:
+                # Never spawn a replacement into a pool that has been (or is
+                # being) shut down: the fresh driver would be left to linger
+                # outside shutdown()'s kill loop.
+                return None
             for slot in self._slots:
                 if slot["busy"] or slot["starting"]:
                     continue
@@ -805,6 +827,7 @@ class YtDlpProcessPool:
     async def shutdown(self) -> None:
         """Kill all live drivers, stop their stderr readers, and reset the pool."""
         async with self._lock:
+            self._shutting_down = True
             for slot in self._slots:
                 proc = slot["proc"]
                 if proc is not None and proc.returncode is None:
@@ -842,6 +865,18 @@ def _get_pool() -> YtDlpProcessPool | None:
             _pool_failed = True
             return None
     return _pool
+
+
+async def shutdown_yt_dlp_pool() -> None:
+    """Terminate the warm pool singleton and drop it (called on app shutdown).
+
+    A no-op when the pool was never created (disabled, unavailable, or under
+    TESTING). Idempotent: a second call finds ``_pool`` already None.
+    """
+    global _pool
+    if _pool is not None:
+        await _pool.shutdown()
+        _pool = None
 
 
 async def _extract_via_subprocess(
