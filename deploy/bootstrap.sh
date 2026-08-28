@@ -181,7 +181,7 @@ gather_inputs() {
 
   # The Cloudflare token is only needed for automatic DNS provisioning.
   # SKIP_DNS=1 or an interactive 'no' allows a fully manual DNS setup.
-  if ! $SKIP_DNS; then
+  if [[ "$SKIP_DNS" != "true" ]]; then
     if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
       if $NON_INTERACTIVE; then
         log_warn "CLOUDFLARE_API_TOKEN not set — skipping automatic DNS provisioning (set SKIP_DNS=1 to silence)."
@@ -205,7 +205,10 @@ cloudflare_api() { # method path [data]
 }
 
 dns_setup() {
-  $SKIP_DNS && { log_info "Skipping DNS provisioning (SKIP_DNS). Ensure A records for $DEPLOY_DOMAIN and *.$DEPLOY_DOMAIN point to $PUBLIC_IP."; return 0; }
+  if [[ "$SKIP_DNS" == "true" ]]; then
+    log_info "Skipping DNS provisioning (SKIP_DNS). Ensure A records for $DEPLOY_DOMAIN and *.$DEPLOY_DOMAIN point to $PUBLIC_IP."
+    return 0
+  fi
   log_step "Phase 2: DNS verification (Cloudflare)"
 
   # Resolve the Cloudflare zone for DEPLOY_DOMAIN. The domain is often a
@@ -243,38 +246,47 @@ except Exception:
   log_info "Matched Cloudflare zone: ${zone_name:-$DEPLOY_DOMAIN}"
 
   # Ensure apex + wildcard A records point to this server (create if missing).
-  # Records are created *proxied* (orange cloud) so Cloudflare terminates TLS
-  # with its public edge certificate — that is what the public https://<domain>
-  # health check validates. A grey-clouded (direct) record would expose the
-  # self-signed origin certificate to the check and make bootstrap fail.
+  # Records are created/kept *proxied* (orange cloud) so Cloudflare terminates
+  # TLS with its public edge certificate — that is what the public
+  # https://<domain> health check validates. A grey-clouded (direct) record
+  # would expose the self-signed origin certificate to the check and make
+  # bootstrap fail.
   for name in "$DEPLOY_DOMAIN" "*.$DEPLOY_DOMAIN"; do
-    local records record_id
+    local records record_id rproxied
     records=$(cloudflare_api GET "/zones/${zone_id}/dns_records?type=A&name=${name}" || true)
+    # Match by name only: a same-name A record that points elsewhere is
+    # *updated* (PATCH) rather than duplicated, so DNS keeps a single record.
     record_id=$(printf '%s' "$records" | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
-    hits = [r for r in d.get('result', []) if r.get('content') == sys.argv[1]]
+    hits = d.get('result', [])
     if hits:
         print(hits[0]['id'] + '|' + str(hits[0].get('proxied', False)))
     else:
         print('')
 except Exception:
     print('')
-" "$PUBLIC_IP")
+")
     if [[ -n "$record_id" ]]; then
-      local rid rproxied
+      local rid patch
       rid="${record_id%%|*}"
       rproxied="${record_id#*|}"
-      if [[ "$rproxied" == "True" ]]; then
-        log_info "DNS OK: $name → $PUBLIC_IP (proxied)"
+      patch=$(cloudflare_api PATCH "/zones/${zone_id}/dns_records/${rid}" \
+        "{\"content\":\"${PUBLIC_IP}\",\"ttl\":120,\"proxied\":true}" || true)
+      if printf '%s' "$patch" | grep -q '"success":true'; then
+        if [[ "$rproxied" == "True" ]]; then
+          log_info "DNS OK: $name → $PUBLIC_IP (proxied)"
+        else
+          log_info "DNS record '$name' updated → $PUBLIC_IP (Cloudflare proxy enabled)"
+        fi
       else
-        log_info "DNS record '$name' exists but is grey-clouded — enabling the Cloudflare proxy (orange cloud)..."
-        cloudflare_api PATCH "/zones/${zone_id}/dns_records/${rid}" '{"proxied":true}' >/dev/null || true
-        log_info "Proxy enabled for $name"
+        log_warn "Failed to update DNS record '$name':"
+        printf '%s\n' "$patch" | head -c 400
+        echo ""
       fi
     else
-      log_warn "No A record found for '$name' pointing to $PUBLIC_IP."
+      log_warn "No A record found for '$name'."
       if confirm "Create A record '$name' → $PUBLIC_IP in Cloudflare (proxied)?"; then
         local created
         created=$(cloudflare_api POST "/zones/${zone_id}/dns_records" \
