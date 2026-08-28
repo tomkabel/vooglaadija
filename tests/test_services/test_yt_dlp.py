@@ -594,7 +594,7 @@ class TestPoolResilience:
         """WARNING fix: a request beyond the live-worker capacity fails fast."""
         pool = YtDlpProcessPool(size=1, timeout=5)
         # One worker checked out and in flight, free queue empty.
-        pool._workers = [_make_fake_worker([b"{}"]) ]
+        pool._workers = [_make_fake_worker([b"{}"])]
         pool._checked_out = 1
         pool._started = True  # skip (real) startup; we only exercise the checkout guard
         pool._free._queue.clear()
