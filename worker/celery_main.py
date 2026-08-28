@@ -101,26 +101,33 @@ def start_beat() -> None:
         "--scheduler",
         "celery.beat.PersistentScheduler",
         "--schedule",
-        "/tmp/celerybeat-schedule",  # noqa: S108
+        "/var/lib/celerybeat/celerybeat-schedule",  # noqa: S108
     ]
 
     celery_app.start(argv)
 
 
 def start_flower() -> None:
-    """Start the Flower monitoring dashboard."""
-    from worker.celery_app import celery_app
+    """Start the Flower monitoring dashboard.
+
+    Flower is started as a standalone command (not through celery_app.start)
+    to avoid issues with the health heartbeat thread and Celery worker state.
+    Flower connects directly to Redis as a broker API client.
+    """
+    import subprocess
 
     port = int(os.environ.get("FLOWER_PORT", "5555"))
     logger.info("starting_flower", port=port)
 
-    argv = [
+    cmd = [
+        "celery",
+        "-A",
+        "worker.celery_app",
         "flower",
         f"--port={port}",
-        "--broker_api=" + settings.redis_url,
+        f"--broker_api={settings.redis_url}",
     ]
-
-    celery_app.start(argv)
+    subprocess.run(cmd)
 
 
 def enqueue_pending_jobs() -> int:

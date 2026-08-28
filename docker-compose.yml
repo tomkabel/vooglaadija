@@ -240,7 +240,7 @@ services:
       - storage:/app/storage:Z
       # Named volume holds the PersistentScheduler schedule file
       # (`/tmp/celerybeat-schedule`) so last-run state survives restarts.
-      - celery_beat_data:/tmp:Z
+      - celery_beat_data:/var/lib/celerybeat:z
     tmpfs:
       - /var/run
       - /var/cache
@@ -259,7 +259,7 @@ services:
         max-size: '10m'
         max-file: '3'
     healthcheck:
-      test: ['CMD-SHELL', 'test -f /tmp/celerybeat-schedule && exit 0 || exit 1']
+      test: ['CMD-SHELL', 'test -f /var/lib/celerybeat/celerybeat-schedule && exit 0 || exit 1']
       interval: 30s
       timeout: 10s
       retries: 3

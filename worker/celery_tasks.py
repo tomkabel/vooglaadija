@@ -251,7 +251,12 @@ async def _move_to_dlq(
     try:
         handle_failed_job.delay(str(job.id), str(error))
     except Exception:
-        _sync_logger.warning("dlq_handler_dispatch_failed", job_id=str(job.id), exc_info=True)
+        _sync_logger.warning(
+            "dlq_handler_dispatch_failed",
+            job_id=str(job.id),
+            error=str(error),
+            exc_info=True,
+        )
 
 
 async def _requeue_job(job_id: UUID, db: AsyncSession) -> None:
