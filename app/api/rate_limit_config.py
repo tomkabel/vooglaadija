@@ -40,7 +40,7 @@ def _resolve_redis_storage_url() -> str:
     if explicit:
         return explicit
 
-    if os.environ.get("REDIS_HOST") or os.environ.get("REDIS_PORT"):
+    if os.environ.get("REDIS_HOST") or os.environ.get("REDIS_PORT") or os.environ.get("REDIS_PASSWORD"):
         host = os.environ.get("REDIS_HOST", "redis")
         port = os.environ.get("REDIS_PORT", "6379")
         password = os.environ.get("REDIS_PASSWORD")
