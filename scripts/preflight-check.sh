@@ -143,7 +143,7 @@ check_port_conflicts() {
         proj=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid" 2>/dev/null || true)
         svc=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$cid" 2>/dev/null || true)
         [[ -n "$compose_project" && "$proj" != "$compose_project" ]] && continue
-        [[ -n "$svc" && "$svc" != "caddy" ]] && continue
+        [[ "$svc" != "caddy" ]] && continue
         if docker port "$cid" "$port/tcp" >/dev/null 2>&1; then
           caddy_owns=true
           break
