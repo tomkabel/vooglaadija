@@ -63,7 +63,7 @@ class TestMediaParsing:
     def _page(self, with_video: bool = True) -> str:
         """Build an article-page fixture, optionally embedding a video."""
         head = (
-            '<html><head>'
+            "<html><head>"
             '<meta property="og:title" content="VIDEO ja FOTOD | Nimekiri lukus">'
             "<title>fallback</title></head><body>"
         )
@@ -109,7 +109,7 @@ class TestMediaParsing:
         second_media = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         page = (
             '<div id="media-video-' + first_media + '"></div>'
-            f'<script>window.__NUXT__={{config:{{media:'
+            f"<script>window.__NUXT__={{config:{{media:"
             f'"https:\\u002F\\u002Fcdn.jwplayer.com\\u002Fmanifests\\u002F{self.MANIFEST_ID}.m3u8",'
             f'"\\u003Cdiv data-id={second_media} data-type=VIDEO}}'
             "</script>"
