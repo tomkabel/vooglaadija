@@ -245,8 +245,13 @@ async def _move_to_dlq(
     DLQ_DEPTH.inc()
 
     # Dispatch the DLQ handler to the dedicated `dlq` Celery queue (routed via
-    # task_routes) for alerting/notification hooks.
-    handle_failed_job.delay(str(job.id), str(error))
+    # task_routes) for alerting/notification hooks. The DownloadJob/FailedJob
+    # rows are already committed above, so a broker hiccup here must not
+    # propagate and be mistaken for a failed DLQ commit.
+    try:
+        handle_failed_job.delay(str(job.id), str(error))
+    except Exception:
+        _sync_logger.warning("dlq_handler_dispatch_failed", job_id=str(job.id), exc_info=True)
 
 
 async def _requeue_job(job_id: UUID, db: AsyncSession) -> None:

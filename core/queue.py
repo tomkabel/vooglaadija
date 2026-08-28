@@ -7,6 +7,7 @@ deduplication to prevent duplicate job entries.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -100,8 +101,14 @@ async def enqueue_job(job_id: UUID | str) -> None:
 
     Dispatches a Celery task to the downloads queue. The Celery worker
     will pick up the task and process it with automatic retry support.
+
+    ``send_task`` does a blocking Redis round-trip, so it runs in a thread
+    to avoid stalling the API's event loop (and every in-flight request)
+    for the duration of the broker publish.
     """
-    _get_celery_send_task()(
+    send_task = _get_celery_send_task()
+    await asyncio.to_thread(
+        send_task,
         "worker.celery_tasks.process_download",
         args=[str(job_id)],
         queue="downloads",
