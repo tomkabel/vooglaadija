@@ -131,17 +131,24 @@ class TestRetryBehavior:
         assert task is not None
         assert getattr(task, "autoretry_for", None) is None
 
-    def test_manual_backoff_is_bounded(self, celery_app):
-        """Verify the DB-driven backoff grows exponentially and is capped."""
-        from worker.celery_tasks import _calculate_backoff
+    def test_retry_decision_comes_from_retry_scheduler(self, celery_app):
+        """A retryable error yields a non-final decision with a positive delay."""
+        from unittest.mock import MagicMock
 
-        first = _calculate_backoff(1, 30.0)
-        second = _calculate_backoff(2, 30.0)
-        third = _calculate_backoff(3, 30.0)
-        assert 30.0 <= first <= 300.0
-        assert second > first
-        assert third > second
-        assert third <= 300.0
+        from worker.retry_scheduler import evaluate as evaluate_retry
+
+        job = MagicMock()
+        job.retry_count = 0
+        job.max_retries = 3
+        job.next_retry_at = None
+
+        decision = evaluate_retry(job, RuntimeError("HTTP Error 503 temporary failure"))
+        assert decision.is_final is False
+        assert decision.delay_seconds is not None and decision.delay_seconds > 0
+        assert decision.category.value == "transient"
+
+        permanent = evaluate_retry(job, RuntimeError("Video unavailable"))
+        assert permanent.is_final is True
 
     def test_retry_download_task_registered(self, celery_app):
         """Verify the retries-queue task exists and routes to retry_download."""

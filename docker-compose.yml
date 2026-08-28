@@ -178,7 +178,9 @@ services:
       <<: *common-env
       CELERY_QUEUES: ${CELERY_QUEUES:-downloads,retries,dlq}
       CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
+      WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       BROWSER_DOWNLOADER_ENABLED: ${BROWSER_DOWNLOADER_ENABLED:-true}
       BROWSER_DOWNLOADER_ENDPOINT: ${BROWSER_DOWNLOADER_ENDPOINT:-http://browser-downloader:3000}
     volumes:
@@ -215,9 +217,8 @@ services:
       test:
         [
           'CMD-SHELL',
-          'python -c "from worker.celery_app import celery_app; inspect =
-          celery_app.control.inspect(); stats = inspect.stats(); print(''healthy'' if stats else
-          ''unhealthy'')" || exit 1',
+          'python -c "import urllib.request;
+          urllib.request.urlopen(''http://localhost:8082/health'', timeout=5)" || exit 1',
         ]
       interval: 30s
       timeout: 10s

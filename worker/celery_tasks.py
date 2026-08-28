@@ -12,14 +12,16 @@ Each task maps to the equivalent function in the legacy worker:
 
 import asyncio
 import time as _time
+from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
 from celery import shared_task
 from celery.utils.log import get_task_logger
 from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.error_classifier import classify_error
 from core.config import settings
 from core.database import get_async_session_factory
 from core.logging_config import get_logger
@@ -36,15 +38,16 @@ from worker.browser_executor import (
     select_executor,
 )
 from worker.job_executor import publish_job_status
+from worker.retry_scheduler import RetryDecision
+from worker.retry_scheduler import evaluate as evaluate_retry
 
 logger = get_task_logger(__name__)
 _sync_logger = get_logger(__name__)
 
-
 _worker_loop: asyncio.AbstractEventLoop | None = None
 
 
-def _run_async(coro):
+def _run_async[T](coro: Coroutine[Any, Any, T]) -> T:
     """Run an async coroutine synchronously within a Celery task.
 
     Uses one persistent event loop per worker process so shared async
@@ -68,7 +71,7 @@ def _run_async(coro):
     soft_time_limit=540,
     time_limit=600,
 )
-def process_download(self, job_id: str) -> dict:
+def process_download(self: Any, job_id: str) -> dict:
     """Process a single download job.
 
     Equivalent to worker.processor.process_next_job() in the legacy BRPOP worker.
@@ -76,7 +79,7 @@ def process_download(self, job_id: str) -> dict:
     start_time = _time.time()
     session_factory = get_async_session_factory()
 
-    async def _process():
+    async def _process() -> dict:
         async with session_factory() as db:
             result = await db.execute(
                 update(DownloadJob)
@@ -103,7 +106,7 @@ def process_download(self, job_id: str) -> dict:
     return _run_async(_process())
 
 
-async def _execute_job(db, job: DownloadJob, start_time: float) -> dict:
+async def _execute_job(db: AsyncSession, job: DownloadJob, start_time: float) -> dict:
     """Execute the download for a job using the appropriate executor."""
     from app.services.circuit_breaker import extract_media_with_circuit_breaker
 
@@ -149,17 +152,25 @@ async def _execute_job(db, job: DownloadJob, start_time: float) -> dict:
         return {"status": "error", "job_id": str(job.id), "error": e}
 
 
-async def _handle_result(db, job: DownloadJob, result: dict) -> None:
-    """Handle the execution result — retry or move to DLQ."""
+async def _handle_result(db: AsyncSession, job: DownloadJob, result: dict) -> None:
+    """Handle the execution result — retry or move to DLQ.
+
+    Retry decisions come from ``worker.retry_scheduler.evaluate`` (the same
+    single mechanism the legacy worker used), so the retry budget
+    (``retry_count`` vs ``max_retries``), backoff policy and error metadata
+    stay consistent with the rest of the system.
+    """
     if result["status"] == "completed":
         return
 
     error = result["error"]
-    classification = classify_error(str(error))
+    decision = evaluate_retry(job, error)
 
-    if classification.retryable and job.retry_count < job.max_retries:
+    if not decision.is_final:
         retry_count = job.retry_count + 1
-        delay = _calculate_backoff(retry_count, classification.base_delay)
+        delay = decision.delay_seconds if decision.delay_seconds is not None else 10.0
+        next_retry_at = decision.next_retry_at or (datetime.now(UTC) + timedelta(seconds=delay))
+        error_text = decision.accumulated_error or str(error)
 
         await db.execute(
             update(DownloadJob)
@@ -167,10 +178,10 @@ async def _handle_result(db, job: DownloadJob, result: dict) -> None:
             .values(
                 status="pending",
                 retry_count=retry_count,
-                next_retry_at=datetime.now(UTC) + timedelta(seconds=delay),
-                error=str(error),
-                last_error=str(error),
-                error_category=classification.category.value,
+                next_retry_at=next_retry_at,
+                error=error_text,
+                last_error=error_text,
+                error_category=decision.category.value,
                 updated_at=datetime.now(UTC),
             )
         )
@@ -181,10 +192,15 @@ async def _handle_result(db, job: DownloadJob, result: dict) -> None:
             countdown=delay,
         )
     else:
-        await _move_to_dlq(db, job, error, classification)
+        await _move_to_dlq(db, job, error, decision)
 
 
-async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -> None:
+async def _move_to_dlq(
+    db: AsyncSession,
+    job: DownloadJob,
+    error: Exception,
+    decision: RetryDecision,
+) -> None:
     """Move a permanently failed job to the dead-letter queue.
 
     Both the DownloadJob status update and FailedJob insertion happen in a
@@ -195,9 +211,9 @@ async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -
         original_job_id=job.id,
         user_id=job.user_id,
         url=job.url,
-        error_category=classification.category.value,
-        final_error=str(error),
-        final_error_category=classification.category.value,
+        error_category=decision.category.value,
+        final_error=decision.final_error or str(error),
+        final_error_category=decision.category.value,
         retry_count=job.retry_count,
         max_retries_at_failure=job.max_retries,
         title=job.title,
@@ -210,9 +226,9 @@ async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -
         .where(DownloadJob.id == job.id, DownloadJob.status == "processing")
         .values(
             status="failed",
-            error=str(error),
-            last_error=str(error),
-            error_category=classification.category.value,
+            error=decision.final_error or str(error),
+            last_error=decision.final_error or str(error),
+            error_category=decision.category.value,
             completed_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
@@ -233,7 +249,7 @@ async def _move_to_dlq(db, job: DownloadJob, error: Exception, classification) -
     handle_failed_job.delay(str(job.id), str(error))
 
 
-async def _requeue_job(job_id: UUID, db) -> None:
+async def _requeue_job(job_id: UUID, db: AsyncSession) -> None:
     """Requeue a job during shutdown or cancellation."""
     await db.execute(
         update(DownloadJob)
@@ -272,15 +288,6 @@ async def _publish_progress(user_id: UUID, job_id: UUID, data: dict) -> None:
         logger.warning("progress_publish_failed", job_id=str(job_id), exc_info=True)
 
 
-def _calculate_backoff(retry_count: int, base_delay: float) -> float:
-    """Calculate exponential backoff with jitter."""
-    import random
-
-    exp_delay = base_delay * (2 ** (retry_count - 1))
-    jitter = random.uniform(0, exp_delay * 0.5)  # noqa: S311 — jitter only
-    return min(exp_delay + jitter, 300)
-
-
 @shared_task(
     name="worker.celery_tasks.retry_download",
     queue="retries",
@@ -291,7 +298,7 @@ def retry_download(job_id: str) -> dict:
 
     Scheduled by process_download when a retryable error occurs.
     """
-    return process_download(job_id)
+    return cast(dict, process_download(job_id))
 
 
 @shared_task(
@@ -323,7 +330,7 @@ def cleanup_expired_jobs() -> dict:
     session_factory = get_async_session_factory()
     downloads_dir = os.path.join(settings.storage_path, "downloads")
 
-    async def _cleanup():
+    async def _cleanup() -> dict:
         async with session_factory() as db:
             now = datetime.now(UTC)
             result = await db.execute(
@@ -365,7 +372,7 @@ def cleanup_dlq() -> dict:
     """Remove expired DLQ entries older than 7 days."""
     session_factory = get_async_session_factory()
 
-    async def _cleanup():
+    async def _cleanup() -> dict:
         async with session_factory() as db:
             now = datetime.now(UTC)
             result = await db.execute(select(FailedJob).where(FailedJob.expires_at < now))
@@ -398,7 +405,7 @@ def requeue_stuck_jobs(timeout_minutes: int = 15) -> dict:
     """
     session_factory = get_async_session_factory()
 
-    async def _sweep():
+    async def _sweep() -> dict:
         cutoff = datetime.now(UTC) - timedelta(minutes=timeout_minutes)
         async with session_factory() as db:
             result = await db.execute(
@@ -436,7 +443,7 @@ def enqueue_pending() -> dict:
     """
     session_factory = get_async_session_factory()
 
-    async def _enqueue():
+    async def _enqueue() -> dict:
         async with session_factory() as db:
             now = datetime.now(UTC)
             result = await db.execute(

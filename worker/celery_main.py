@@ -21,6 +21,8 @@ Usage:
 
 import os
 import sys
+import threading
+import time
 
 from core.config import settings
 from core.logging_config import configure_logging, get_logger
@@ -29,13 +31,43 @@ configure_logging(log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = get_logger(__name__)
 
 
+def _start_health_heartbeat() -> None:
+    """Keep the worker /health endpoint's liveness check fresh.
+
+    ``worker.health._check_worker_loop()`` considers the loop alive only when
+    ``last_heartbeat`` was updated within ``WORKER_HEALTH_STALE_AFTER_SECONDS``
+    (default 30s). The Celery worker has no central main-loop hook to call
+    ``update_worker_state()``, so a background thread publishes the heartbeat.
+    """
+
+    def _beat() -> None:
+        from worker.health import update_worker_state
+
+        while True:
+            try:
+                update_worker_state(status="running", current_job_started_at=None)
+            except Exception:
+                logger.warning("worker_health_heartbeat_failed", exc_info=True)
+            time.sleep(10)
+
+    threading.Thread(target=_beat, name="worker-health-heartbeat", daemon=True).start()
+
+
 def start_worker() -> None:
     """Start the Celery worker with configuration from environment."""
     from worker.celery_app import celery_app
+    from worker.health import start_health_server
 
     queues = os.environ.get("CELERY_QUEUES", "downloads,retries,dlq")
     concurrency = int(os.environ.get("CELERY_CONCURRENCY", "1"))
     loglevel = os.environ.get("LOG_LEVEL", "INFO").lower()
+
+    # Keep the legacy health/metrics contract: serve /health and /metrics on
+    # WORKER_HEALTH_PORT (default 8082) so the compose healthcheck, the
+    # Dockerfile HEALTHCHECK and the Prometheus worker scrape target keep
+    # working after the migration to Celery.
+    start_health_server()
+    _start_health_heartbeat()
 
     logger.info(
         "starting_celery_worker",
@@ -99,7 +131,7 @@ def enqueue_pending_jobs() -> int:
     from worker.celery_tasks import enqueue_pending
 
     result = enqueue_pending.delay()
-    return result.get(timeout=30)
+    return int(result.get(timeout=30))
 
 
 if __name__ == "__main__":
