@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Callable set by worker/ at startup: (task_name, args, queue) -> None
+# ponytail: dependency-inversion slot; worker/ sets this on import
+_celery_send_task: Any = None
+
 
 class _LazyRedisClient:
     """Proxy that delegates all attribute access to the shared Redis client.
@@ -76,9 +80,11 @@ async def enqueue_job(job_id: UUID | str) -> None:
     Dispatches a Celery task to the downloads queue. The Celery worker
     will pick up the task and process it with automatic retry support.
     """
-    from worker.celery_tasks import process_download
+    if _celery_send_task is None:
+        raise RuntimeError("Celery not configured — worker/ must set core.queue._celery_send_task")
 
-    process_download.apply_async(
+    _celery_send_task(
+        "worker.celery_tasks.process_download",
         args=[str(job_id)],
         queue="downloads",
     )

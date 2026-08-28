@@ -25,14 +25,14 @@ from core.database import get_async_session_factory
 from core.logging_config import get_logger
 from core.metrics import (
     DLQ_DEPTH,
-    JOB_DURATION_SECONDS,
     JOBS_COMPLETED,
-    QUEUE_DEPTH,
 )
 from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
 from worker.browser_executor import (
     extract_media as extract_media_browser,
+)
+from worker.browser_executor import (
     select_executor,
 )
 from worker.job_executor import publish_job_status
@@ -269,7 +269,7 @@ def _calculate_backoff(retry_count: int, base_delay: float) -> float:
     import random
 
     exp_delay = base_delay * (2 ** (retry_count - 1))
-    jitter = random.uniform(0, exp_delay * 0.5)
+    jitter = random.uniform(0, exp_delay * 0.5)  # noqa: S311 — jitter only
     return min(exp_delay + jitter, 300)
 
 
@@ -333,7 +333,7 @@ def cleanup_expired_jobs() -> dict:
                         safe_path = validate_path(downloads_dir, job.file_path)
                     except (ValueError, PermissionError):
                         continue
-                    if os.path.exists(safe_path):
+                    if os.path.exists(safe_path):  # noqa: ASYNC240 — fast local fs ops
                         try:
                             os.remove(safe_path)
                         except OSError:
@@ -360,9 +360,7 @@ def cleanup_dlq() -> dict:
     async def _cleanup():
         async with session_factory() as db:
             now = datetime.now(UTC)
-            result = await db.execute(
-                select(FailedJob).where(FailedJob.expires_at < now)
-            )
+            result = await db.execute(select(FailedJob).where(FailedJob.expires_at < now))
             expired = result.scalars().all()
             count = len(expired)
             for entry in expired:

@@ -22,8 +22,6 @@ Usage:
 import os
 import sys
 
-from celery import Celery
-
 from core.config import settings
 from core.logging_config import configure_logging, get_logger
 
@@ -71,7 +69,7 @@ def start_beat() -> None:
         "--scheduler",
         "celery.beat.PersistentScheduler",
         "--schedule",
-        "/tmp/celerybeat-schedule",
+        "/tmp/celerybeat-schedule",  # noqa: S108
     ]
 
     celery_app.start(argv)

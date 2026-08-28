@@ -10,12 +10,11 @@ Architecture:
 - Flower dashboard for monitoring
 """
 
-import os
-
 from celery import Celery
 from celery.schedules import crontab
 from kombu import Exchange, Queue
 
+import core.queue
 from core.config import settings
 
 _celery_app: Celery | None = None
@@ -45,24 +44,20 @@ def get_celery_app() -> Celery:
         result_serializer="json",
         timezone="UTC",
         enable_utc=True,
-
         # Task execution
         task_track_started=True,
         task_time_limit=600,
         task_soft_time_limit=540,
         worker_prefetch_multiplier=1,
         worker_max_tasks_per_child=1000,
-
         # Result backend
         result_expires=3600,
         result_extended=True,
-
         # Retry configuration
         task_default_retry_delay=10,
         task_max_retries=3,
         task_acks_late=True,
         task_reject_on_worker_lost=True,
-
         # Queue configuration
         task_default_queue="downloads",
         task_queues=[
@@ -70,14 +65,12 @@ def get_celery_app() -> Celery:
             Queue("retries", Exchange("retries"), routing_key="retries"),
             Queue("dlq", Exchange("dlq"), routing_key="dlq"),
         ],
-
         # Routing
         task_routes={
             "worker.celery_tasks.process_download": {"queue": "downloads"},
             "worker.celery_tasks.retry_download": {"queue": "retries"},
             "worker.celery_tasks.handle_failed_job": {"queue": "dlq"},
         },
-
         # Beat scheduler for periodic tasks
         beat_schedule={
             "cleanup-expired-jobs": {
@@ -103,3 +96,6 @@ def get_celery_app() -> Celery:
 
 
 celery_app = get_celery_app()
+
+# Wire up core.queue to use this app for task dispatch
+core.queue._celery_send_task = celery_app.send_task
