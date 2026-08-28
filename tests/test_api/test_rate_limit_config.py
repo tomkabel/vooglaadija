@@ -1,15 +1,16 @@
 """Tests for rate limit configuration."""
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from slowapi import Limiter
 
 from app.api.rate_limit_config import (
     REDIS_STORAGE_URL,
     NoOpLimiter,
     _build_limiter,
     _parse_retry_after,
+    _resolve_redis_storage_url,
     rate_limit_exceeded_handler,
 )
 
@@ -107,20 +108,31 @@ class TestRateLimitExceededHandler:
 class TestRedisStorageConfig:
     """Tests for Redis-backed rate limit storage configuration."""
 
-    def test_redis_storage_url_default(self):
+    def test_redis_storage_url_default(self, monkeypatch):
         """Default Redis URL falls back to local Redis."""
-        assert REDIS_STORAGE_URL.startswith("redis://")
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        assert _resolve_redis_storage_url() == "redis://localhost:6379"
 
-    def test_redis_storage_url_from_env(self):
+    def test_redis_storage_url_prefers_rate_limit_var(self, monkeypatch):
+        """RATE_LIMIT_REDIS_URL wins over REDIS_URL."""
+        monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "redis://rate:6379/1")
+        monkeypatch.setenv("REDIS_URL", "redis://other:6379/2")
+        assert _resolve_redis_storage_url() == "redis://rate:6379/1"
+
+    def test_redis_storage_url_falls_back_to_redis_url(self, monkeypatch):
         """REDIS_URL env var is used when RATE_LIMIT_REDIS_URL is not set."""
-        with patch.dict(os.environ, {"REDIS_URL": "redis://custom-redis:6380/2"}):
-            from app.api.rate_limit_config import REDIS_STORAGE_URL
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_URL", "redis://custom-redis:6380/2")
+        assert _resolve_redis_storage_url() == "redis://custom-redis:6380/2"
 
-            assert "redis://" in REDIS_STORAGE_URL
+    def test_module_constant_is_redis_url(self):
+        """Module-level REDIS_STORAGE_URL is a valid redis:// URL."""
+        assert REDIS_STORAGE_URL.startswith("redis://")
 
     def test_noop_limiter_in_test_mode(self):
         """NoOpLimiter is used when TESTING=1."""
-        with patch.dict(os.environ, {"TESTING": "1"}):
+        with patch("app.api.rate_limit_config.is_testing", True):
             limiter = _build_limiter()
             assert isinstance(limiter, NoOpLimiter)
 
@@ -135,45 +147,36 @@ class TestRedisStorageConfig:
         assert decorated is dummy_func
         assert decorated() == "test"
 
-    def test_noop_limiter_call(self):
+    @pytest.mark.asyncio
+    async def test_noop_limiter_call(self):
         """NoOpLimiter.__call__ allows all requests."""
-        import asyncio
-
         limiter = NoOpLimiter()
         mock_request = MagicMock()
 
-        result = asyncio.get_event_loop().run_until_complete(limiter(mock_request))
+        result = await limiter(mock_request)
         assert result is None
 
     def test_build_limiter_uses_redis_storage(self):
-        """_build_limiter uses RedisStorage in non-test mode."""
-        import sys
-        from types import ModuleType
+        """_build_limiter wires the Redis URL into the storage in non-test mode."""
+        with patch("app.api.rate_limit_config.is_testing", False):
+            limiter = _build_limiter()
 
-        mock_storage_instance = MagicMock()
+            assert isinstance(limiter, Limiter)
+            assert limiter._storage_uri == REDIS_STORAGE_URL
 
-        mock_storage_module = ModuleType("slowapi.storage")
-        mock_storage_module.RedisStorage = MagicMock(return_value=mock_storage_instance)
+    def test_build_limiter_redis_backend_is_limits_redis_storage(self):
+        """The resolved backend is a Redis storage instance."""
+        from limits.storage.redis import RedisStorage as LimitsRedisStorage
 
-        with patch.dict(sys.modules, {"slowapi.storage": mock_storage_module}):
-            with patch.dict(os.environ, {"TESTING": "0"}):
-                limiter = _build_limiter()
+        with patch("app.api.rate_limit_config.is_testing", False):
+            limiter = _build_limiter()
 
-                mock_storage_module.RedisStorage.assert_called_once()
-                assert limiter is not None
+            assert isinstance(limiter._storage, LimitsRedisStorage)
 
-    def test_build_limiter_fallback_without_redis_import(self):
-        """_build_limiter falls back to default Limiter if RedisStorage import fails."""
-        with patch.dict(os.environ, {"TESTING": "0"}):
-            with patch("builtins.__import__", side_effect=_import_raising_import_error):
-                from slowapi import Limiter
+    def test_build_limiter_gracefully_degrades_without_redis(self):
+        """An unreachable Redis degrades to in-memory counters, never 500s."""
+        with patch("app.api.rate_limit_config.is_testing", False):
+            limiter = _build_limiter()
 
-                limiter = _build_limiter()
-                assert isinstance(limiter, Limiter)
-
-
-def _import_raising_import_error(name, *args, **kwargs):
-    """Import helper that raises ImportError for slowapi.storage."""
-    if name == "slowapi.storage":
-        raise ImportError("No module named 'slowapi.storage'")
-    return __import__(name, *args, **kwargs)
+            assert limiter._in_memory_fallback_enabled is True
+            assert limiter._swallow_errors is True

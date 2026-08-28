@@ -1,6 +1,6 @@
 http:
   middlewares:
-    # Global rate limiting at the gateway level
+    # Global rate limiting at the gateway level.
     # This provides defense-in-depth: even if the app-level limiter fails,
     # the gateway enforces a hard ceiling.
     gateway-ratelimit:
@@ -22,32 +22,28 @@ http:
           ipStrategy:
             depth: 1
 
-    # Security headers applied at the gateway
+    # Security headers applied at the gateway. CORS headers are intentionally
+    # left to the application: it owns the CORS_ORIGINS list, while the
+    # gateway only adds hardening headers.
     gateway-security-headers:
       headers:
-        accessControlAllowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - OPTIONS
-        accessControlAllowOriginList:
-          - "${CORS_ORIGINS}"
-        accessControlMaxAge: 86400
         addVaryHeader: true
         browserXssFilter: true
         contentTypeNosniff: true
         frameDeny: true
-        referrerPolicy: "strict-origin-when-cross-origin"
+        referrerPolicy: 'strict-origin-when-cross-origin'
         customResponseHeaders:
-          X-Powered-By: ""
+          X-Powered-By: ''
 
     # Circuit breaker at the gateway level
     gateway-circuit-breaker:
       circuitBreaker:
-        expression: "NetworkErrorRatio() > 0.5"
+        expression: 'NetworkErrorRatio() > 0.5'
 
-    # Retry middleware for transient failures
+    # Retry middleware for transient failures. Only attached to GET-only
+    # routers: retrying POST /api/v1/downloads or /api/v1/auth would risk
+    # duplicate downloads or duplicate accounts when a connection drops
+    # mid-request.
     gateway-retry:
       retry:
         attempts: 3
@@ -55,40 +51,41 @@ http:
 
   routers:
     api-router:
-      rule: "PathPrefix(`/api`)"
+      rule: 'PathPrefix(`/api`)'
       service: api
       middlewares:
         - gateway-ratelimit
         - gateway-security-headers
-        - gateway-retry
+        - gateway-circuit-breaker
       entryPoints:
         - websecure
       tls: {}
 
     auth-router:
-      rule: "PathPrefix(`/api/v1/auth`)"
+      rule: 'PathPrefix(`/api/v1/auth`)'
       service: api
       priority: 10
       middlewares:
         - auth-ratelimit
         - gateway-security-headers
-        - gateway-retry
+        - gateway-circuit-breaker
       entryPoints:
         - websecure
       tls: {}
 
     web-router:
-      rule: "PathPrefix(`/web`)"
+      rule: 'PathPrefix(`/web`)'
       service: api
       middlewares:
         - gateway-ratelimit
         - gateway-security-headers
+        - gateway-circuit-breaker
       entryPoints:
         - websecure
       tls: {}
 
     health-router:
-      rule: "Path(`/health`) || Path(`/health/ready`)"
+      rule: 'Path(`/health`) || Path(`/health/ready`)'
       service: api
       priority: 20
       entryPoints:
@@ -96,17 +93,18 @@ http:
       tls: {}
 
     docs-router:
-      rule: "PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`)"
+      rule: 'PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`)'
       service: api
       middlewares:
         - gateway-ratelimit
         - gateway-security-headers
+        - gateway-retry
       entryPoints:
         - websecure
       tls: {}
 
     static-router:
-      rule: "PathPrefix(`/static`)"
+      rule: 'PathPrefix(`/static`)'
       service: api
       middlewares:
         - gateway-security-headers
@@ -118,8 +116,8 @@ http:
     api:
       loadBalancer:
         servers:
-          - url: "http://ytprocessor-api:8000"
+          - url: 'http://ytprocessor-api:8000'
         healthCheck:
-          path: "/health/ready"
+          path: '/health/ready'
           interval: 15s
           timeout: 5s
