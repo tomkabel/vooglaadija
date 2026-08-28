@@ -252,26 +252,18 @@ except Exception:
   # would expose the self-signed origin certificate to the check and make
   # bootstrap fail.
   for name in "$DEPLOY_DOMAIN" "*.$DEPLOY_DOMAIN"; do
-    local records record_id rproxied
-    records=$(cloudflare_api GET "/zones/${zone_id}/dns_records?type=A&name=${name}" || true)
-    # Match by name only: a same-name A record that points elsewhere is
-    # *updated* (PATCH) rather than duplicated, so DNS keeps a single record.
-    record_id=$(printf '%s' "$records" | python3 -c "
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    hits = d.get('result', [])
-    if hits:
-        print(hits[0]['id'] + '|' + str(hits[0].get('proxied', False)))
-    else:
-        print('')
-except Exception:
-    print('')
-")
-    if [[ -n "$record_id" ]]; then
-      local rid patch
-      rid="${record_id%%|*}"
-      rproxied="${record_id#*|}"
+    # The DNS Records API is paginated, so request the maximum per_page and
+    # process EVERY returned same-name A record: match by name only (a record
+    # that points elsewhere is *updated* via PATCH, never duplicated) and
+    # converge all of them to PUBLIC_IP + proxied.
+    local records found=0
+    records=$(cloudflare_api GET "/zones/${zone_id}/dns_records?type=A&name=${name}&per_page=5000" || true)
+    while IFS= read -r record; do
+      [[ -z "$record" ]] && continue
+      local rid rproxied patch
+      rid="${record%%|*}"
+      rproxied="${record#*|}"
+      found=1
       patch=$(cloudflare_api PATCH "/zones/${zone_id}/dns_records/${rid}" \
         "{\"content\":\"${PUBLIC_IP}\",\"ttl\":120,\"proxied\":true}" || true)
       if printf '%s' "$patch" | grep -q '"success":true'; then
@@ -281,11 +273,20 @@ except Exception:
           log_info "DNS record '$name' updated → $PUBLIC_IP (Cloudflare proxy enabled)"
         fi
       else
-        log_warn "Failed to update DNS record '$name':"
+        log_warn "Failed to update DNS record '$name' ($rid):"
         printf '%s\n' "$patch" | head -c 400
         echo ""
       fi
-    else
+    done < <(printf '%s' "$records" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    for r in d.get('result', []):
+        print(r['id'] + '|' + str(r.get('proxied', False)))
+except Exception:
+    pass
+")
+    if [[ "$found" -eq 0 ]]; then
       log_warn "No A record found for '$name'."
       if confirm "Create A record '$name' → $PUBLIC_IP in Cloudflare (proxied)?"; then
         local created
