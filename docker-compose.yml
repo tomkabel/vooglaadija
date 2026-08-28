@@ -286,6 +286,10 @@ services:
       FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:?FLOWER_BASIC_AUTH is required}
     expose:
       - '5555'
+    volumes:
+      # Settings validates STORAGE_PATH is writable even though Flower itself
+      # only monitors via Redis; the read_only rootfs needs a writable volume.
+      - storage:/app/storage:Z
     depends_on:
       - worker
       - redis
