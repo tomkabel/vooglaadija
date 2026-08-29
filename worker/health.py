@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import socket
 import threading
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
@@ -95,8 +96,21 @@ def get_redis_url() -> str:
 
 
 def get_worker_id() -> str:
-    """Get worker ID from environment or default."""
-    return os.environ.get("WORKER_ID", "worker-1")
+    """Get worker ID from env, the runtime container hostname, or default.
+
+    Precedence: explicit ``WORKER_ID`` > ``HOSTNAME`` env (Docker sets it to the
+    container ID) > ``socket.gethostname()`` > ``worker-1``. The hostname
+    fallback matters for ``deploy.replicas > 1``: compose interpolation would
+    hand every replica the same ``${HOSTNAME:-worker-1}`` value and they would
+    overwrite one another's Redis health key.
+    """
+    worker_id = os.environ.get("WORKER_ID")
+    if worker_id:
+        return worker_id
+    hostname = os.environ.get("HOSTNAME") or socket.gethostname()
+    if hostname and hostname not in ("localhost", "localdomain"):
+        return hostname
+    return "worker-1"
 
 
 def write_health_sync() -> bool:

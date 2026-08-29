@@ -90,17 +90,37 @@ class TestGetRedisUrl:
 class TestGetWorkerId:
     """Tests for get_worker_id function."""
 
-    def test_get_worker_id_default(self):
-        """Test default worker ID when env not set."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = get_worker_id()
-            assert result == "worker-1"
-
     def test_get_worker_id_from_env(self):
         """Test worker ID from WORKER_ID env var."""
         with patch.dict(os.environ, {"WORKER_ID": "my-custom-worker"}):
             result = get_worker_id()
             assert result == "my-custom-worker"
+
+    def test_get_worker_id_uses_container_hostname(self):
+        """With WORKER_ID unset, the runtime container hostname is used so scaled
+        replicas get distinct IDs instead of overwriting the same health key."""
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("worker.health.socket.gethostname", return_value="worker-abc123"),
+        ):
+            assert get_worker_id() == "worker-abc123"
+
+    def test_get_worker_id_prefers_hostname_env(self):
+        """HOSTNAME (Docker sets it to the container ID) wins over gethostname."""
+        with (
+            patch.dict(os.environ, {"HOSTNAME": "container-xyz"}, clear=True),
+            patch("worker.health.socket.gethostname", return_value="ignored"),
+        ):
+            assert get_worker_id() == "container-xyz"
+
+    def test_get_worker_id_fallback_default(self):
+        """Without WORKER_ID or a usable hostname, fall back to worker-1."""
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("worker.health.socket.gethostname", return_value=""),
+        ):
+            result = get_worker_id()
+            assert result == "worker-1"
 
 
 class TestStartHealthServer:
@@ -435,22 +455,33 @@ class TestWriteHealthAsync:
 
     @pytest.fixture(autouse=True)
     def reset_health_redis(self):
-        """Reset the shared health Redis client before each test."""
+        """Reset the shared health Redis client before AND after each test.
+
+        The post-test reset matters: ``write_health_async`` builds its client
+        through the real ``core.redis_client.get_redis_client`` singleton, so a
+        test that mocks ``aioredis.from_url`` can leave an ``AsyncMock`` parked
+        in ``core.redis_client._redis_state["client"]``. That leaks into later
+        test files (e.g. circuit-breaker chaos checks read ``exists()`` on it
+        and see a truthy mock → "chaos override active" → every
+        ``can_execute()`` returns False).
+        """
         from worker.health import reset_health_redis_client
 
+        reset_health_redis_client()
+        yield
         reset_health_redis_client()
 
     @pytest.mark.asyncio
     async def test_write_health_async_returns_bool(self):
         """Test that write_health_async returns a boolean."""
-        import redis.asyncio as aioredis
-
         from worker.health import write_health_async
 
         mock_client = AsyncMock()
         mock_client.setex = AsyncMock()
 
-        with patch.object(aioredis, "from_url", return_value=mock_client):
+        # Patch the client factory (not aioredis.from_url) so no mock ever
+        # lands in the shared core.redis_client singleton.
+        with patch("worker.health.get_redis_client", return_value=mock_client):
             result = await write_health_async()
             assert isinstance(result, bool)
 
@@ -473,8 +504,6 @@ class TestWriteHealthAsync:
     @pytest.mark.asyncio
     async def test_write_health_async_handles_connection_error(self):
         """Test write_health_async handles connection errors."""
-        import redis.asyncio as aioredis
-
         from worker.health import write_health_async
 
         mock_client = AsyncMock()
@@ -482,15 +511,13 @@ class TestWriteHealthAsync:
         mock_client.close = AsyncMock()
         mock_client.aclose = AsyncMock()
 
-        with patch.object(aioredis, "from_url", return_value=mock_client):
+        with patch("worker.health.get_redis_client", return_value=mock_client):
             result = await write_health_async()
             assert result is False
 
     @pytest.mark.asyncio
     async def test_write_health_async_handles_timeout_error(self):
         """Test write_health_async handles timeout errors."""
-        import redis.asyncio as aioredis
-
         from worker.health import write_health_async
 
         mock_client = AsyncMock()
@@ -498,6 +525,6 @@ class TestWriteHealthAsync:
         mock_client.close = AsyncMock()
         mock_client.aclose = AsyncMock()
 
-        with patch.object(aioredis, "from_url", return_value=mock_client):
+        with patch("worker.health.get_redis_client", return_value=mock_client):
             result = await write_health_async()
             assert result is False

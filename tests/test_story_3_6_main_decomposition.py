@@ -16,6 +16,8 @@ from app.auth import create_access_token
 from app.main import app
 from core.config import settings
 
+pytestmark = pytest.mark.slow
+
 
 def _csp_sources(csp: str, directive: str) -> list[str]:
     for clause in csp.split(";"):

@@ -4,7 +4,11 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.slow
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,13 +19,20 @@ def read_project_file(*parts: str) -> str:
 
 
 def test_codeql_runs_on_push_schedule_and_manual_dispatch():
-    """CodeQL should run automatically on protected branches and weekly schedule."""
+    """CodeQL should run automatically on protected branches and weekly schedule.
+
+    The Analyze job is gated behind the CODEQL_ADVANCED_ENABLED repository
+    variable: while code scanning "default setup" is enabled GitHub rejects
+    SARIF from advanced configurations, so the advanced workflow is kept
+    (re-armed by setting the variable) and default setup provides coverage.
+    """
     workflow = read_project_file(".github", "workflows", "codeql.yml")
 
     assert "disabled" not in workflow.lower()
     assert "on:\n  push:\n    branches: [main, develop]\n" in workflow
     assert "  schedule:\n    - cron: '0 9 * * 1'\n" in workflow
     assert "  workflow_dispatch:\n" in workflow
+    assert "if: vars.CODEQL_ADVANCED_ENABLED == 'true'" in workflow
     assert "languages: python" in workflow
     assert "build-mode: none" in workflow
 

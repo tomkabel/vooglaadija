@@ -25,8 +25,30 @@ services:
       context: .
       dockerfile: Dockerfile
       target: worker
+    environment:
+      COOKIE_SECURE: 'False'
+
+  celery-beat:
+    image: vooglaadija-worker:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    environment:
+      COOKIE_SECURE: 'False'
+
+  flower:
+    image: vooglaadija-worker:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
     ports:
-      - '127.0.0.1:8082:8082'
+      - '127.0.0.1:5555:5555'
+    environment:
+      COOKIE_SECURE: 'False'
+      # Local dev only — production requires FLOWER_BASIC_AUTH via .env.
+      FLOWER_BASIC_AUTH: 'vooglaadija:vooglaadija'
 
   db:
     ports:

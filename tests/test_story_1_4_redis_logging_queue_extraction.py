@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+pytestmark = pytest.mark.slow
+
+
 _SCAN_ROOTS = ("app", "worker", "tests", "alembic", "scripts", "core")
 _THIS_FILE = Path(__file__).name
 _BOUNDARY_CHECKER = Path("scripts/import_analysis.py")
@@ -20,6 +23,7 @@ _EXPECTED_ALEMBIC_VERSION_FILES = {
     "007_add_check_constraints_and_fk.py",
     "008_add_last_error_to_download_jobs.py",
     "009_add_outbox_pending_unique_index.py",
+    "010_fix_outbox_and_job_status_constraints.py",
 }
 _OLD_IMPORT_PATTERNS = (
     "from app.services.redis_client",
@@ -92,16 +96,19 @@ def test_core_logging_config_owns_public_objects():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_core_queue_enqueue_job_uses_patchable_core_redis_proxy():
-    """The queue enqueue helper pushes to Redis through core.queue.redis_client."""
+    """The queue enqueue helper dispatches to Celery via _celery_send_task."""
     from core.queue import enqueue_job
 
-    mock_redis = MagicMock()
-    mock_redis.lpush = AsyncMock()
+    mock_send = MagicMock()
 
-    with patch("core.queue.redis_client", mock_redis):
+    with patch("core.queue._celery_send_task", mock_send):
         await enqueue_job("story-1-4-job")
 
-    mock_redis.lpush.assert_called_once_with("download_queue", "story-1-4-job")
+    mock_send.assert_called_once_with(
+        "worker.celery_tasks.process_download",
+        args=["story-1-4-job"],
+        queue="downloads",
+    )
 
 
 @pytest.mark.unit

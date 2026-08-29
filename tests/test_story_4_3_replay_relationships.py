@@ -10,6 +10,9 @@ from core.models.download_job import DownloadJob
 from core.models.failed_job import FailedJob
 from core.models.user import User
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_PATH = PROJECT_ROOT / "app/services/download_service.py"
 ROUTE_PATH = PROJECT_ROOT / "app/api/routes/downloads.py"

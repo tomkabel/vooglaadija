@@ -57,6 +57,10 @@ dependencies = [
     "pyasn1>=0.6.4",  # transitive; CVE-2025-0395 (panic on malformed BER)
     "authlib>=1.6.9",  # transitive; CVE-2025-62025 (token fixation via empty client secret)
 
+    # Celery — distributed job queue (replaces hand-rolled BRPOP worker)
+    "celery[redis]>=5.4.0",
+    "flower>=2.0.0",
+
     # MEDIUM PRIORITY - Reliability & Debugging
     # Battle-tested retry logic
     "tenacity>=8.2.0",
@@ -82,6 +86,8 @@ server = [
 ]
 worker = [
     "redis",
+    "celery[redis]>=5.4.0",
+    "flower>=2.0.0",
     "yt-dlp>=2026.7.4",
 ]
 test = [
@@ -271,10 +277,10 @@ python = ["3.12"]
 db = ["sqlite"]
 
 [tool.hatch.envs.test.scripts]
-unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
-integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
+unit = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ --ignore=tests/test_api -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto {args}"
+integration = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/test_api/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto {args}"
 # Run all tests (both unit and integration)
-all = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto"
+all = "python -c \"import glob,os;[os.remove(f) for f in glob.glob('.coverage.*')+['.coverage'] if os.path.exists(f)]\" && pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing -n auto {args}"
 # Coverage scripts
 cov = "pytest tests/ -v --cov=app --cov=core --cov-report=xml --cov-report=term-missing"
 "cov-report" = "coverage report --format=terminal --show-missing"
@@ -458,14 +464,12 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 # Add custom markers
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "slow: marks tests as slow (deselect with '-m \\\"not slow\\\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
 ]
 # Minimum Python version
 minversion = "7.0"
-# Default args
-addopts = "-ra -q"
 
 # ============================================
 # COVERAGE CONFIGURATION
@@ -603,6 +607,10 @@ ignore = [
     "ASYNC240", # os.path.getsize for file info after subprocess
     "TID251",   # yt-dlp ACL exemption (see CODEBOUNDARIES.md)
 ]
+# The warm-pool driver process imports yt_dlp once and is fed jobs over stdin.
+# It is the yt-dlp execution boundary (sibling to the facade), so it is exempt
+# from the anti-corruption ACL the same way the facade is.
+"app/services/yt_dlp_worker_driver.py" = ["TID251"]
 # yt-dlp plugin extractors live OUTSIDE app/ and are yt-dlp extensions by
 # definition: they must import yt_dlp.* APIs, so the anti-corruption ACL
 # (yt-dlp importable only from the facade) does not apply to them.
@@ -740,12 +748,13 @@ skips = [
 # - Runtime-not-imported framework deps (loaded lazily at runtime):
 #   asyncpg (SQLAlchemy URL driver), bcrypt (passlib backend),
 #   email-validator (pydantic EmailStr), jinja2 (Jinja2Templates),
-#   python-multipart (FastAPI forms), yt-dlp (embedded subprocess script)
+#   python-multipart (FastAPI forms), yt-dlp (embedded subprocess script),
+#   curl-cffi (yt-dlp browser-impersonation HTTP backend, loaded via importlib)
 # - Deliberate CVE-pinning of transitive deps: ecdsa, cryptography, pygments,
 #   urllib3, idna, mako, pyasn1, authlib
 # - Test-exercised runtime deps (candidate removals if observability drops):
 #   orjson, tenacity
-per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp", "urllib3", "idna", "mako", "pyasn1", "authlib"] }
+per_rule_ignores = { "DEP002" = ["ruff", "mypy", "bandit", "safety", "detect-secrets", "vulture", "deptry", "pytest", "pytest-asyncio", "pytest-cov", "pytest-xdist", "aiosqlite", "types-redis", "types-python-jose", "vooglaadija", "asyncpg", "bcrypt", "cryptography", "ecdsa", "email-validator", "jinja2", "orjson", "pygments", "python-multipart", "tenacity", "yt-dlp", "urllib3", "idna", "mako", "pyasn1", "authlib", "curl-cffi", "flower"], "DEP001" = ["kombu"] }
 # Module name differs from package name; required because the detached audit
 # env runs deptry without the project installed (no auto-detection possible).
 package_module_name_map = { "python-jose" = ["jose"] }

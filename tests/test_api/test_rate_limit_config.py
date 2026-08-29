@@ -1,8 +1,20 @@
 """Tests for rate limit configuration."""
 
-import pytest
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from app.api.rate_limit_config import _parse_retry_after, rate_limit_exceeded_handler
+import pytest
+from slowapi import Limiter
+
+from app.api.rate_limit_config import (
+    REDIS_STORAGE_URL,
+    NoOpLimiter,
+    _build_limiter,
+    _client_ip,
+    _parse_retry_after,
+    _resolve_redis_storage_url,
+    rate_limit_exceeded_handler,
+)
 
 
 class TestParseRetryAfter:
@@ -70,8 +82,6 @@ class TestRateLimitExceededHandler:
     @pytest.mark.asyncio
     async def test_handler_returns_429_with_retry_after(self):
         """Test that handler returns 429 status with Retry-After header."""
-        from unittest.mock import MagicMock
-
         from fastapi import Request
         from slowapi.errors import RateLimitExceeded
 
@@ -88,8 +98,6 @@ class TestRateLimitExceededHandler:
     @pytest.mark.asyncio
     async def test_handler_raises_non_rate_limit_exception(self):
         """Test that non-RateLimitExceeded exceptions are raised."""
-        from unittest.mock import MagicMock
-
         from fastapi import Request
 
         mock_request = MagicMock(spec=Request)
@@ -97,3 +105,175 @@ class TestRateLimitExceededHandler:
 
         with pytest.raises(ValueError):
             await rate_limit_exceeded_handler(mock_request, mock_exc)
+
+
+class TestClientIp:
+    """Tests for the _client_ip rate-limit bucket key."""
+
+    @staticmethod
+    def _request(
+        xff: str | None = None,
+        client_host: str | None = "203.0.113.5",
+    ) -> MagicMock:
+        from fastapi import Request
+
+        request = MagicMock(spec=Request)
+        request.headers = {"x-forwarded-for": xff} if xff is not None else {}
+        request.client = SimpleNamespace(host=client_host) if client_host else None
+        return request
+
+    def test_uses_rightmost_xff_entry(self):
+        """The proxy-appended rightmost entry beats a spoofed leftmost one."""
+        request = self._request(xff="198.51.100.9, 203.0.113.5")
+        assert _client_ip(request) == "203.0.113.5"
+
+    def test_single_xff_entry(self):
+        """A single X-Forwarded-For entry is used directly."""
+        request = self._request(xff="203.0.113.5")
+        assert _client_ip(request) == "203.0.113.5"
+
+    def test_falls_back_to_socket_address_without_xff(self):
+        """Without XFF the socket address is the bucket key."""
+        request = self._request(xff=None, client_host="198.51.100.7")
+        assert _client_ip(request) == "198.51.100.7"
+
+    def test_falls_back_to_unknown_without_client(self):
+        """Without XFF and a client socket, the bucket key is 'unknown'."""
+        request = self._request(xff=None, client_host=None)
+        assert _client_ip(request) == "unknown"
+
+    def test_ignores_blank_entries(self):
+        """Empty entries between commas are skipped when selecting the key."""
+        request = self._request(xff=" , 203.0.113.5, ")
+        assert _client_ip(request) == "203.0.113.5"
+
+
+class TestRedisStorageConfig:
+    """Tests for Redis-backed rate limit storage configuration."""
+
+    def test_redis_storage_url_default(self, monkeypatch):
+        """Default Redis URL falls back to local Redis."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        assert _resolve_redis_storage_url() == "redis://localhost:6379"
+
+    def test_redis_storage_url_prefers_rate_limit_var(self, monkeypatch):
+        """RATE_LIMIT_REDIS_URL wins over REDIS_URL."""
+        monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "redis://rate:6379/1")
+        monkeypatch.setenv("REDIS_URL", "redis://other:6379/2")
+        assert _resolve_redis_storage_url() == "redis://rate:6379/1"
+
+    def test_redis_storage_url_falls_back_to_redis_url(self, monkeypatch):
+        """REDIS_URL env var is used when RATE_LIMIT_REDIS_URL is not set."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_URL", "redis://custom-redis:6380/2")
+        assert _resolve_redis_storage_url() == "redis://custom-redis:6380/2"
+
+    def test_redis_storage_url_empty_env_falls_back(self, monkeypatch):
+        """Set-but-empty vars fall through to the localhost default."""
+        monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "")
+        monkeypatch.setenv("REDIS_URL", "")
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        assert _resolve_redis_storage_url() == "redis://localhost:6379"
+
+    def test_redis_storage_url_empty_rate_limit_var_uses_redis_url(self, monkeypatch):
+        """An empty RATE_LIMIT_REDIS_URL falls back to REDIS_URL."""
+        monkeypatch.setenv("RATE_LIMIT_REDIS_URL", "")
+        monkeypatch.setenv("REDIS_URL", "redis://custom-redis:6380/2")
+        assert _resolve_redis_storage_url() == "redis://custom-redis:6380/2"
+
+    def test_redis_storage_url_built_from_components(self, monkeypatch):
+        """No explicit URL: components are assembled into a Redis URL."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.setenv("REDIS_PORT", "6379")
+        monkeypatch.setenv("REDIS_PASSWORD", "s3cret")
+        assert _resolve_redis_storage_url() == "redis://:s3cret@redis:6379/1"
+
+    def test_redis_storage_url_components_encode_reserved_password_chars(self, monkeypatch):
+        """Reserved characters in REDIS_PASSWORD are quote_plus-encoded, matching core/config.py."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.setenv("REDIS_PORT", "6379")
+        monkeypatch.setenv("REDIS_PASSWORD", "p@ss:w/rd")
+        assert _resolve_redis_storage_url() == "redis://:p%40ss%3Aw%2Frd@redis:6379/1"
+
+    def test_redis_storage_url_components_without_password(self, monkeypatch):
+        """No password: no auth segment in the assembled URL."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.setenv("REDIS_PORT", "6380")
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        assert _resolve_redis_storage_url() == "redis://redis:6380/1"
+
+    def test_redis_storage_url_components_fallback_when_host_only(self, monkeypatch):
+        """REDIS_HOST set alone still triggers component assembly."""
+        monkeypatch.delenv("RATE_LIMIT_REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.setenv("REDIS_HOST", "redis")
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        assert _resolve_redis_storage_url() == "redis://redis:6379/1"
+
+    def test_module_constant_is_redis_url(self):
+        """Module-level REDIS_STORAGE_URL is a valid redis:// URL."""
+        assert REDIS_STORAGE_URL.startswith("redis://")
+
+    def test_noop_limiter_in_test_mode(self):
+        """NoOpLimiter is used when TESTING=1."""
+        with patch("app.api.rate_limit_config.is_testing", True):
+            limiter = _build_limiter()
+            assert isinstance(limiter, NoOpLimiter)
+
+    def test_noop_limiter_limit_decorator(self):
+        """NoOpLimiter.limit returns the original function unchanged."""
+        limiter = NoOpLimiter()
+
+        def dummy_func():
+            return "test"
+
+        decorated = limiter.limit("5/minute")(dummy_func)
+        assert decorated is dummy_func
+        assert decorated() == "test"
+
+    @pytest.mark.asyncio
+    async def test_noop_limiter_call(self):
+        """NoOpLimiter.__call__ allows all requests."""
+        limiter = NoOpLimiter()
+        mock_request = MagicMock()
+
+        result = await limiter(mock_request)
+        assert result is None
+
+    def test_build_limiter_uses_redis_storage(self):
+        """_build_limiter wires the Redis URL into the storage in non-test mode."""
+        with patch("app.api.rate_limit_config.is_testing", False):
+            limiter = _build_limiter()
+
+            assert isinstance(limiter, Limiter)
+            assert limiter._storage_uri == REDIS_STORAGE_URL
+
+    def test_build_limiter_redis_backend_is_limits_redis_storage(self):
+        """The resolved backend is a Redis storage instance."""
+        from limits.storage.redis import RedisStorage as LimitsRedisStorage
+
+        with patch("app.api.rate_limit_config.is_testing", False):
+            limiter = _build_limiter()
+
+            assert isinstance(limiter._storage, LimitsRedisStorage)
+
+    def test_build_limiter_gracefully_degrades_without_redis(self):
+        """An unreachable Redis degrades to in-memory counters, never 500s."""
+        with patch("app.api.rate_limit_config.is_testing", False):
+            limiter = _build_limiter()
+
+            assert limiter._in_memory_fallback_enabled is True
+            assert limiter._swallow_errors is True

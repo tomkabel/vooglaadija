@@ -1,0 +1,88 @@
+name: Reviewdog Lint Annotations
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  PYTHON_VERSION: '3.12'
+  HATCH_VERSION: '1.18.0'
+
+jobs:
+  ruff:
+    name: ruff (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install hatch
+        run: uv tool install hatch==${{ env.HATCH_VERSION }}
+
+      - name: Install reviewdog
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1.5.0 # v1.4.0
+        with:
+          reviewdog_version: v0.21.0
+
+      - name: ruff
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Concise output (`path:line:col: CODE message`) so reviewdog's
+          # errorformat can parse it — the github format used by lint:check
+          # emits `::error file=...` workflow-command lines that match nothing.
+          hatch run ruff check app/ core/ worker/ scripts/ alembic/ tests/ --output-format=concise | reviewdog \
+            -efm="%f:%l:%c: %t%n %m" \
+            -name="ruff" \
+            -reporter=github-pr-annotations \
+            -filter-mode=diff-filter \
+            -fail-level=any
+        continue-on-error: true
+
+  mypy:
+    name: mypy (type check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install hatch
+        run: uv tool install hatch==${{ env.HATCH_VERSION }}
+
+      - name: Install reviewdog
+        uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f # v1.5.0 # v1.4.0
+        with:
+          reviewdog_version: v0.21.0
+
+      - name: mypy
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # mypy emits `file:line:col: error: message [code]` — `%trror:`
+          # matches the lowercase severity with no error number (the previous
+          # `%t%n:` required a number that mypy never produces).
+          hatch run type:check | reviewdog \
+            -efm="%f:%l:%c: %trror: %m" \
+            -name="mypy" \
+            -reporter=github-pr-annotations \
+            -filter-mode=diff-filter \
+            -fail-level=any
+        continue-on-error: true

@@ -1,0 +1,141 @@
+http:
+  middlewares:
+    # Global rate limiting at the gateway level.
+    # This provides defense-in-depth: even if the app-level limiter fails,
+    # the gateway enforces a hard ceiling.
+    gateway-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 150
+        period: 1m
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Stricter rate limit for auth endpoints (login/register/refresh)
+    auth-ratelimit:
+      rateLimit:
+        average: 10
+        burst: 15
+        period: 1m
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Security headers applied at the gateway. CORS headers are intentionally
+    # left to the application: it owns the CORS_ORIGINS list, while the
+    # gateway only adds hardening headers.
+    gateway-security-headers:
+      headers:
+        addVaryHeader: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: 'strict-origin-when-cross-origin'
+        customResponseHeaders:
+          X-Powered-By: ''
+
+    # Circuit breaker at the gateway level
+    gateway-circuit-breaker:
+      circuitBreaker:
+        expression: 'NetworkErrorRatio() > 0.5'
+
+    # Retry middleware for transient failures. Only attached to GET-only
+    # routers: retrying POST /api/v1/downloads or /api/v1/auth would risk
+    # duplicate downloads or duplicate accounts when a connection drops
+    # mid-request.
+    gateway-retry:
+      retry:
+        attempts: 3
+        initialInterval: 100ms
+
+  routers:
+    api-router:
+      rule: 'PathPrefix(`/api`)'
+      service: api
+      middlewares:
+        - gateway-ratelimit
+        - gateway-security-headers
+        - gateway-circuit-breaker
+      entryPoints:
+        - websecure
+      tls: {}
+
+    auth-router:
+      rule: 'PathPrefix(`/api/v1/auth`)'
+      service: api
+      # Must exceed api-router's rule-length default priority (18) so the
+      # stricter auth-ratelimit (10/min) actually wins for /api/v1/auth/*.
+      priority: 30
+      middlewares:
+        - auth-ratelimit
+        - gateway-security-headers
+        - gateway-circuit-breaker
+      entryPoints:
+        - websecure
+      tls: {}
+
+    web-router:
+      rule: 'PathPrefix(`/web`)'
+      service: api
+      middlewares:
+        - gateway-ratelimit
+        - gateway-security-headers
+        - gateway-circuit-breaker
+      entryPoints:
+        - websecure
+      tls: {}
+
+    health-router:
+      rule: 'Path(`/health`) || Path(`/health/ready`)'
+      service: api
+      priority: 20
+      entryPoints:
+        - websecure
+      tls: {}
+
+    docs-router:
+      rule: 'PathPrefix(`/docs`) || PathPrefix(`/redoc`) || PathPrefix(`/openapi.json`)'
+      service: api
+      middlewares:
+        - gateway-ratelimit
+        - gateway-security-headers
+        - gateway-retry
+      entryPoints:
+        - websecure
+      tls: {}
+
+    static-router:
+      rule: 'PathPrefix(`/static`)'
+      service: api
+      middlewares:
+        - gateway-security-headers
+      entryPoints:
+        - websecure
+      tls: {}
+
+    # Catch-all for the site root and any path not matched by the routers
+    # above (e.g. the app redirects GET / to /web/login or /web/downloads).
+    # Explicitly low priority so it never shadows the ping router (Docker
+    # provider, default priority 14) or any of the specific routers.
+    root-router:
+      rule: 'PathPrefix(`/`)'
+      service: api
+      priority: 5
+      middlewares:
+        - gateway-ratelimit
+        - gateway-security-headers
+        - gateway-circuit-breaker
+      entryPoints:
+        - websecure
+      tls: {}
+
+  services:
+    api:
+      loadBalancer:
+        servers:
+          - url: 'http://ytprocessor-api:8000'
+        healthCheck:
+          path: '/health/ready'
+          interval: 15s
+          timeout: 5s

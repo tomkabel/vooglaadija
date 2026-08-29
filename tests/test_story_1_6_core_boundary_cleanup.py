@@ -8,6 +8,9 @@ import pytest
 
 from scripts import import_analysis
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

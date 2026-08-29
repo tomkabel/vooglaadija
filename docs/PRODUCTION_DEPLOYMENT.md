@@ -159,19 +159,21 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml restart api   #
 
 ## Standalone deployment (Caddy, no Coolify)
 
-This VPS runs the stack **without** Coolify, using a standalone Caddy reverse proxy as the
-only public entry point. Caddy terminates TLS (a Cloudflare-origin self-signed cert) on ports
-80/443 and forwards to `api:8000`. Cloudflare's orange-cloud proxy forwards visitor traffic to
-this origin on 80/443, so **Caddy must be running or Cloudflare returns HTTP 521**.
+This VPS runs the stack **without** Coolify, using a standalone Caddy reverse proxy as the only
+public entry point. Caddy terminates TLS (a Cloudflare-origin self-signed cert) on port 443, serves
+plain HTTP on port 80, and forwards both listeners to `api:8000`. Cloudflare's orange-cloud proxy
+forwards visitor traffic to this origin on 80/443, so **Caddy must be running or Cloudflare returns
+HTTP 521**.
 
 > ⚠️ The Caddy service is defined **only** in `docker-compose.caddy.yml`. It is an override that
-> must be passed on every `docker compose` invocation for this stack. Starting the base files
-> alone leaves nothing listening on 80/443 and breaks the site.
+> must be passed on every stack start, restart, and update invocation. Starting the base files alone
+> leaves nothing listening on 80/443 and breaks the site.
 
 ### Files
 
 - `Caddyfile` — site block for `${DEPLOY_DOMAIN}` + plain `:80` fallback.
-- `docker-compose.caddy.yml` — defines the `caddy` service (ports 80/443, mounts `Caddyfile` + `certs`).
+- `docker-compose.caddy.yml` — defines the `caddy` service (ports 80/443, mounts `Caddyfile` +
+  `certs`).
 - `certs/` — `${DEPLOY_DOMAIN}.crt` / `.key` (self-signed, valid for 1 year from issue).
 
 ### Canonical start / restart / update commands
@@ -205,15 +207,15 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://${DEPLOY_DOMAIN}/health
 
 ## Troubleshooting
 
-| Symptom                                         | Fix                                                                                                                                                              |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `https://<domain>` returns 502/504              | Check the API container in Coolify logs; verify the domain is assigned to the `api` service                                                                      |
+| Symptom                                           | Fix                                                                                                                                                                                                                                                |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://<domain>` returns 502/504                | Check the API container in Coolify logs; verify the domain is assigned to the `api` service                                                                                                                                                        |
 | Cloudflare returns **HTTP 521** (web server down) | The Caddy container isn't running or 80/443 aren't listening on this origin. Check `docker ps --filter name=caddy`; if missing, start with the standalone command above (`-f docker-compose.caddy.yml`). Verify `ss -tlnp \| grep -E ':80\|:443'`. |
-| Certificate not issued                          | Check `docker logs coolify-proxy`; verify the Cloudflare token has `Zone.DNS:Edit`; wait for DNS propagation                                                     |
-| Wildcard subdomains don't resolve               | Create `*.domain` A record (bootstrap does this automatically when the token permits)                                                                            |
-| Container stuck restarting                      | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars (Coolify UI highlights required ones)                |
-| Deploy doesn't pick up new image                | The start command must include `--pull always` (bootstrap sets this); otherwise update it in Coolify → Advanced                                                  |
-| Coolify proxy reverted to Traefik after upgrade | Re-run `./deploy/bootstrap.sh --force` or re-apply the Caddy DNS-01 config from [Coolify docs](https://coolify.io/docs/knowledge-base/proxy/caddy/dns-challenge) |
+| Certificate not issued                            | Check `docker logs coolify-proxy`; verify the Cloudflare token has `Zone.DNS:Edit`; wait for DNS propagation                                                                                                                                       |
+| Wildcard subdomains don't resolve                 | Create `*.domain` A record (bootstrap does this automatically when the token permits)                                                                                                                                                              |
+| Container stuck restarting                        | `docker compose -f docker-compose.yml -f docker-compose.local.yml logs api`; common cause: missing env vars (Coolify UI highlights required ones)                                                                                                  |
+| Deploy doesn't pick up new image                  | The start command must include `--pull always` (bootstrap sets this); otherwise update it in Coolify → Advanced                                                                                                                                    |
+| Coolify proxy reverted to Traefik after upgrade   | Re-run `./deploy/bootstrap.sh --force` or re-apply the Caddy DNS-01 config from [Coolify docs](https://coolify.io/docs/knowledge-base/proxy/caddy/dns-challenge)                                                                                   |
 
 ## Migrating an existing deployment
 

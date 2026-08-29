@@ -7,9 +7,20 @@ on:
     - cron: '0 9 * * 1'
   workflow_dispatch:
 
+# Advanced CodeQL configurations cannot upload SARIF while code scanning
+# "default setup" is enabled for this repository (GitHub rejects the run with
+# "CodeQL analyses from advanced configurations cannot be processed when the
+# default setup is enabled"). Default setup is active here and provides the
+# actual scan coverage (see the `dynamic/github-code-scanning/codeql` jobs).
+#
+# This advanced workflow is kept (pinned actions, Python analysis shape) and
+# re-armed by setting the repository variable CODEQL_ADVANCED_ENABLED=true —
+# which is required once default setup is turned off in repo settings. Until
+# then the job is skipped instead of failing every push.
 jobs:
   analyze:
     name: Analyze
+    if: vars.CODEQL_ADVANCED_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -20,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

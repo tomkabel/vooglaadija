@@ -10,6 +10,9 @@ from prometheus_client import CONTENT_TYPE_LATEST
 from app.main import app
 from worker.health import health_app
 
+pytestmark = pytest.mark.slow
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

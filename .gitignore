@@ -233,3 +233,6 @@ tests.txt
 
 # Scratch POC scripts (experimental, not committed)
 browser-downloader/poc*.js
+
+# Graphify output (build artifact)
+graphify-out/

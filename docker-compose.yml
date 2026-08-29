@@ -124,6 +124,12 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-True}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      # Rate-limit counters share the same Redis the queue uses. Leave
+      # RATE_LIMIT_REDIS_URL empty (default) to let the app derive the URL
+      # from REDIS_HOST/REDIS_PORT/REDIS_PASSWORD in Python, quote_plus-
+      # encoding the password exactly like core/config.py — no manual
+      # URL-encoding, and it stays in sync when REDIS_HOST/REDIS_PORT change.
+      RATE_LIMIT_REDIS_URL: ${RATE_LIMIT_REDIS_URL:-}
       # Enable observability
       OTEL_PYTHON_TRACER_PROVIDER: otel
       OTEL_PYTHON_METER_PROVIDER: otel
@@ -157,20 +163,24 @@ services:
         max-file: '3'
 
   # ==========================================
-  # Worker — background job processor (yt-dlp)
+  # Celery Worker — background job processor
   # ==========================================
   worker:
-    container_name: ytprocessor-worker
+    # NOTE: no static container_name — it blocks `deploy.replicas` (Compose
+    # requires unique names per replica). The container is named
+    # `vooglaadija-worker-N` automatically; inter-service comms and Prometheus
+    # use the service name `worker`, so removing this is safe.
     image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
-    restart: unless-stopped
+    # Scale out by setting WORKER_REPLICAS>1 in the environment (each replica
+    # runs the bounded concurrency pool from #160, so total parallelism is
+    # WORKER_REPLICAS * WORKER_CONCURRENCY).
     environment:
       <<: *common-env
-      WORKER_ID: ${HOSTNAME:-worker-1}
+      CELERY_QUEUES: ${CELERY_QUEUES:-downloads,retries,dlq}
+      CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
       WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8082}
-      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       DB_MAX_OVERFLOW: ${WORKER_DB_MAX_OVERFLOW:-2}
-      # Phase 2: route TikTok/Instagram/Twitter to the browser-downloader
-      # microservice; yt-dlp remains the fallback for everything else.
+      DB_POOL_SIZE: ${WORKER_DB_POOL_SIZE:-3}
       BROWSER_DOWNLOADER_ENABLED: ${BROWSER_DOWNLOADER_ENABLED:-true}
       BROWSER_DOWNLOADER_ENDPOINT: ${BROWSER_DOWNLOADER_ENDPOINT:-http://browser-downloader:3000}
     volumes:
@@ -185,6 +195,115 @@ services:
       browser-downloader:
         condition: service_started
     <<: *base-service
+    command: ['python', '-m', 'worker.celery_main', 'worker']
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+      resources:
+        # Raised from 0.75 CPU / 512M to back the concurrency pool (#160/#161):
+        # ~2 concurrent yt-dlp/ffmpeg jobs need ~1-1.5 CPU and ~1-1.5 GB during
+        # format negotiation. A single replica now sustains WORKER_CONCURRENCY=2.
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'python -c "import urllib.request;
+          urllib.request.urlopen(''http://localhost:8082/health'', timeout=5)" || exit 1',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # Celery Beat — scheduled tasks
+  # ==========================================
+  celery-beat:
+    container_name: ytprocessor-celery-beat
+    image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      # core.config.Settings requires DB_POOL_SIZE + DB_MAX_OVERFLOW >=
+      # WORKER_CONCURRENCY + 2 for every process, including beat (which
+      # never runs downloads and leaves WORKER_CONCURRENCY at its default
+      # of 2, so the pool must total >= 4). Lowering WORKER_CONCURRENCY
+      # instead would also lower YT_DLP_EXTRACTION_CONCURRENCY's default,
+      # which the yt-dlp pool-size validator checks against — so the pool
+      # is bumped here rather than touching worker-role settings.
+      DB_POOL_SIZE: '2'
+      DB_MAX_OVERFLOW: '2'
+    volumes:
+      - storage:/app/storage:Z
+      # Named volume holds the PersistentScheduler schedule file
+      # (`/tmp/celerybeat-schedule`) so last-run state survives restarts.
+      - celery_beat_data:/var/lib/celerybeat:z
+    tmpfs:
+      - /var/run
+      - /var/cache
+    depends_on:
+      storage-init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    <<: *base-service
+    command: ['python', '-m', 'worker.celery_main', 'beat']
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+    healthcheck:
+      test: ['CMD-SHELL', 'test -f /var/lib/celerybeat/celerybeat-schedule && exit 0 || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # ==========================================
+  # Flower — Celery monitoring dashboard
+  # ==========================================
+  flower:
+    container_name: ytprocessor-flower
+    image: ghcr.io/tomkabel/vooglaadija:worker-${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      FLOWER_PORT: ${FLOWER_PORT:-5555}
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:?FLOWER_BASIC_AUTH is required}
+    # Flower doesn't touch downloaded files, but importing core.config
+    # (via worker.celery_main) validates STORAGE_PATH is writable for every
+    # process — without this mount, the read-only root filesystem below
+    # makes that validation fail and the container crash-loops on startup.
+    volumes:
+      - storage:/app/storage:Z
+    expose:
+      - '5555'
+    depends_on:
+      - worker
+      - redis
+    <<: *base-service
+    command: ['python', '-m', 'worker.celery_main', 'flower']
     logging:
       driver: json-file
       options:
@@ -193,19 +312,19 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.75'
+          cpus: '0.5'
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: '0.1'
           memory: 128M
     healthcheck:
       test:
         [
           'CMD-SHELL',
           'python -c "import urllib.request;
-          urllib.request.urlopen(''http://localhost:8082/health'', timeout=5)" || exit 1',
+          urllib.request.urlopen(''http://localhost:5555/healthcheck'', timeout=5)" || exit 1',
         ]
-      interval: 15s
+      interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
@@ -598,3 +717,5 @@ volumes:
       type: none
       o: bind
       device: /mnt/new_storage/backups
+  celery_beat_data:
+    name: ytprocessor-celery-beat-data
