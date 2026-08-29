@@ -15,6 +15,20 @@
         </p>
       </div>
     </div>
+    {% if job.status == 'processing' %}
+    <div class="progress-container" data-progress>
+      <div
+        class="progress-track"
+        role="progressbar"
+        aria-label="Download progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+      >
+        <div class="progress-bar progress-bar--indeterminate" style="width:100%"></div>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
   <div class="flex items-center gap-3">

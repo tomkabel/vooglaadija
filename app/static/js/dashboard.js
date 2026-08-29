@@ -613,6 +613,61 @@
     return badge;
   }
 
+  function isTerminalStatus(status) {
+    const s = normalizeStatus(status).toLowerCase();
+    return s === 'completed' || s === 'failed' || s === 'deferred' || s === 'cancelled';
+  }
+
+  function createProgressContainer(progress) {
+    const container = document.createElement('div');
+    container.className = 'progress-container';
+    container.dataset.progress = '';
+
+    const track = document.createElement('div');
+    track.className = 'progress-track';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', 'Download progress');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+
+    const bar = document.createElement('div');
+    bar.className = 'progress-bar';
+    const hasPercent = !!(progress && progress.percent != null);
+    if (hasPercent) {
+      const pct = Math.min(progress.percent, 100);
+      bar.style.width = `${pct}%`;
+      track.setAttribute('aria-valuenow', String(Math.round(pct)));
+    } else {
+      bar.classList.add('progress-bar--indeterminate');
+      bar.style.width = '100%';
+      track.setAttribute('aria-valuenow', '0');
+    }
+    track.appendChild(bar);
+    container.appendChild(track);
+
+    if (hasPercent) {
+      const pct = Math.round(Math.min(progress.percent, 100));
+      const label = document.createElement('span');
+      label.className = 'progress-percent';
+      label.textContent = `${pct}%`;
+      container.appendChild(label);
+    } else if (progress && progress.eta != null) {
+      const eta = document.createElement('span');
+      eta.className = 'progress-eta';
+      const m = Math.floor(progress.eta / 60);
+      const s = Math.round(progress.eta % 60);
+      eta.textContent = `${m}m ${s}s`;
+      container.appendChild(eta);
+    }
+
+    return container;
+  }
+
+  function removeDownloadProgress(row) {
+    const container = row.querySelector('.progress-container');
+    if (container) container.remove();
+  }
+
   function createDownloadRow(data) {
     const row = document.createElement('div');
     const titleText = String(data.title || data.url || '');
@@ -653,6 +708,10 @@
     mainWrap.appendChild(iconWrap);
     mainWrap.appendChild(textWrap);
     main.appendChild(mainWrap);
+
+    if (data.progress || normalizeStatus(data.status).toLowerCase() === 'processing') {
+      main.appendChild(createProgressContainer(data.progress || null));
+    }
 
     const actions = document.createElement('div');
     actions.className = 'flex items-center gap-3';
@@ -722,6 +781,13 @@
       const visibleStatus = row.querySelector('.status-badge')?.textContent?.trim() || nextStatus;
       if (title) announceDownloadUpdate(`${title} - ${visibleStatus}`);
     }
+
+    if (isTerminalStatus(data.status)) {
+      removeDownloadProgress(row);
+    } else if (data.progress) {
+      updateDownloadProgress(row, data.progress);
+    }
+
     const ts = row.querySelector('.timestamp');
     if (ts && data.updated_at) ts.textContent = formatRelativeTime(data.updated_at);
 
@@ -751,18 +817,29 @@
   }
 
   function updateDownloadProgress(row, progress) {
-    let bar = row.querySelector('.progress-bar');
-    if (!bar) {
+    let container = row.querySelector('.progress-container');
+    if (!container) {
       const badge = row.querySelector('.status-badge');
       if (!badge) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'progress-container';
-      wrap.innerHTML = `<div class="progress-track"><div class="progress-bar" style="width:0%"></div></div>${progress.eta != null ? '<span class="progress-eta"></span>' : ''}`;
-      badge.parentNode.insertBefore(wrap, badge.nextSibling);
-      bar = wrap.querySelector('.progress-bar');
+      container = createProgressContainer(progress);
+      badge.parentNode.insertBefore(container, badge.nextSibling);
     }
-    if (bar && progress.percent != null) bar.style.width = `${Math.min(progress.percent, 100)}%`;
-    const eta = row.querySelector('.progress-eta');
+    const bar = container.querySelector('.progress-bar');
+    const track = container.querySelector('.progress-track');
+    if (bar && progress.percent != null) {
+      bar.classList.remove('progress-bar--indeterminate');
+      const pct = Math.min(progress.percent, 100);
+      bar.style.width = `${pct}%`;
+      if (track) track.setAttribute('aria-valuenow', String(Math.round(pct)));
+      let pctLabel = container.querySelector('.progress-percent');
+      if (!pctLabel) {
+        pctLabel = document.createElement('span');
+        pctLabel.className = 'progress-percent';
+        container.appendChild(pctLabel);
+      }
+      pctLabel.textContent = `${Math.round(pct)}%`;
+    }
+    const eta = container.querySelector('.progress-eta');
     if (eta && progress.eta != null) {
       const m = Math.floor(progress.eta / 60);
       const s = Math.round(progress.eta % 60);

@@ -57,6 +57,7 @@ async def _job_to_sse_data(job: DownloadJob) -> dict:
         "status": job.status,
         "file_name": job.file_name,
         "error": job.error,
+        "progress_pct": None,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "updated_at": job.updated_at.isoformat() if job.updated_at else None,
         "_sort_key": job.created_at.timestamp() if job.created_at else 0,
