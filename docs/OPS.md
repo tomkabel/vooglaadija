@@ -62,17 +62,17 @@
 
 ### Worker
 
-| Variable                      | Description                                                                                    | Default    |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- | ---------- |
-| `WORKER_GRACE_PERIOD_SECONDS` | Seconds to wait for in-flight jobs on shutdown                                                 | `30`       |
-| `CLEANUP_INTERVAL_MINUTES`    | Minutes between stale-job sweeps                                                               | `60`       |
-| `WORKER_ID`                   | Worker identifier; derived from the runtime container hostname (unique per replica) when unset | `worker-1` |
-| `WORKER_HEALTH_PORT`          | Port for worker health endpoint                                                                | `8082`     |
-| `WORKER_CONCURRENCY`          | In-flight downloads per worker (1..32)                                                         | `2`        |
-| `WORKER_REPLICAS`             | Worker container replicas                                                                      | `1`        |
-| `YT_DLP_WARM_POOL`            | Use long-lived yt-dlp driver processes                                                         | `true`     |
-| `YT_DLP_POOL_SIZE`            | Warm driver processes per worker (1..16)                                                       | `2`        |
-| `YT_DLP_PREFER_PROGRESSIVE`   | Try a single progressive stream before merged combos                                           | `false`    |
+| Variable                      | Description                                                                                                           | Default                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `WORKER_GRACE_PERIOD_SECONDS` | Seconds to wait for in-flight jobs on shutdown                                                                        | `30`                        |
+| `CLEANUP_INTERVAL_MINUTES`    | Minutes between stale-job sweeps                                                                                      | `60`                        |
+| `WORKER_ID`                   | Worker identifier; unset → the runtime container hostname (unique per replica). `worker-1` is only the final fallback | _(unset; runtime hostname)_ |
+| `WORKER_HEALTH_PORT`          | Port for worker health endpoint                                                                                       | `8082`                      |
+| `WORKER_CONCURRENCY`          | In-flight downloads per worker (1..32)                                                                                | `2`                         |
+| `WORKER_REPLICAS`             | Worker container replicas                                                                                             | `1`                         |
+| `YT_DLP_WARM_POOL`            | Use long-lived yt-dlp driver processes                                                                                | `true`                      |
+| `YT_DLP_POOL_SIZE`            | Warm driver processes per worker (1..16)                                                                              | `2`                         |
+| `YT_DLP_PREFER_PROGRESSIVE`   | Try a single progressive stream before merged combos                                                                  | `false`                     |
 
 ---
 
@@ -80,10 +80,11 @@
 
 Use the v2 plugin syntax (`docker compose`, not `docker-compose`).
 
-**Production** is deployed through Coolify (see
-[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)): `./deploy/bootstrap.sh` provisions Docker +
-Coolify, assigns the domain, issues the wildcard TLS certificate (Cloudflare DNS-01, auto-renewed by
-Caddy) and deploys `docker-compose.yml` — the single source of truth for the stack.
+**Production** is deployed as a standalone Caddy stack (see
+[PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)): `./deploy/bootstrap.sh` provisions Docker,
+generates secrets into `./.env`, sets up the Caddy reverse proxy (TLS origin cert) and deploys
+`docker-compose.yml` + `docker-compose.local.yml` + `docker-compose.caddy.yml` — the single source
+of truth for the stack. No Coolify.
 
 **Local development / standalone:**
 
@@ -166,8 +167,8 @@ no host plugin required. Application logs are one JSON object per line in produc
 | `grafana`        | `grafana/grafana:11.3.0` (profile `monitoring`)   | `127.0.0.1:3000`  | Dashboards               |
 | `backup`         | `postgres:15-alpine` (profile `backup`)           | —                 | Daily `pg_dump`          |
 
-In production, Coolify's Caddy proxy (ports 80/443) is the only public entry point; the local
-override binds debug ports to loopback.
+In production, the standalone Caddy reverse proxy (ports 80/443, see `docker-compose.caddy.yml`) is
+the only public entry point; the local override binds debug ports to loopback.
 
 ---
 

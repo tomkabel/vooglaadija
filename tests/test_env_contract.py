@@ -175,8 +175,10 @@ def test_bootstrap_generates_secrets_at_runtime():
     bootstrap = (REPO_ROOT / "deploy/bootstrap.sh").read_text()
 
     assert "openssl rand" in bootstrap
-    assert "SECRET_KEY_PREVIOUS" in bootstrap
+    assert "DB_PASSWORD" in bootstrap
+    assert "REDIS_PASSWORD" in bootstrap
     assert "CORS_ORIGINS" in bootstrap
+    assert "chmod 600" in bootstrap  # secrets file is not left world-readable
 
 
 @pytest.mark.unit
@@ -189,16 +191,15 @@ def test_bootstrap_deploy_health_gates_require_healthy_payloads():
 
 
 @pytest.mark.unit
-def test_bootstrap_uses_caddy_dns01_for_wildcard_tls():
-    """Wildcard TLS is provisioned via Caddy + Cloudflare DNS-01, not certbot."""
+def test_bootstrap_uses_standalone_caddy_origin_tls():
+    """Standalone deployment terminates TLS with a Cloudflare-origin cert, not certbot."""
     bootstrap = (REPO_ROOT / "deploy/bootstrap.sh").read_text()
     docs = (REPO_ROOT / "docs/PRODUCTION_DEPLOYMENT.md").read_text()
 
-    assert "caddy-dns/cloudflare" in bootstrap
-    assert "caddy.acme_dns=cloudflare" in bootstrap
+    assert "tls /etc/caddy/certs/${DEPLOY_DOMAIN}.crt" in bootstrap
+    assert "self-signed" in bootstrap.lower()
     assert "certbot" not in bootstrap.lower()
     assert "wildcard" in docs.lower()
-    assert "dns-01" in docs.lower()
 
 
 @pytest.mark.unit
